@@ -15,6 +15,8 @@ export interface FakeServer {
   pollStatus: number;
   /** Hosts that don't answer: requests to them reject with a TypeError, like fetch does */
   downHosts: string[];
+  /** While set, /auth answers wait for it */
+  authGate: Promise<void> | null;
   now: number;
   requests: { url: string; auth: string | null }[];
   publish(topic: string, time: number, extra?: Partial<NtfyMessage>): NtfyMessage;
@@ -65,6 +67,7 @@ export function installFakeNtfy(): FakeServer {
     authDown: false,
     pollStatus: 200,
     downHosts: [],
+    authGate: null,
     now: 10000,
     requests: [],
     publish(topic, time, extra = {}) {
@@ -89,6 +92,7 @@ export function installFakeNtfy(): FakeServer {
     }
 
     if (url.pathname.endsWith('/auth')) {
+      if (server.authGate) await server.authGate;
       if (server.authDown) throw new TypeError('Failed to fetch');
       const readable = !server.unreadable.includes(topic);
       return new Response('{"success":true}', { status: readable ? 200 : 403 });

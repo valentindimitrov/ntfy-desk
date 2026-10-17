@@ -71,8 +71,8 @@ describe('sync and live messages', () => {
 
     // Cursors per topic, and polls by time, never since=<id>
     const states = await getTopicSyncStates();
-    expect(states.alerts?.since).toBe(10010);
-    expect(states.backups?.since).toBe(10003);
+    expect(states.get('alerts')?.since).toBe(10010);
+    expect(states.get('backups')?.since).toBe(10003);
     expect(server.requests.every((r) => !/since=m\d/.test(r.url))).toBe(true);
     expect(server.requests.every((r) => r.auth === 'Bearer tk_test')).toBe(true);
   });
@@ -86,7 +86,7 @@ describe('sync and live messages', () => {
     await fakeBrowser.storage.sync.set({ topics: 'alerts,new' });
     await receiver.sync();
     expect(notified).toEqual([]);
-    expect(Object.keys(await getTopicSyncStates()).sort()).toEqual(['alerts', 'new']);
+    expect([...(await getTopicSyncStates()).keys()].sort()).toEqual(['alerts', 'new']);
   });
 
   it('notifies the first message of a topic that was empty at its first sync', async () => {

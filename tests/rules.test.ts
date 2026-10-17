@@ -18,7 +18,12 @@ beforeEach(() => {
 });
 
 describe('notification rules', () => {
-  const rules: TopicRules = { alerts: 'high', coolify: 'off', backups: 'default', pager: 'urgent' };
+  const rules: TopicRules = new Map([
+    ['alerts', 'high'],
+    ['coolify', 'off'],
+    ['backups', 'default'],
+    ['pager', 'urgent'],
+  ]);
 
   it('pops up from the topic level up; all priorities without a rule', () => {
     expect(shouldNotify(message('alerts', 4), rules)).toBe(true);
@@ -33,13 +38,13 @@ describe('notification rules', () => {
   });
 
   it('ignores invalid stored rules', async () => {
-    await fakeBrowser.storage.sync.set({ notifyRules: { alerts: 'high', bad: 'loud', worse: 3 } });
-    expect(await getTopicRules()).toEqual({ alerts: 'high' });
+    await fakeBrowser.storage.sync.set({ notifyRules: [['alerts', 'high'], ['bad', 'loud'], ['worse', 3], 'junk'] });
+    expect(await getTopicRules()).toEqual(new Map([['alerts', 'high']]));
   });
 
   it('decides the desktop notification for a new message', async () => {
     const create = mockResolved(fakeBrowser.notifications, 'create', '');
-    await fakeBrowser.storage.sync.set({ notifyRules: { coolify: 'off' } });
+    await fakeBrowser.storage.sync.set({ notifyRules: [['coolify', 'off']] });
     await notifyNewMessage(message('coolify', 5));
     await notifyNewMessage(message('alerts', 2));
     expect(callsOf<[string]>(create).map((call) => call[0])).toEqual(['alerts-2']);

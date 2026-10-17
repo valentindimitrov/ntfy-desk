@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { mockResolved } from './helpers/mock';
+import { handlePopupRequest } from '@/utils/messages';
 import type { NtfyMessage } from '@/utils/ntfy';
 
 // Vitest runs from the project root
@@ -44,7 +45,11 @@ beforeEach(async () => {
   closed = false;
 
   vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ name: 'ntfy Desk', version: '0', manifest_version: 3 });
-  vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue(undefined);
+  // The background's handling of the popup's requests (read and delete actions)
+  vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((async (request: unknown) => {
+    await handlePopupRequest(request, async () => {});
+    return { success: true };
+  }) as never);
   mockResolved(fakeBrowser.permissions, 'contains', true);
   mockResolved(fakeBrowser.tabs, 'query', [{ url: 'https://news.example/story/' }]);
   vi.spyOn(window, 'close').mockImplementation(() => {
@@ -103,7 +108,7 @@ describe('Receive tab', () => {
         unreadableTopics: ['inbox'],
         unreachable: true,
         retryAt: Date.now() + 30000,
-        syncErrors: { alerts: 'HTTP 502' },
+        syncErrors: [['alerts', 'HTTP 502']],
         lastSyncAt: null,
       },
     });
@@ -192,6 +197,10 @@ describe('Receive tab', () => {
         message('external', 'alerts', 2, { attachment: image('https://tracker.example/pixel.png') }),
         message('expired', 'alerts', 3, { attachment: image('https://ntfy.example/file/old.png', 1000) }),
         message('notImage', 'alerts', 4, { attachment: { url: 'https://ntfy.example/file/a.zip', type: 'application/zip' } }),
+        // Same origin, but an API call (ntfy publishes on GET), not an attachment (review #3)
+        message('apiCall', 'alerts', 5, { attachment: image('https://ntfy.example/alerts/publish?message=hi') }),
+        message('withQuery', 'alerts', 6, { attachment: image('https://ntfy.example/file/abc.png?x=1') }),
+        message('nested', 'alerts', 7, { attachment: image('https://ntfy.example/file/../alerts/publish') }),
       ],
     });
     await openPopup('?tab=receive');
@@ -254,6 +263,42 @@ describe('Send tab', () => {
     // Let the popup's close timer run inside this test
     await vi.waitFor(() => expect(closed).toBe(true));
     expect(await fakeBrowser.storage.local.get('storedFiles')).toEqual({});
+  });
+
+  it('sends once when Send is clicked twice quickly (review #10)', async () => {
+    await openPopup();
+    $<HTMLTextAreaElement>('#message-input').value = 'once';
+    $('#send-btn').click();
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    // Let the popup's close timer run inside this test
+    await vi.waitFor(() => expect(closed).toBe(true));
+    expect(requests).toHaveLength(1);
+  });
+
+  it('sends once when two sends start together, the button aside (review #10)', async () => {
+    await openPopup();
+    $<HTMLTextAreaElement>('#message-input').value = 'once';
+    // The module instance the popup loaded
+    const { send } = await import('@/entrypoints/popup/send');
+    await Promise.all([send(), send()]);
+    expect(requests).toHaveLength(1);
+    await vi.waitFor(() => expect(closed).toBe(true));
+  });
+
+  it('uses the active tab of the last focused window when tabs report no last-used time (review #14)', async () => {
+    await openPopup('?mode=page');
+    mockResolved(fakeBrowser.permissions, 'request', true);
+    mockResolved(fakeBrowser.tabs, 'getCurrent', { id: 9 });
+    mockResolved(fakeBrowser.windows, 'getLastFocused', { id: 2 });
+    mockResolved(fakeBrowser.tabs, 'query', [
+      { id: 1, windowId: 1, active: true, url: 'https://other-window.example/' },
+      { id: 2, windowId: 2, active: false, url: 'https://background-tab.example/' },
+      { id: 3, windowId: 2, active: true, url: 'https://the-page.example/article/' },
+      { id: 9, windowId: 2, active: false, url: 'chrome-extension://id/popup.html' },
+    ]);
+    $('#tab-url-btn').click();
+    await vi.waitFor(() => expect($<HTMLInputElement>('#title-input').value).toBe('https://the-page.example/article'));
   });
 
   it('stays open after sending in the extension tab', async () => {
@@ -327,16 +372,21 @@ describe('settings', () => {
     selects[0]!.value = 'high';
     selects[0]!.dispatchEvent(new Event('change'));
     await flush();
-    expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({ notifyRules: { alerts: 'high', coolify: 'off' } });
+    expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({
+      notifyRules: [
+        ['alerts', 'high'],
+        ['coolify', 'off'],
+      ],
+    });
 
     // Remove "alerts" (the first topic badge)
     $('.topic-remove').click();
     await flush();
-    expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({ notifyRules: { coolify: 'off' } });
+    expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({ notifyRules: [['coolify', 'off']] });
   });
 
   it('marks topics with notifications off in the Receive tab', async () => {
-    await fakeBrowser.storage.sync.set({ notifyRules: { coolify: 'off' } });
+    await fakeBrowser.storage.sync.set({ notifyRules: [['coolify', 'off']] });
     await openPopup('?tab=receive');
     const coolify = [...document.querySelectorAll('.topic-filter-btn')].find((b) => b.textContent?.startsWith('coolify'))!;
     expect(coolify.querySelector('.topic-muted')?.textContent).toBe('🔕');

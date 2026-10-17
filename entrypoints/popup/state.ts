@@ -1,7 +1,6 @@
 // State shared by the popup's modules.
 
 import { browser } from 'wxt/browser';
-import { getHistoryState, pruneReadState } from '@/utils/history';
 import { getConfig, parseTopics, type NtfyMessage } from '@/utils/ntfy';
 import { getTopicRules, type TopicRules } from '@/utils/rules';
 import type { ReceiverStatus } from '@/utils/status';
@@ -76,7 +75,7 @@ export const state: PopupState = {
   sendAnotherEnabled: false,
   sendAsZipEnabled: false,
   lastTopic: undefined,
-  notifyRules: {},
+  notifyRules: new Map(),
   pageUrl: '',
   tags: [],
   selectedPriority: 3,
@@ -112,21 +111,6 @@ export async function loadSettings(): Promise<void> {
     state.tags = items.lastTags.filter((tag): tag is string => typeof tag === 'string');
   }
   state.notifyRules = await getTopicRules();
-}
-
-/**
- * Drop read and deleted ids that no longer matter. Only the popup writes these lists, so pruning here
- * can't race the background.
- */
-export async function pruneReceiveState(): Promise<void> {
-  const history = await getHistoryState();
-  const pruned = pruneReadState(history);
-  if (
-    pruned.readMessageIds.length !== history.readMessageIds.length ||
-    pruned.deletedMessageIds.length !== history.deletedMessageIds.length
-  ) {
-    await browser.storage.local.set(pruned);
-  }
 }
 
 export async function loadReceiveState(): Promise<void> {

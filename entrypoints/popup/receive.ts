@@ -4,6 +4,7 @@ import { browser } from 'wxt/browser';
 import { getHistoryState } from '@/utils/history';
 import { isHttpUrl, type NtfyMessage } from '@/utils/ntfy';
 import { renderMarkdown } from '@/utils/markdown';
+import { sendToBackground } from '@/utils/messages';
 import { ruleFor } from '@/utils/rules';
 import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
 import { elements, isConfigured, loadReceiveState, saveLocal, state } from './state';
@@ -108,14 +109,17 @@ export function matchesSearch(message: NtfyMessage, query: string): boolean {
 }
 
 /**
- * Image attachments are previewed only when the ntfy server hosts them (not an external URL a
- * publisher chose) and they haven't expired.
+ * Image attachments are previewed only when the ntfy server hosts them, at its attachment route
+ * (/file/<name>, no query) and before they expire. Other URLs on the server's origin could be API
+ * calls (ntfy publishes on GET /<topic>/publish?message=...), which a preview would request.
  */
 export function previewableImage(message: NtfyMessage, serverUrls: string[], now = Date.now()): string | null {
   const attachment = message.attachment;
   if (!attachment?.type?.startsWith('image/') || !isHttpUrl(attachment.url)) return null;
   if (attachment.expires && attachment.expires * 1000 < now) return null;
-  const origin = new URL(attachment.url).origin;
+  const url = new URL(attachment.url);
+  if (!/^\/file\/[A-Za-z0-9_-]+(\.[A-Za-z0-9]+)?$/.test(url.pathname) || url.search || url.username || url.password) return null;
+  const origin = url.origin;
   const onServer = serverUrls.some((url) => {
     try {
       return new URL(url).origin === origin;
@@ -173,6 +177,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
     image.src = imageUrl;
     image.alt = message.attachment?.name ?? 'Image attachment';
     image.loading = 'lazy';
+    image.referrerPolicy = 'no-referrer';
     image.addEventListener('click', () => openUrl(imageUrl));
     preview = image;
   }
@@ -286,25 +291,19 @@ async function toggleRead(id: string, item: HTMLElement, button: HTMLElement): P
   item.classList.toggle('read', index === -1);
   button.title = index === -1 ? 'Mark as Unread' : 'Mark as Read';
   try {
-    await saveLocal({ readMessageIds: state.readMessageIds });
+    await sendToBackground({ action: 'setRead', ids: [id], read: index === -1 });
   } catch (error) {
-    console.error('Error saving readMessageIds:', error);
+    console.error('Error saving the read state:', error);
   }
 }
 
 async function deleteMessage(id: string, item: HTMLElement): Promise<void> {
   try {
-    if (!state.deletedMessageIds.includes(id)) {
-      state.deletedMessageIds.push(id);
-      await saveLocal({ deletedMessageIds: state.deletedMessageIds });
-    }
+    // Shown at once; the background applies it and the storage change refreshes every open view
+    state.deletedMessageIds = [...new Set([...state.deletedMessageIds, id])];
+    state.readMessageIds = state.readMessageIds.filter((other) => other !== id);
     item.remove();
-
-    const readIndex = state.readMessageIds.indexOf(id);
-    if (readIndex > -1) {
-      state.readMessageIds.splice(readIndex, 1);
-      await saveLocal({ readMessageIds: state.readMessageIds });
-    }
+    await sendToBackground({ action: 'delete', ids: [id] });
     if (elements.notificationsList.children.length === 0) {
       elements.notificationsList.replaceChildren(emptyMessage('No recent notifications'));
     }
@@ -336,7 +335,7 @@ async function markAllRead(): Promise<void> {
   if (unread.length === 0) return;
   state.readMessageIds.push(...unread.map((m) => m.id));
   try {
-    await saveLocal({ readMessageIds: state.readMessageIds });
+    await sendToBackground({ action: 'setRead', ids: unread.map((m) => m.id), read: true });
     showStatus('All marked as read', 'success');
   } catch (error) {
     console.error('Error saving readMessageIds:', error);
@@ -355,7 +354,7 @@ async function deleteAll(): Promise<void> {
   state.deletedMessageIds = [...new Set([...state.deletedMessageIds, ...ids])];
   state.readMessageIds = state.readMessageIds.filter((id) => !ids.includes(id));
   try {
-    await saveLocal({ deletedMessageIds: state.deletedMessageIds, readMessageIds: state.readMessageIds });
+    await sendToBackground({ action: 'delete', ids });
     showStatus('All notifications deleted', 'success');
   } catch (error) {
     console.error('Error performing bulk delete:', error);

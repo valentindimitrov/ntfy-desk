@@ -1,6 +1,6 @@
 # <img src="public/icon/48.png" alt="" width="40" height="40" style="vertical-align: middle;"> ntfy Desk
 
-A browser extension for [ntfy](https://ntfy.sh): send notifications to your topics, and receive them as desktop notifications with a message list per topic. Works with ntfy.sh and self-hosted servers. Chrome, Edge, Vivaldi and other Chromium browsers (116+), and Firefox (142+).
+A browser extension for [ntfy](https://ntfy.sh): send notifications to your topics, and receive them as desktop notifications with a message list per topic. Works with ntfy.sh and self-hosted servers. Chrome, Edge, Vivaldi and other Chromium browsers, and Firefox (142+).
 
 > [!NOTE]
 > This is an unofficial extension and is not affiliated with the ntfy project.
@@ -40,7 +40,7 @@ In the settings (gear icon):
 
 ### Receiving and the browser
 
-Chrome stops an idle extension service worker after 30 seconds; WebSocket traffic keeps it running (Chrome 116+). ntfy's keepalive is 45 seconds by default, so the extension sends a small frame every 20 seconds. Missed messages are also polled once a minute.
+Chrome stops an idle extension service worker after 30 seconds; WebSocket traffic keeps it running. ntfy's keepalive is 45 seconds by default, so the extension sends a small frame every 20 seconds. Missed messages are also polled once a minute.
 
 Browsers can't set headers on a WebSocket, so the credentials go in ntfy's `?auth=` query parameter. The extension never logs that URL, but the browser itself logs failed WebSocket connections with the full URL (e.g. on the extensions page's Errors list). Don't share screenshots of those errors.
 

@@ -155,6 +155,13 @@ async function getLastBrowsingTabUrl(): Promise<string> {
     const own = await browser.tabs.getCurrent();
     const tabs = await browser.tabs.query({ windowType: 'normal' });
     const pages = tabs.filter((tab) => tab.id !== own?.id && isHttpUrl(tab.url));
+    // Tab.lastAccessed isn't reported by every browser version: without it, the active web page tab
+    // of the browser window used last
+    if (pages.some((tab) => tab.lastAccessed === undefined)) {
+      const window = await browser.windows.getLastFocused({ windowTypes: ['normal'] });
+      const active = pages.find((tab) => tab.windowId === window.id && tab.active) ?? pages.find((tab) => tab.active);
+      return active?.url ?? pages[0]?.url ?? '';
+    }
     pages.sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
     return pages[0]?.url ?? '';
   } catch {
@@ -443,8 +450,20 @@ async function finishSuccessfulSend(attachmentCount: number, successMessage?: st
 }
 
 export async function send(): Promise<void> {
+  // Taken before the first await, so a second click can't start a second send
   if (state.isSending) return;
+  state.isSending = true;
+  elements.sendBtn.disabled = true;
+  try {
+    await sendNow();
+  } finally {
+    state.isSending = false;
+    elements.sendBtn.disabled = false;
+    renderAttachments();
+  }
+}
 
+async function sendNow(): Promise<void> {
   const topic = elements.topicSelect.value;
   // With "Include current tab's URL", the URL is in the title (applyUrlTitle)
   const message = elements.messageInput.value.trim();
@@ -474,8 +493,6 @@ export async function send(): Promise<void> {
     return;
   }
 
-  state.isSending = true;
-  elements.sendBtn.disabled = true;
   renderAttachments();
 
   // The fallback server is tried when the main one gives no response
@@ -526,10 +543,6 @@ export async function send(): Promise<void> {
     await finishSuccessfulSend(files.length);
   } catch (error) {
     showStatus(`Error: ${(error as Error).message}`, 'error');
-  } finally {
-    state.isSending = false;
-    elements.sendBtn.disabled = false;
-    renderAttachments();
   }
 }
 

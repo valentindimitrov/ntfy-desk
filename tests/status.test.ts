@@ -41,11 +41,17 @@ describe('receiver status', () => {
     const receiver = createReceiver({ onNewMessage: () => {} });
     server.pollStatus = 502;
     await receiver.sync();
-    expect(await status()).toMatchObject({ syncErrors: { alerts: 'HTTP 502', inbox: 'HTTP 502' }, unreachable: true });
+    expect(await status()).toMatchObject({
+      syncErrors: [
+        ['alerts', 'HTTP 502'],
+        ['inbox', 'HTTP 502'],
+      ],
+      unreachable: true,
+    });
 
     server.pollStatus = 200;
     await receiver.sync();
-    expect((await status()).syncErrors).toEqual({});
+    expect((await status()).syncErrors).toEqual([]);
   });
 
   it('reports when no topic is readable', async () => {
@@ -78,7 +84,7 @@ describe('status text', () => {
   });
 
   it('lists the topics whose missed messages could not be fetched', () => {
-    const lines = describeStatus({ ...base, state: 'connected', syncErrors: { alerts: 'HTTP 502' } });
+    const lines = describeStatus({ ...base, state: 'connected', syncErrors: [['alerts', 'HTTP 502']] });
     expect(lines[1]).toEqual({ text: "Couldn't fetch missed messages: alerts (HTTP 502)", level: 'warning' });
   });
 });

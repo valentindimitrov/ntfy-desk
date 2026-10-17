@@ -17,8 +17,8 @@ export interface ReceiverStatus {
   unreachable: boolean;
   /** When the next reconnect attempt is due (ms since the epoch) */
   retryAt: number | null;
-  /** Error of each topic's last poll, if it failed */
-  syncErrors: Record<string, string>;
+  /** Topics whose last poll failed, with the error (a list: topic names aren't safe object keys) */
+  syncErrors: [topic: string, error: string][];
   /** End of the last poll of all topics (ms since the epoch) */
   lastSyncAt: number | null;
 }
@@ -32,7 +32,7 @@ export const INITIAL_STATUS: ReceiverStatus = {
   unreadableTopics: [],
   unreachable: false,
   retryAt: null,
-  syncErrors: {},
+  syncErrors: [],
   lastSyncAt: null,
 };
 
@@ -78,7 +78,7 @@ export function describeStatus(status: ReceiverStatus | null, now = Date.now()):
       break;
   }
 
-  const failed = Object.entries(status.syncErrors);
+  const failed = Array.isArray(status.syncErrors) ? status.syncErrors : [];
   if (failed.length > 0) {
     const details = failed.map(([topic, error]) => `${topic} (${error})`).join(', ');
     lines.push({ text: `Couldn't fetch missed messages: ${details}`, level: 'warning' });

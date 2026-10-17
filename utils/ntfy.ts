@@ -159,11 +159,14 @@ export function buildTopicUrl(apiUrl: string, topic: string): string {
   return `${new URL(apiUrl).origin}/${topic}`;
 }
 
-/** Header value, RFC 2047-encoded if it contains non-ASCII characters */
+/**
+ * Header value, RFC 2047-encoded if it contains non-ASCII or control characters (a header can't hold
+ * a line break, so a multi-line message would make Headers.set throw; ntfy decodes it back)
+ */
 export function encodeHeaderValue(value: string | undefined): string {
   if (!value) return '';
   // eslint-disable-next-line no-control-regex
-  if (/[^\x00-\x7F]/.test(value)) {
+  if (/[^\x20-\x7E]/.test(value)) {
     return `=?utf-8?B?${base64Encode(value)}?=`;
   }
   return value;
@@ -181,8 +184,16 @@ function setPublishHeaders(headers: Headers, { title, priority, tags }: PublishO
   }
 }
 
-async function post(url: string, headers: Headers, body: BodyInit): Promise<Response> {
-  const response = await fetch(url, { method: 'POST', headers, body });
+/** Time limits, so a server that accepts a request but never answers can't stall a sync or a send */
+export const TIMEOUTS = { check: 10_000, poll: 20_000, publish: 30_000, upload: 120_000, image: 30_000 };
+
+/** The server gave no response: a network error (fetch rejects with a TypeError) or a time limit */
+export function isNoResponse(error: unknown): boolean {
+  return error instanceof TypeError || (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'));
+}
+
+async function post(url: string, headers: Headers, body: BodyInit, timeout: number): Promise<Response> {
+  const response = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(timeout) });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
@@ -192,7 +203,7 @@ async function post(url: string, headers: Headers, body: BodyInit): Promise<Resp
 export function sendNotification(server: NtfyServer, topic: string, options: PublishOptions): Promise<Response> {
   const headers = buildAuthHeaders(server.accessToken, server.apiUrl);
   setPublishHeaders(headers, options);
-  return post(buildTopicUrl(server.apiUrl, topic), headers, options.message || '');
+  return post(buildTopicUrl(server.apiUrl, topic), headers, options.message || '', TIMEOUTS.publish);
 }
 
 export function sendAttachment(server: NtfyServer, topic: string, options: AttachmentOptions): Promise<Response> {
@@ -205,7 +216,7 @@ export function sendAttachment(server: NtfyServer, topic: string, options: Attac
     headers.set('X-Message', encodeHeaderValue(options.message));
   }
   setPublishHeaders(headers, options);
-  return post(buildTopicUrl(server.apiUrl, topic), headers, options.data);
+  return post(buildTopicUrl(server.apiUrl, topic), headers, options.data, TIMEOUTS.upload);
 }
 
 /** Fetch an image and send it as attachment */
@@ -216,7 +227,7 @@ export async function sendImageFromUrl(
   message?: string,
   title?: string,
 ): Promise<Response> {
-  const imageResponse = await fetch(imageUrl);
+  const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(TIMEOUTS.image) });
   if (!imageResponse.ok) {
     throw new Error(`Failed to fetch image: ${imageResponse.status}`);
   }
@@ -242,6 +253,7 @@ export async function canReadTopic(server: NtfyServer, topic: string): Promise<b
     const response = await fetch(`${buildTopicUrl(server.apiUrl, topic)}/auth`, {
       method: 'GET',
       headers: buildAuthHeaders(server.accessToken, server.apiUrl),
+      signal: AbortSignal.timeout(TIMEOUTS.check),
     });
     if (response.ok) {
       return true;
@@ -264,6 +276,7 @@ export async function getNotifications(server: NtfyServer, topic: string, since:
   const response = await fetch(`${buildTopicUrl(server.apiUrl, topic)}/json?poll=1&since=${since}`, {
     method: 'GET',
     headers: buildAuthHeaders(server.accessToken, server.apiUrl),
+    signal: AbortSignal.timeout(TIMEOUTS.poll),
   });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);

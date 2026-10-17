@@ -5,7 +5,7 @@ import { browser, type Browser } from 'wxt/browser';
 
 const pageUrl = () => browser.runtime.getURL('/popup.html?mode=page');
 
-/** Tab and window of the extension's tab, if it is open (runtime.getContexts: Chrome 116+) */
+/** Tab and window of the extension's tab, if it is open (needs runtime.getContexts; else null) */
 async function findExtensionTab(): Promise<{ tabId: number; windowId: number } | null> {
   if (!browser.runtime.getContexts) return null;
   // The types declare ContextType as an enum; its value is this string in every browser

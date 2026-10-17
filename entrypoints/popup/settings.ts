@@ -2,7 +2,7 @@
 
 import { browser } from 'wxt/browser';
 import { buildAuthHeaderValue, setAccessToken } from '@/utils/ntfy';
-import { NOTIFY_RULES, NOTIFY_RULES_KEY, RULE_LABELS, isNotifyRule, ruleFor, type TopicRules } from '@/utils/rules';
+import { NOTIFY_RULES, NOTIFY_RULES_KEY, RULE_LABELS, isNotifyRule, ruleFor, storedTopicRules, type TopicRules } from '@/utils/rules';
 import { updateTopicDropdown } from './send';
 import { elements, isConfigured, saveSync, state, type Theme } from './state';
 import { debounce, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
@@ -106,13 +106,13 @@ async function saveSettings(): Promise<void> {
 
 /** One rule per configured topic; rules of removed topics are dropped */
 function saveNotifyRules(): Promise<void> {
-  const rules: TopicRules = {};
+  const rules: TopicRules = new Map();
   for (const topic of state.topics) {
-    const rule = state.notifyRules[topic];
-    if (rule) rules[topic] = rule;
+    const rule = state.notifyRules.get(topic);
+    if (rule) rules.set(topic, rule);
   }
   state.notifyRules = rules;
-  return saveSync({ [NOTIFY_RULES_KEY]: rules });
+  return saveSync({ [NOTIFY_RULES_KEY]: storedTopicRules(rules) });
 }
 
 function renderNotifyRules(): void {
@@ -138,7 +138,7 @@ function renderNotifyRules(): void {
       select.value = ruleFor(state.notifyRules, topic);
       select.addEventListener('change', () => {
         if (!isNotifyRule(select.value)) return;
-        state.notifyRules = { ...state.notifyRules, [topic]: select.value };
+        state.notifyRules = new Map(state.notifyRules).set(topic, select.value);
         saveNotifyRules().catch(() => showSettingsStatus('Failed to save settings', 'error'));
       });
 

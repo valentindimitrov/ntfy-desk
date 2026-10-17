@@ -16,7 +16,11 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 
 - Extension APIs: `import { browser, type Browser } from 'wxt/browser'`, promise style only (Firefox's `browser` has no callbacks). Types come from `@types/chrome`; methods with a callback overload need `mockResolved` from `tests/helpers/mock.ts` in tests.
 - Enums in the types (`contextMenus.ContextType`, `runtime.ContextType`) are passed as their string values, cast to the enum type: the enum objects don't exist at runtime in every browser.
-- Storage: settings in `storage.sync`; the access token and everything else (received messages, read and deleted ids, per-topic sync state, attachments, draft) in `storage.local`. Never put the token in `storage.sync`.
+- Storage: settings in `storage.sync`; the access token and everything else (received messages, read and deleted ids, per-topic sync state, attachments, draft) in `storage.local`. Never put the token in `storage.sync`. (Credentials embedded in a server URL do go to `storage.sync` with the URL; left as is on purpose.)
+- The background is the only writer of the received messages, the read and deleted ids and the sync state, through one queue (`serialized` in `utils/history.ts`). The popup sends read and delete actions as messages (`utils/messages.ts`); it never saves those lists itself.
+- Data keyed by topic is stored as a list (`[topic, value]` entries, or objects with a `topic` field) and read into a `Map`: topic names such as `__proto__` and `constructor` are valid in ntfy and break plain objects.
+- Every request has a time limit (`TIMEOUTS` in `utils/ntfy.ts`); `isNoResponse` treats network errors and time limits alike (the fallback server is tried on both).
+- Header values are RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks.
 - Never log a WebSocket URL with `?auth=`, or an error or event object that contains it; `buildWsUrl` returns a `logUrl` for logging.
 - Messages from the server are rendered with `textContent` only (Markdown through `utils/markdown.ts`, which builds nodes); URLs from messages are opened, linked or copied only if `isHttpUrl`; images are previewed only from the ntfy server's own origin.
 - Unit tests: `tests/*.test.ts` (Vitest). `tests/helpers/fake-ntfy.ts` is a fake ntfy server (fetch) and WebSocket; popup tests load the real `index.html` in happy-dom. End-to-end tests: `e2e/*.spec.ts`; the fixtures in `e2e/fixtures.ts` give the service worker (`serviceWorker.evaluate` runs in it), `configure`, `notified` (desktop notifications recorded in the worker) and `openPopup`.
@@ -24,7 +28,10 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 ## Behaviour that is easy to break
 
 - ntfy rejects a multi-topic WebSocket with 403 if any topic isn't readable: the receiver checks `/<topic>/auth` and subscribes to readable topics only.
-- Each topic's sync cursor is a server time (`since=<unix time>`, inclusive) plus the latest ids; never a global `since=<id>` (ids are global across topics, and an expired id replays the whole cache).
+- Each topic's sync state is a catch-up watermark (`since=<unix time>`, inclusive) plus the id and time of every message at or after it; never a global `since=<id>` (ids are global across topics, and an expired id replays the whole cache).
+- Only a completed poll moves the watermark, never a live message: a live message newer than messages missed while disconnected must not let the next poll skip them. The sync state and the history are written in one storage write.
+- History is ordered by server time before the per-topic limit applies; a connect() that an await made stale (settings changed meanwhile) stops; a subscription refused before it opened discards the cached read-access check.
+- Image previews only load the server's attachment route (`/file/<name>`, no query): other same-origin URLs can be API calls (ntfy publishes on GET).
 - A topic's first sync is silent; afterwards a desktop notification is shown only for messages new to the history.
 - The 20 s client keepalive keeps Chrome's service worker alive (ntfy's default keepalive is 45 s; Chrome's idle limit is 30 s).
 

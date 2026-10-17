@@ -1,7 +1,7 @@
 // Main and fallback server (e.g. the LAN address first, the public one when it doesn't answer).
 // Both are the same ntfy server, so message ids, sync cursors and the token are shared.
 
-import type { NtfyConfig, NtfyServer } from './ntfy';
+import { isNoResponse, type NtfyConfig, type NtfyServer } from './ntfy';
 
 const HEALTH_TIMEOUT = 4000;
 
@@ -34,8 +34,9 @@ export async function pickServer(config: Pick<NtfyConfig, 'apiUrl' | 'accessToke
 }
 
 /**
- * Run a request on the main server; if it gets no response (fetch rejects with a TypeError, e.g. the
- * server is unreachable), run it again on the fallback. HTTP errors aren't retried: the server answered.
+ * Run a request on the main server; if it gets no response (unreachable, or no answer within the time
+ * limit), run it again on the fallback. HTTP errors aren't retried: the server answered. After a time
+ * limit the main server may still have taken the message, so it can arrive twice: better than not at all.
  */
 export async function withFallback<T>(
   config: Pick<NtfyConfig, 'apiUrl' | 'accessToken' | 'fallbackUrl'>,
@@ -44,7 +45,7 @@ export async function withFallback<T>(
   try {
     return await request({ apiUrl: config.apiUrl, accessToken: config.accessToken });
   } catch (error) {
-    if (error instanceof TypeError && config.fallbackUrl) {
+    if (isNoResponse(error) && config.fallbackUrl) {
       return request({ apiUrl: config.fallbackUrl, accessToken: config.accessToken });
     }
     throw error;

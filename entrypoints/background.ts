@@ -4,6 +4,7 @@
 import { browser } from 'wxt/browser';
 import { handleContextMenuClick, updateContextMenu } from '@/utils/context-menu';
 import { handleNotificationButton, handleNotificationClick, notifyNewMessage, updateUnreadBadge } from '@/utils/notifications';
+import { handlePopupRequest } from '@/utils/messages';
 import { createReceiver } from '@/utils/receiver';
 
 const ALARM_NAME = 'ws-keepalive';
@@ -52,15 +53,11 @@ export default defineBackground(() => {
   browser.notifications.onButtonClicked.addListener((id, index) => void handleNotificationButton(id, index));
   browser.notifications.onClicked.addListener((id) => void handleNotificationClick(id));
 
-  // The popup asks for a sync when it opens and when the Receive tab is shown
+  // From the popup: a sync (when it opens, and on the Receive tab), and read and delete actions
   browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
-    if ((request as { action?: string } | null)?.action === 'sync') {
-      receiver
-        .sync()
-        .then(() => sendResponse({ success: true }))
-        .catch(() => sendResponse({ success: false }));
-      return true;
-    }
-    return undefined;
+    const task = handlePopupRequest(request, () => receiver.sync());
+    if (!task) return undefined;
+    task.then(() => sendResponse({ success: true })).catch(() => sendResponse({ success: false }));
+    return true;
   });
 });

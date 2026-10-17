@@ -3,7 +3,7 @@
 // unpacked extensions from the command line).
 
 import { resolve } from 'node:path';
-import { test as base, chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import { test as base, expect, chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import type { Browser } from 'wxt/browser';
 import { startNtfyServer, type NtfyTestServer } from './ntfy-server';
 
@@ -54,14 +54,21 @@ export const test = base.extend<Fixtures>({
 
   serviceWorker: async ({ context }, use) => {
     const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
-    // Record desktop notifications (headless Chromium may not show them)
+    // Record the desktop notifications Chrome created; a failed create is recorded as a failure
     await worker.evaluate(() => {
       const recorded: { id: string; title: string; message: string }[] = [];
-      (globalThis as unknown as { __notified: typeof recorded }).__notified = recorded;
+      const failed: string[] = [];
+      Object.assign(globalThis, { __notified: recorded, __notifyFailed: failed });
       const create = chrome.notifications.create.bind(chrome.notifications);
-      chrome.notifications.create = ((id: string, options: Browser.notifications.NotificationCreateOptions) => {
-        recorded.push({ id, title: options.title, message: options.message });
-        return create(id, options).catch(() => id);
+      chrome.notifications.create = (async (id: string, options: Browser.notifications.NotificationCreateOptions) => {
+        try {
+          const created = await create(id, options);
+          recorded.push({ id, title: options.title, message: options.message });
+          return created;
+        } catch (error) {
+          failed.push(`${id}: ${String(error)}`);
+          throw error;
+        }
       }) as typeof chrome.notifications.create;
     });
     await use(worker);
@@ -76,7 +83,8 @@ export const test = base.extend<Fixtures>({
       await serviceWorker.evaluate(
         async ({ apiUrl, fallbackUrl, topics, token, notifyRules }) => {
           await chrome.storage.local.set({ accessToken: token });
-          await chrome.storage.sync.set({ apiUrl, fallbackUrl, topics, notifyRules });
+          // Rules are stored as a list of [topic, rule]
+          await chrome.storage.sync.set({ apiUrl, fallbackUrl, topics, notifyRules: Object.entries(notifyRules) });
         },
         { apiUrl, fallbackUrl, topics, token, notifyRules },
       );
@@ -85,6 +93,9 @@ export const test = base.extend<Fixtures>({
 
   notified: async ({ serviceWorker }, use) => {
     await use(() => serviceWorker.evaluate(() => (globalThis as unknown as { __notified: Notified[] }).__notified));
+    // Every test: no notification failed to show
+    const failed = await serviceWorker.evaluate(() => (globalThis as unknown as { __notifyFailed: string[] }).__notifyFailed);
+    expect(failed).toEqual([]);
   },
 
   openPopup: async ({ context, extensionId }, use) => {
@@ -96,4 +107,4 @@ export const test = base.extend<Fixtures>({
   },
 });
 
-export const expect = test.expect;
+export { expect };

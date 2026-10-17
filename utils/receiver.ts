@@ -1,7 +1,7 @@
 // Receiving: one WebSocket subscription for live messages, and a poll per topic for messages
 // missed while the socket was down or the browser closed.
 
-import { getTopicSyncStates, initTopicSyncState, pruneTopicSyncStates, recordMessage } from './history';
+import { completePoll, getTopicSyncStates, pruneTopicSyncStates, recordMessage } from './history';
 import { pickServer } from './servers';
 import { INITIAL_STATUS, writeReceiverStatus, type ReceiverStatus } from './status';
 import {
@@ -10,14 +10,15 @@ import {
   canReadTopic,
   getConfig,
   getNotifications,
+  isNoResponse,
   type NtfyConfig,
   type NtfyMessage,
 } from './ntfy';
 
 const INITIAL_RECONNECT_DELAY = 5000;
 const MAX_RECONNECT_DELAY = 60000;
-// Chrome stops an idle extension service worker after 30 s. Since Chrome 116, WebSocket traffic resets
-// that timer, but ntfy only sends a keepalive every 45 s by default, so send a small frame of our own.
+// Chrome stops an idle extension service worker after 30 s, and WebSocket traffic resets that timer,
+// but ntfy only sends a keepalive every 45 s by default, so send a small frame of our own.
 // ntfy reads and discards client frames of up to 64 bytes.
 export const WS_KEEPALIVE_INTERVAL = 20000;
 // How long the read-access check of the topics is reused
@@ -59,6 +60,11 @@ export function createReceiver(events: ReceiverEvents) {
   let status: ReceiverStatus = { ...INITIAL_STATUS };
   /** Server picked at the last connect (main or fallback), also used by the polls */
   let activeApiUrl: string | null = null;
+  /**
+   * Each connect() takes the next number; one that finds a newer number after an await stops, so an
+   * attempt started before a settings change can't subscribe with the old settings.
+   */
+  let connectGeneration = 0;
 
   /** The receiver is the only writer of the status, so it keeps the current one in memory */
   function setStatus(patch: Partial<ReceiverStatus>): void {
@@ -155,6 +161,7 @@ export function createReceiver(events: ReceiverEvents) {
       const socket = new WebSocket(url);
       ws = socket;
       wsUrl = url;
+      let opened = false;
 
       if (status.state !== 'reconnecting') {
         setStatus({ state: 'connecting', server: hostOf(config.apiUrl), retryAt: null });
@@ -164,6 +171,7 @@ export function createReceiver(events: ReceiverEvents) {
 
       socket.onopen = () => {
         console.log('WebSocket connected successfully.');
+        opened = true;
         reconnectDelay = INITIAL_RECONNECT_DELAY;
         setStatus({ state: 'connected', retryAt: null, unreachable: false });
         startKeepalive(socket);
@@ -186,6 +194,11 @@ export function createReceiver(events: ReceiverEvents) {
       socket.onclose = (event: CloseEvent) => {
         stopKeepalive();
         console.log(`WebSocket closed. Code: ${event.code}, Reason: ${event.reason}. Reconnecting...`);
+        // Refused before it opened (e.g. 403 after read access to a topic was revoked): check the
+        // topics' access again instead of reusing the cached result
+        if (!opened) {
+          readableTopicsCache = { key: null, topics: [], time: 0 };
+        }
         scheduleReconnect();
       };
 
@@ -201,7 +214,11 @@ export function createReceiver(events: ReceiverEvents) {
 
   /** Open the socket, or reopen it if the server, credentials or readable topics changed */
   async function connect(): Promise<void> {
+    const generation = ++connectGeneration;
+    const superseded = () => generation !== connectGeneration;
+
     const config = await getConfig();
+    if (superseded()) return;
     if (!config.apiUrl || config.topics.length === 0) {
       console.log('ntfy is not configured, skipping WebSocket connection.');
       close();
@@ -212,11 +229,13 @@ export function createReceiver(events: ReceiverEvents) {
     // Main server, or the fallback if the main one doesn't answer; checked again at every connect
     // (the alarm calls it each minute), so it switches back when the main server returns
     const server = await pickServer(config);
+    if (superseded()) return;
     activeApiUrl = server.apiUrl;
     setStatus({ usingFallback: server.isFallback });
     const onServer = { ...config, apiUrl: server.apiUrl };
 
     const topics = await getReadableTopics(onServer);
+    if (superseded()) return;
     if (topics.length === 0) {
       console.log('No configured topic is readable, skipping WebSocket connection.');
       close();
@@ -253,35 +272,35 @@ export function createReceiver(events: ReceiverEvents) {
 
     const states = await getTopicSyncStates();
     const topics = await getReadableTopics(config);
-    const syncErrors: Record<string, string> = {};
+    const syncErrors: [topic: string, error: string][] = [];
     let unreachable = false;
 
     for (const topic of topics) {
-      // A topic synced for the first time gets its recent history without desktop notifications
-      const state = states[topic];
-      const since = state && state.since !== null ? state.since : INITIAL_SYNC_SINCE;
+      const state = states.get(topic);
+      const since = state?.since ?? INITIAL_SYNC_SINCE;
+      // A topic's first poll loads its recent history without desktop notifications
+      const notify = state?.synced === true;
 
       try {
         const messages = await getNotifications(config, topic, since);
         messages.sort((a, b) => a.time - b.time);
         for (const message of messages) {
-          await handleMessage(message, Boolean(state));
+          await handleMessage(message, notify);
         }
-        if (!state) {
-          await initTopicSyncState(topic);
-        }
+        await completePoll(topic, messages.at(-1)?.time ?? null);
       } catch (error) {
         const message = (error as Error).message;
         console.error(`Failed to sync missed messages for topic ${topic}:`, message);
-        // A network error (fetch rejects with a TypeError) or a 5xx: the server didn't answer
-        const serverDown = error instanceof TypeError || /^HTTP 5\d\d/.test(message);
-        unreachable ||= serverDown;
-        syncErrors[topic] = error instanceof TypeError ? 'no response' : message.replace(/:\s*$/, '');
+        // No response (network error or timeout) or a 5xx: the server didn't answer
+        const noResponse = isNoResponse(error);
+        unreachable ||= noResponse || /^HTTP 5\d\d/.test(message);
+        syncErrors.push([topic, noResponse ? 'no response' : message.replace(/:\s*$/, '')]);
       }
     }
 
     setStatus({ syncErrors, lastSyncAt: Date.now(), ...(unreachable && { unreachable: true }) });
-    await pruneTopicSyncStates(config.topics);
+    // The topics configured now: they may have changed during the poll
+    await pruneTopicSyncStates((await getConfig()).topics);
   }
 
   /** Fetch missed messages; concurrent callers (socket open, alarm, popup) share the sync already running */

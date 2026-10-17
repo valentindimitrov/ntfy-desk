@@ -40,8 +40,11 @@ test.describe('receiving', () => {
     // A topic's first sync is silent (it loads history): wait until it is done
     await expect
       .poll(() =>
-        serviceWorker.evaluate(async () =>
-          Boolean(((await chrome.storage.local.get('topicSyncState')).topicSyncState as Record<string, unknown> | undefined)?.alerts),
+        serviceWorker.evaluate(
+          async () =>
+            ((await chrome.storage.local.get('topicSync')).topicSync as { topic: string; synced: boolean }[] | undefined)?.some(
+              (state) => state.topic === 'alerts' && state.synced,
+            ) === true,
         ),
       )
       .toBe(true);
