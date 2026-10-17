@@ -47,3 +47,4 @@ Open items; remove a row when it lands (the design goes to `ARCHITECTURE.md` if 
 | # | Improvement | Status |
 |---|---|---|
 | 7 | Run-test the Firefox build in Firefox | Open: `web-ext lint` passes; `web-ext run` can't attach while another Firefox instance is running. Close Firefox, then `pnpm dev:firefox` |
+| 8 | Releases: set up the release pipeline once testing (#7) is complete | TODO: no releases yet; don't tag or publish one. `ci.yml` already has a `release` job (on a `v*` tag, publishes the zips), untried |
