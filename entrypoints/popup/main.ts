@@ -17,7 +17,7 @@ import {
   updateTopicDropdown,
 } from './send';
 import { applyTheme, populateSettings, setupSettings, updateServerAccessUI } from './settings';
-import { elements, isConfigured, isPageMode, loadReceiveState, loadSettings, pageParams, state, type Tab } from './state';
+import { elements, isConfigured, isPageMode, loadReceiveState, loadSettings, pageParams, pruneReceiveState, state, type Tab } from './state';
 import { setupTooltips } from './ui';
 
 const appName = browser.runtime.getManifest().name;
@@ -126,6 +126,7 @@ function setupKeyboardShortcut(): void {
 async function init(): Promise<void> {
   await loadSettings();
   state.pageUrl = await getPageUrl();
+  await pruneReceiveState();
   await loadReceiveState();
   await cleanUpAfterBrowserRestart();
   await restoreDraft();

@@ -4,8 +4,14 @@
 import { browser } from 'wxt/browser';
 import type { NtfyMessage } from './ntfy';
 
-export const MAX_HISTORY_ITEMS = 50;
+/** Received messages kept per topic, so a busy topic doesn't push the others out */
+export const MAX_HISTORY_PER_TOPIC = 100;
 export const MAX_SEEN_IDS_PER_TOPIC = 200;
+/**
+ * Deleted ids kept, newest last. They only matter while a deleted message can still come back from a
+ * poll (a topic's first, 24 h sync), so old ones can go.
+ */
+export const MAX_DELETED_IDS = 1000;
 
 /**
  * Per topic: the server time of the newest message seen (the next poll's since=, inclusive) and the
@@ -48,6 +54,28 @@ export async function getHistoryState(): Promise<HistoryState> {
   };
 }
 
+/** Keep the newest MAX_HISTORY_PER_TOPIC messages of each topic (the history is newest first) */
+export function trimHistory(messages: NtfyMessage[]): NtfyMessage[] {
+  const counts = new Map<string, number>();
+  return messages.filter(message => {
+    const count = (counts.get(message.topic) ?? 0) + 1;
+    counts.set(message.topic, count);
+    return count <= MAX_HISTORY_PER_TOPIC;
+  });
+}
+
+/**
+ * The read and deleted id lists without ids that no longer matter: read ids of messages no longer in
+ * the history, and all but the newest MAX_DELETED_IDS deleted ids.
+ */
+export function pruneReadState({ receivedNotifications, readMessageIds, deletedMessageIds }: HistoryState): Pick<HistoryState, 'readMessageIds' | 'deletedMessageIds'> {
+  const inHistory = new Set(receivedNotifications.map(message => message.id));
+  return {
+    readMessageIds: readMessageIds.filter(id => inHistory.has(id)),
+    deletedMessageIds: deletedMessageIds.slice(-MAX_DELETED_IDS),
+  };
+}
+
 /** Messages not deleted and not read */
 export function countUnread({ receivedNotifications, readMessageIds, deletedMessageIds }: HistoryState): number {
   return receivedNotifications.filter(n => !deletedMessageIds.includes(n.id) && !readMessageIds.includes(n.id)).length;
@@ -59,7 +87,7 @@ async function saveToHistory(message: NtfyMessage): Promise<boolean> {
   if (deletedMessageIds.includes(message.id) || receivedNotifications.some(n => n.id === message.id)) {
     return false;
   }
-  const history = [message, ...receivedNotifications].slice(0, MAX_HISTORY_ITEMS);
+  const history = trimHistory([message, ...receivedNotifications]);
   await browser.storage.local.set({ receivedNotifications: history });
   return true;
 }

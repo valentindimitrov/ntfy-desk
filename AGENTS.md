@@ -24,3 +24,17 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 - Each topic's sync cursor is a server time (`since=<unix time>`, inclusive) plus the latest ids; never a global `since=<id>` (ids are global across topics, and an expired id replays the whole cache).
 - A topic's first sync is silent; afterwards a desktop notification is shown only for messages new to the history.
 - The 20 s client keepalive keeps Chrome's service worker alive (ntfy's default keepalive is 45 s; Chrome's idle limit is 30 s).
+
+## Roadmap
+
+Update the status here when an item lands. Each item comes with tests.
+
+| # | Improvement | Status |
+|---|---|---|
+| 1 | History: a limit per topic instead of 50 across all topics; prune the read and deleted id lists | Done: 100 per topic; the popup prunes the id lists |
+| 2 | Connection state in the Receive tab: connected, reconnecting, server unreachable, topics without read access, sync errors | Planned |
+| 3 | Per-topic desktop notification rules: all, from a priority up, or off (the topic stays listed) | Planned |
+| 4 | Clickable notifications: the message's `click` URL, or the message in the extension's tab; `view` actions as buttons. `http` and `broadcast` actions stay out (they would make the browser send requests the publisher chose). | Planned |
+| 5 | Fallback server URL (e.g. LAN first, the public URL when it doesn't answer) for receiving and sending | Planned |
+| 6 | Receive tab: search, image attachment previews (attachments on the ntfy server only), Markdown messages rendered safely (no `innerHTML`) | Planned |
+| 7 | Run-test the Firefox build in Firefox | Not started: only `web-ext lint` so far |

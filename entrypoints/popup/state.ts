@@ -1,6 +1,7 @@
 // State shared by the popup's modules.
 
 import { browser } from 'wxt/browser';
+import { getHistoryState, pruneReadState } from '@/utils/history';
 import { getConfig, parseTopics, type NtfyMessage } from '@/utils/ntfy';
 import type { StoredFile } from '@/utils/stored-files';
 import { getElements, type Elements } from './dom';
@@ -88,6 +89,18 @@ export async function loadSettings(): Promise<void> {
   }
   if (Array.isArray(items.lastTags)) {
     state.tags = items.lastTags.filter((tag): tag is string => typeof tag === 'string');
+  }
+}
+
+/**
+ * Drop read and deleted ids that no longer matter. Only the popup writes these lists, so pruning here
+ * can't race the background.
+ */
+export async function pruneReceiveState(): Promise<void> {
+  const history = await getHistoryState();
+  const pruned = pruneReadState(history);
+  if (pruned.readMessageIds.length !== history.readMessageIds.length || pruned.deletedMessageIds.length !== history.deletedMessageIds.length) {
+    await browser.storage.local.set(pruned);
   }
 }
 
