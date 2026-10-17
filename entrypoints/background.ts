@@ -8,7 +8,9 @@ import { handlePopupRequest } from '@/utils/messages';
 import { AUTH_ORIGINS_KEY, CREDENTIALS_KEY } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 
-const ALARM_NAME = 'ws-keepalive';
+const ALARM_NAME = 'receiver';
+/** The alarm's name while receiving used a WebSocket; cleared on update */
+const OLD_ALARM_NAME = 'ws-keepalive';
 
 export default defineBackground(() => {
   const receiver = createReceiver({
@@ -23,6 +25,7 @@ export default defineBackground(() => {
     void updateContextMenu();
     // Reconnects and polls once a minute, also after the service worker was stopped
     void browser.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
+    void browser.alarms.clear(OLD_ALARM_NAME);
   }
 
   browser.runtime.onInstalled.addListener(setUp);

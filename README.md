@@ -49,7 +49,7 @@ Behind a reverse proxy, turn off response buffering for ntfy (nginx: `proxy_buff
 
 ## Development
 
-Built with [WXT](https://wxt.dev) and TypeScript. Unit tests use [Vitest](https://vitest.dev) with WXT's fake browser; end-to-end tests use [Playwright](https://playwright.dev) with the built extension and a test ntfy server; [Vite+](https://viteplus.dev) lints and formats.
+Built with [WXT](https://wxt.dev) and TypeScript. [ARCHITECTURE.md](ARCHITECTURE.md) describes how the extension works and why. Unit tests use [Vitest](https://vitest.dev) with WXT's fake browser; end-to-end tests use [Playwright](https://playwright.dev) with the built extension and a test ntfy server; [Vite+](https://viteplus.dev) lints and formats.
 
 ```bash
 pnpm install

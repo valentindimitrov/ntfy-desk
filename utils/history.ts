@@ -1,5 +1,5 @@
 // Received messages, read and deleted ids, and the per-topic sync state, all in storage.local. The
-// background is their only writer: the live socket, the catch-up polls and the popup's read and
+// background is their only writer: the live stream, the catch-up polls and the popup's read and
 // delete actions (sent as messages) all go through one queue, so no update overwrites another.
 
 import { browser } from 'wxt/browser';

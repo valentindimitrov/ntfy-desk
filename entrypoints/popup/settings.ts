@@ -1,4 +1,5 @@
-// Settings view: server URL, access token, topics, include-URL option and theme. Changes save as you type.
+// Settings view: server and fallback URL, token or username and password, topics, notification rules,
+// include-URL option and theme. Changes save as you type.
 
 import { browser } from 'wxt/browser';
 import {

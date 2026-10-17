@@ -1,6 +1,6 @@
 # ntfy Desk: notes for agents
 
-Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and receive ntfy notifications. User-facing docs: `README.md`.
+Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and receive ntfy notifications. User-facing docs: `README.md`. How it works and why (receiving, storage, security model, why not WebSockets): `ARCHITECTURE.md`; update it when the design changes.
 
 ## Commands
 
