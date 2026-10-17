@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { getHistoryState, getTopicSyncStates } from '@/utils/history';
 import type { NtfyMessage } from '@/utils/ntfy';
-import { buildWsUrl, createReceiver, WS_KEEPALIVE_INTERVAL } from '@/utils/receiver';
-import { FakeWebSocket, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
+import { MAX_MESSAGE_JSON } from '@/utils/ntfy';
+import { KEEPALIVE_INTERVAL, STREAM_IDLE_TIMEOUT, createReceiver } from '@/utils/receiver';
+import { mockResolved } from './helpers/mock';
+import { FakeStream, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
 let notified: NtfyMessage[];
@@ -17,7 +19,7 @@ function newReceiver() {
   return createReceiver({ onNewMessage: (message) => notified.push(message) });
 }
 
-const lastSocket = () => FakeWebSocket.instances.at(-1)!;
+const lastSocket = () => FakeStream.instances.at(-1)!;
 const path = (url: string) => new URL(url).pathname;
 
 beforeEach(() => {
@@ -119,8 +121,8 @@ describe('topics the credentials can only send to', () => {
     const receiver = newReceiver();
 
     await receiver.connect();
-    expect(FakeWebSocket.instances).toHaveLength(1);
-    expect(path(lastSocket().url)).toBe('/alerts,coolify/ws');
+    expect(FakeStream.instances).toHaveLength(1);
+    expect(path(lastSocket().url)).toBe('/alerts,coolify/json');
 
     await receiver.sync();
     const polled = server.requests.filter((r) => r.url.includes('/json')).map((r) => path(r.url));
@@ -138,16 +140,16 @@ describe('topics the credentials can only send to', () => {
     const before = authCalls();
     await receiver.connect();
     expect(authCalls()).toBe(before);
-    expect(FakeWebSocket.instances).toHaveLength(1); // same socket kept
+    expect(FakeStream.instances).toHaveLength(1); // same socket kept
 
     await fakeBrowser.storage.sync.set({ topics: 'alerts,inbox' });
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts/ws');
+    expect(path(lastSocket().url)).toBe('/alerts/json');
 
     await fakeBrowser.storage.sync.set({ topics: 'inbox' });
-    const sockets = FakeWebSocket.instances.length;
+    const sockets = FakeStream.instances.length;
     await receiver.connect();
-    expect(FakeWebSocket.instances).toHaveLength(sockets); // nothing readable: no socket
+    expect(FakeStream.instances).toHaveLength(sockets); // nothing readable: no socket
   });
 
   it("keeps a topic the server couldn't be asked about, and asks again next time", async () => {
@@ -155,31 +157,30 @@ describe('topics the credentials can only send to', () => {
     server.authDown = true;
     const receiver = newReceiver();
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts,inbox/ws');
+    expect(path(lastSocket().url)).toBe('/alerts,inbox/json');
 
     server.authDown = false;
     server.unreadable = ['inbox'];
     lastSocket().accept();
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts/ws');
+    expect(path(lastSocket().url)).toBe('/alerts/json');
   });
 });
 
-describe('WebSocket', () => {
-  it('passes the credentials as unpadded base64url in ?auth=, with the host only', () => {
-    const decode = (url: string) => Buffer.from(new URL(url).searchParams.get('auth')!, 'base64url').toString();
+describe('subscription stream', () => {
+  it('sends the credentials in the Authorization header, never in the URL', async () => {
+    await configure('a,b', 'tk_x');
+    const receiver = newReceiver();
+    await receiver.connect();
+    expect(lastSocket().url).toBe('https://ntfy.example/a,b/json');
+    expect(lastSocket().auth).toBe('Bearer tk_x');
+    receiver.close();
 
-    const bearer = buildWsUrl({ apiUrl: 'https://ntfy.example/', topics: ['a', 'b'], accessToken: 'tk_x' });
-    expect(bearer.logUrl).toBe('wss://ntfy.example/a,b/ws');
-    expect(decode(bearer.url)).toBe('Bearer tk_x');
-    expect(new URL(bearer.url).searchParams.get('auth')).not.toMatch(/[=+/]/);
-
-    const basic = buildWsUrl({ apiUrl: 'http://us%C3%A9r:p%40ss@ntfy.lan:8080', topics: ['a'], accessToken: '' });
-    expect(basic.logUrl).toBe('ws://ntfy.lan:8080/a/ws');
-    expect(basic.url).not.toContain('@');
-    expect(decode(basic.url)).toBe(`Basic ${Buffer.from('usér:p@ss').toString('base64')}`);
-
-    expect(buildWsUrl({ apiUrl: 'ntfy.example', topics: ['a'], accessToken: '' }).url).toBe('wss://ntfy.example/a/ws');
+    await fakeBrowser.storage.local.set({ accessToken: '', serverCredentials: { username: 'usér', password: 'p@ss' } });
+    await receiver.connect();
+    expect(lastSocket().auth).toBe(`Basic ${Buffer.from('usér:p@ss').toString('base64')}`);
+    expect(lastSocket().url).toBe('https://ntfy.example/a,b/json');
+    receiver.close();
   });
 
   it('never logs the credentials', async () => {
@@ -190,30 +191,89 @@ describe('WebSocket', () => {
     }
     const receiver = newReceiver();
     await receiver.connect();
-    lastSocket().onerror?.({ target: lastSocket() });
-    lastSocket().onclose?.({ code: 1006, reason: '' });
+    lastSocket().refuse(401);
+    await sleep(10);
     receiver.close();
     expect(logs.length).toBeGreaterThan(0);
-    expect(logs.some((line) => line.includes('auth=') || line.includes('tk_secret'))).toBe(false);
+    expect(logs.some((line) => line.includes('tk_secret'))).toBe(false);
   });
 
-  it('sends a keepalive frame while open, and stops after closing', async () => {
+  it('reads messages split across chunks, and drops a line that is too long', async () => {
+    await configure('alerts');
+    const receiver = newReceiver();
+    await receiver.sync(); // first, silent sync
+    await receiver.connect();
+    const stream = lastSocket();
+    stream.accept();
+    const line = JSON.stringify({ id: 'split', event: 'message', topic: 'alerts', time: 10001 });
+    await stream.send(line.slice(0, 20));
+    await stream.send(`${line.slice(20)}\n{"event":"keepalive","id":"k","topic":"alerts","time":1}\n`);
+    await stream.send('x'.repeat(MAX_MESSAGE_JSON + 10));
+    await stream.send(`still the long line\n${JSON.stringify({ id: 'after', event: 'message', topic: 'alerts', time: 10002 })}\n`);
+    expect(notified.map((m) => m.id)).toEqual(['split', 'after']);
+    receiver.close();
+  });
+
+  it('subscribes again when the server ends the stream', async () => {
+    await configure('alerts');
+    const receiver = newReceiver();
+    await receiver.connect();
+    lastSocket().accept();
+    await sleep(5);
+    lastSocket().end();
+    await sleep(10);
+    await receiver.connect(); // the reconnect timer or the alarm
+    expect(FakeStream.instances).toHaveLength(2);
+    receiver.close();
+    expect(lastSocket().aborted).toBe(true);
+  });
+
+  it('calls an extension API while open, to keep the service worker running, and stops after closing', async () => {
+    const ping = mockResolved(fakeBrowser.runtime, 'getPlatformInfo', { os: 'win', arch: 'x86-64', nacl_arch: 'x86-64' });
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     try {
       await configure('alerts');
       const receiver = newReceiver();
       await receiver.connect();
-      const ws = lastSocket();
-      ws.accept();
-      vi.advanceTimersByTime(WS_KEEPALIVE_INTERVAL * 3);
-      expect(ws.sent).toEqual(['keepalive', 'keepalive', 'keepalive']);
-      // ntfy discards client frames of up to 64 bytes
-      expect(ws.sent.every((frame) => frame.length <= 64)).toBe(true);
+      lastSocket().accept();
+      await sleep(5);
+      vi.advanceTimersByTime(KEEPALIVE_INTERVAL * 3);
+      expect(ping).toHaveBeenCalledTimes(3);
 
       receiver.close();
-      vi.advanceTimersByTime(WS_KEEPALIVE_INTERVAL * 3);
-      expect(ws.sent).toHaveLength(3);
+      vi.advanceTimersByTime(KEEPALIVE_INTERVAL * 3);
+      expect(ping).toHaveBeenCalledTimes(3);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('subscribes again when nothing arrives for STREAM_IDLE_TIMEOUT', async () => {
+    await configure('alerts');
+    const receiver = newReceiver();
+    await receiver.connect();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const stream = lastSocket();
+      stream.accept();
+      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT - 1000);
+      await stream.send('{"event":"keepalive"}\n');
+      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT - 1000);
+      expect(stream.aborted).toBe(false); // the keepalive restarted the limit
+
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(stream.aborted).toBe(true);
+      expect(((await fakeBrowser.storage.session.get('receiverStatus')).receiverStatus as { state: string }).state).toBe('reconnecting');
+
+      // A stream that never sends anything is given up too
+      await receiver.connect(); // the reconnect timer or the alarm
+      const silent = lastSocket();
+      expect(silent).not.toBe(stream);
+      silent.accept();
+      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT + 1000);
+      expect(silent.aborted).toBe(true);
+    } finally {
+      receiver.close();
       vi.useRealTimers();
     }
   });

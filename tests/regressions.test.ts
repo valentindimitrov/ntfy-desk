@@ -9,13 +9,13 @@ import { encodeHeaderValue, isNoResponse, sendAttachment, type NtfyMessage } fro
 import { createReceiver } from '@/utils/receiver';
 import { parseTopicRules, ruleFor, storedTopicRules } from '@/utils/rules';
 import { withFallback } from '@/utils/servers';
-import { FakeWebSocket, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
+import { FakeStream, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
 let notified: string[];
 
 const newReceiver = () => createReceiver({ onNewMessage: (message) => notified.push(message.id) });
-const lastSocket = () => FakeWebSocket.instances.at(-1)!;
+const lastSocket = () => FakeStream.instances.at(-1)!;
 const path = (url: string) => new URL(url).pathname;
 
 async function configure(topics: string) {
@@ -36,10 +36,14 @@ describe('#1 catch-up after a reconnect', () => {
     const receiver = newReceiver();
     await receiver.sync(); // first, silent sync: watermark 100
 
-    const missed = server.publish('alerts', 150); // published while the socket was down
+    const missed = server.publish('alerts', 150); // published while the stream was down
     const live = server.publish('alerts', 200);
+    let releasePolls!: () => void;
+    server.pollGate = new Promise((resolve) => (releasePolls = resolve));
     await receiver.connect();
+    lastSocket().accept(); // starts the catch-up poll, held by the gate
     await lastSocket().deliver(live); // arrives before the reconnect's poll
+    releasePolls();
     await receiver.sync();
 
     expect(notified.sort()).toEqual([missed.id, live.id].sort());
@@ -84,7 +88,7 @@ describe('#6 a connect started before a settings change', () => {
     await receiver.connect();
     release();
     await stale;
-    expect(FakeWebSocket.instances).toEqual([]);
+    expect(FakeStream.instances).toEqual([]);
   });
 });
 
@@ -93,12 +97,13 @@ describe('#7 read access revoked for one topic', () => {
     await configure('alerts,inbox');
     const receiver = newReceiver();
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts,inbox/ws');
+    expect(path(lastSocket().url)).toBe('/alerts,inbox/json');
 
     server.unreadable = ['inbox'];
-    lastSocket().onclose?.({ code: 1006, reason: '' }); // refused before it opened (403)
+    lastSocket().refuse(403); // refused before it opened
+    await sleep(10);
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts/ws');
+    expect(path(lastSocket().url)).toBe('/alerts/json');
     receiver.close();
   });
 });

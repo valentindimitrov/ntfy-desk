@@ -4,7 +4,7 @@ import { sendNotification } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 import { isServerUp, pickServer, withFallback } from '@/utils/servers';
 import { getReceiverStatus } from '@/utils/status';
-import { FakeWebSocket, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
+import { FakeStream, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
 const main = 'https://ntfy.lan';
@@ -71,8 +71,8 @@ describe('receiving', () => {
     server.downHosts = ['ntfy.lan'];
     const receiver = createReceiver({ onNewMessage: () => {} });
     await receiver.connect();
-    expect(new URL(FakeWebSocket.instances.at(-1)!.url).host).toBe('ntfy.example.com');
-    FakeWebSocket.instances.at(-1)!.accept();
+    expect(new URL(FakeStream.instances.at(-1)!.url).host).toBe('ntfy.example.com');
+    FakeStream.instances.at(-1)!.accept();
     await sleep(5);
     expect(await getReceiverStatus()).toMatchObject({ state: 'connected', server: 'ntfy.example.com', usingFallback: true });
 
@@ -83,7 +83,7 @@ describe('receiving', () => {
 
     server.downHosts = [];
     await receiver.connect(); // the alarm calls this every minute
-    expect(new URL(FakeWebSocket.instances.at(-1)!.url).host).toBe('ntfy.lan');
+    expect(new URL(FakeStream.instances.at(-1)!.url).host).toBe('ntfy.lan');
     receiver.close();
   });
 });

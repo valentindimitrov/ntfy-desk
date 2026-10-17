@@ -1,5 +1,7 @@
-// A small ntfy server for the end-to-end tests: real HTTP and WebSocket, following ntfy v2.29 where the
-// extension depends on it. Not covered: attachments, caching limits, rate limits.
+// A small ntfy server for the end-to-end tests: real HTTP, with the JSON stream for subscriptions,
+// following ntfy v2.29 where the extension depends on it. Not covered: attachments, caching limits,
+// rate limits, keepalive events. Credentials are only accepted in the Authorization header (real ntfy
+// also takes ?auth=, which the extension must not use).
 //
 // One difference: CORS preflights also allow Authorization explicitly. Real ntfy answers with
 // Access-Control-Allow-Headers: *, which doesn't cover Authorization, so the extension needs host
@@ -7,7 +9,6 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { WebSocketServer, type WebSocket } from 'ws';
 
 export interface ServerMessage {
   id: string;
@@ -36,13 +37,13 @@ export interface NtfyTestServer {
   messages: ServerMessage[];
   /** Messages published by the extension */
   published: PublishedRequest[];
-  /** Topic lists of the WebSocket subscriptions accepted so far */
+  /** Topic lists of the subscriptions (JSON streams) accepted so far */
   subscriptions: string[][];
   /** Publish as another client would: stored, and sent to open subscriptions */
   publish(topic: string, fields?: Partial<ServerMessage>): ServerMessage;
-  /** Close every open WebSocket (the extension reconnects) */
+  /** End every open subscription (the extension reconnects) */
   dropConnections(): void;
-  /** Refuse new WebSocket connections until set back to true */
+  /** Refuse new subscriptions until set back to true */
   acceptConnections: boolean;
   close(): Promise<void>;
 }
@@ -67,15 +68,6 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/** The Authorization value from the header, or from ?auth= (base64url without padding) */
-function authOf(req: IncomingMessage, url: URL): string | undefined {
-  const query = url.searchParams.get('auth');
-  if (query) {
-    return Buffer.from(query, 'base64url').toString('utf8');
-  }
-  return req.headers.authorization;
-}
-
 /** RFC 2047 =?utf-8?B?...?= header values, as the extension sends non-ASCII titles */
 function decodeHeader(value: string | string[] | undefined): string | undefined {
   const text = Array.isArray(value) ? value[0] : value;
@@ -85,8 +77,7 @@ function decodeHeader(value: string | string[] | undefined): string | undefined 
 
 export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer> {
   let nextId = 0;
-  const sockets = new Map<WebSocket, string[]>();
-  const wss = new WebSocketServer({ noServer: true });
+  const streams = new Map<ServerResponse, string[]>();
 
   const server: NtfyTestServer = {
     url: '',
@@ -105,25 +96,24 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
         ...fields,
       };
       server.messages.push(message);
-      for (const [socket, topics] of sockets) {
-        if (topics.includes(topic)) socket.send(JSON.stringify(message));
+      for (const [stream, topics] of streams) {
+        if (topics.includes(topic)) stream.write(`${JSON.stringify(message)}\n`);
       }
       return message;
     },
     dropConnections() {
-      for (const socket of sockets.keys()) socket.terminate();
-      sockets.clear();
+      for (const stream of streams.keys()) stream.destroy();
+      streams.clear();
     },
     close: () =>
       new Promise((resolve) => {
         server.dropConnections();
-        wss.close();
         http.close(() => resolve());
         http.closeAllConnections();
       }),
   };
 
-  const authorized = (req: IncomingMessage, url: URL) => authOf(req, url) === `Bearer ${token}`;
+  const authorized = (req: IncomingMessage) => req.headers.authorization === `Bearer ${token}`;
 
   const http = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -140,7 +130,7 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
 
     const [, topicPart = '', action] = path.split('/');
     const topics = topicPart.split(',').filter(Boolean);
-    if (!authorized(req, url)) {
+    if (!authorized(req)) {
       send(res, 401, '{"code":40101,"http":401,"error":"unauthorized"}');
       return;
     }
@@ -178,6 +168,21 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
         send(res, 403, '{"code":40301,"http":403,"error":"forbidden"}');
         return;
       }
+      // Without poll=1: a subscription, open until either side closes it
+      if (!url.searchParams.has('poll')) {
+        if (!server.acceptConnections) {
+          send(res, 503, '{"code":50301,"http":503,"error":"unavailable"}');
+          return;
+        }
+        res.writeHead(200, { ...CORS, 'Content-Type': 'application/x-ndjson; charset=utf-8' });
+        res.write(
+          `${JSON.stringify({ id: `open${++nextId}`, time: Math.floor(Date.now() / 1000), event: 'open', topic: topics.join(',') })}\n`,
+        );
+        streams.set(res, topics);
+        server.subscriptions.push(topics);
+        req.on('close', () => streams.delete(res));
+        return;
+      }
       const since = url.searchParams.get('since') ?? 'all';
       const now = Math.floor(Date.now() / 1000);
       const minTime = /^\d+$/.test(since) ? Number(since) : /^\d+h$/.test(since) ? now - parseInt(since, 10) * 3600 : 0;
@@ -187,34 +192,6 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
     }
 
     send(res, 404, '{"code":40401,"http":404,"error":"page not found"}');
-  });
-
-  http.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
-    const [, topicPart = '', action] = url.pathname.split('/');
-    const topics = topicPart.split(',').filter(Boolean);
-    const status =
-      action !== 'ws'
-        ? 404
-        : !authorized(req, url)
-          ? 401
-          : topics.some((t) => server.unreadable.has(t))
-            ? 403
-            : !server.acceptConnections
-              ? 503
-              : 0;
-    if (status) {
-      socket.write(`HTTP/1.1 ${status} Refused\r\nConnection: close\r\n\r\n`);
-      socket.destroy();
-      return;
-    }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      sockets.set(ws, topics);
-      server.subscriptions.push(topics);
-      ws.on('close', () => sockets.delete(ws));
-      ws.on('message', () => {}); // the extension's keepalive frames
-      ws.send(JSON.stringify({ id: `open${++nextId}`, time: Math.floor(Date.now() / 1000), event: 'open', topic: topics.join(',') }));
-    });
   });
 
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));

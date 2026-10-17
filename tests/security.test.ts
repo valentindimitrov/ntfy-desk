@@ -18,7 +18,7 @@ import {
 } from '@/utils/ntfy';
 import { MAX_POLL_MESSAGES, createReceiver } from '@/utils/receiver';
 import { describeStatus, INITIAL_STATUS } from '@/utils/status';
-import { FakeWebSocket, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
+import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
 
@@ -67,7 +67,7 @@ describe('#1 credentials are bound to the servers approved on this device', () =
     await receiver.connect();
     const status = (await fakeBrowser.storage.session.get('receiverStatus')).receiverStatus as typeof INITIAL_STATUS;
     expect(status.authHeldBack).toBe(true);
-    expect(FakeWebSocket.instances.at(-1)?.url).not.toContain('auth=');
+    expect(FakeStream.instances.at(-1)?.auth).toBeNull();
     expect(describeStatus(status).map((line) => line.text)).toContain(
       'Token and password not sent: the server address changed. Confirm it in the settings',
     );
@@ -122,7 +122,8 @@ describe('#4 a hostile server cannot fill storage', () => {
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: 'alerts' });
     const receiver = createReceiver({ onNewMessage: () => {} });
     await receiver.connect();
-    const socket = FakeWebSocket.instances.at(-1)!;
+    const socket = FakeStream.instances.at(-1)!;
+    socket.accept();
     await socket.deliver({ id: 'x1', event: 'message', topic: 'invented', time: 1 });
     await socket.deliver({ id: 'a1', event: 'message', topic: 'alerts', time: 1 });
     expect((await getHistoryState()).receivedNotifications.map((m) => m.id)).toEqual(['a1']);
@@ -177,7 +178,7 @@ describe('#4 a hostile server cannot fill storage', () => {
     expect(kept.some((m) => m.id === 'm0')).toBe(false);
   });
 
-  it('parses one WebSocket frame or poll line with the same checks', async () => {
+  it('parses one stream or poll line with the same checks', async () => {
     expect(parseMessageJson('not json')).toBeNull();
     expect(parseMessageJson(JSON.stringify({ id: 'm', event: 'message', topic: 'a', time: 1 }))).not.toBeNull();
     expect(await recordMessage({ id: 'ok', event: 'message', topic: 'a', time: 1 })).toBe(true);

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import {
-  base64UrlEncode,
   CREDENTIALS_KEY,
   buildAuthHeaderValue,
   buildTopicUrl,
@@ -107,14 +106,6 @@ describe('authentication', () => {
     expect(buildAuthHeaderValue({ apiUrl: 'https://us%C3%A9r:p%40ss@ntfy.example', accessToken: '' })).toBe(basic('usér:p@ss'));
     expect(buildAuthHeaderValue({ apiUrl: 'https://ntfy.example', accessToken: '', credentials: null })).toBe('');
     expect(buildAuthHeaderValue({ apiUrl: 'not a url', accessToken: '' })).toBe('');
-  });
-
-  it('encodes ?auth= as unpadded base64url, as ntfy (Go RawURLEncoding) decodes it', () => {
-    for (const value of ['Bearer tk_AgQdq7mVBoFD37zQVN29RhuMzNIz2', 'Basic dXPDqXI6cEBzcw==', 'a', 'ab', '\u00ff\u00fe~?>']) {
-      const encoded = base64UrlEncode(value);
-      expect(encoded).not.toMatch(/[=+/]/);
-      expect(Buffer.from(encoded, 'base64url').toString()).toBe(value);
-    }
   });
 });
 

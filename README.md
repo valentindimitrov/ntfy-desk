@@ -7,7 +7,7 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 
 ## Features
 
-- **Receive**: live messages over a WebSocket, as desktop notifications, with an unread count on the icon. Messages published while the browser was closed are fetched when it starts. High and urgent priority notifications stay until dismissed.
+- **Receive**: live messages over ntfy's JSON stream, as desktop notifications, with an unread count on the icon. Messages published while the browser was closed are fetched when it starts. High and urgent priority notifications stay until dismissed.
 - **Notification rules per topic**: all, from a priority up, or off; the messages are still listed.
 - **Clickable notifications**: a click opens the message's link, or the message in the extension's tab; `view` actions become buttons.
 - **Connection state**: the Receive tab shows whether it's connected, reconnecting or can't reach the server, topics you can only send to, and failed fetches.
@@ -41,9 +41,11 @@ In the settings (gear icon):
 
 ### Receiving and the browser
 
-Chrome stops an idle extension service worker after 30 seconds; WebSocket traffic keeps it running. ntfy's keepalive is 45 seconds by default, so the extension sends a small frame every 20 seconds. Missed messages are also polled once a minute.
+The extension subscribes with ntfy's JSON stream (`/<topics>/json`), which sends the credentials in the `Authorization` header like every other request, never in the URL. (A WebSocket can't carry headers, so it would need them in the URL, where browser error lists and proxy access logs keep them.)
 
-Browsers can't set headers on a WebSocket, so the credentials go in ntfy's `?auth=` query parameter. The extension never logs that URL, but the browser itself logs failed WebSocket connections with the full URL (e.g. on the extensions page's Errors list). Don't share screenshots of those errors.
+Chrome stops an idle extension service worker after 30 seconds, and data arriving on the stream doesn't count as activity, so the extension makes a small extension API call every 20 seconds while subscribed. If nothing arrives for 2½ minutes (ntfy sends a keepalive every 45 seconds by default), it reconnects. Missed messages are also polled once a minute.
+
+Behind a reverse proxy, turn off response buffering for ntfy (nginx: `proxy_buffering off;`, as ntfy's docs recommend), or live messages only arrive with the next poll.
 
 ## Development
 

@@ -119,7 +119,7 @@ export interface NtfyAction {
   clear?: boolean;
 }
 
-/** A message as ntfy delivers it (JSON stream, poll or WebSocket) */
+/** A message as ntfy delivers it (JSON stream or poll) */
 export interface NtfyMessage {
   id: string;
   time: number;
@@ -138,7 +138,7 @@ export interface NtfyMessage {
   content_type?: string;
 }
 
-/** Longest message JSON accepted from the server (a WebSocket frame or a poll line), in characters */
+/** Longest message JSON accepted from the server (a line of the stream or of a poll), in characters */
 export const MAX_MESSAGE_JSON = 32 * 1024;
 /** Longest poll response read, in bytes */
 const MAX_POLL_BYTES = 4 * 1024 * 1024;
@@ -223,7 +223,7 @@ export function parseMessage(value: unknown): NtfyMessage | null {
   });
 }
 
-/** A message from one line of JSON (WebSocket frame or poll line); null if it's too long or not a message */
+/** A message from one line of JSON (stream or poll); null if it's too long or not a message */
 export function parseMessageJson(json: string): NtfyMessage | null {
   if (json.length > MAX_MESSAGE_JSON) {
     return null;
@@ -352,14 +352,6 @@ function base64Encode(value: string): string {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary);
-}
-
-/**
- * Encode a string as ntfy's ?auth= query parameter expects it: base64url without padding
- * (Go's base64.RawURLEncoding) of the whole Authorization header value
- */
-export function base64UrlEncode(value: string): string {
-  return base64Encode(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /**
@@ -530,6 +522,22 @@ export async function canReadTopic(server: NtfyServer, topic: string): Promise<b
   } catch {
     return null;
   }
+}
+
+/**
+ * Subscribe to topics: ntfy's JSON stream (GET /<topics>/json) sends each new message as a line, and
+ * a keepalive event every 45 s by default. Unlike a WebSocket, it carries the credentials in the
+ * Authorization header, never in the URL.
+ */
+export function openMessageStream(server: NtfyServer, topics: string[], signal: AbortSignal): Promise<Response> {
+  const headers = buildAuthHeaders(server);
+  return fetch(`${buildTopicUrl(server.apiUrl, topics.join(','))}/json`, {
+    method: 'GET',
+    headers,
+    redirect: redirectPolicy(headers),
+    cache: 'no-store',
+    signal,
+  });
 }
 
 /** Cached messages of a topic: since is a message id, a unix time, a duration such as '24h', or 'all' */
