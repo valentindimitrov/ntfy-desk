@@ -40,8 +40,8 @@ describe('picking a server', () => {
 describe('sending', () => {
   it('retries on the fallback when the main server gives no response', async () => {
     server.downHosts = ['ntfy.lan'];
-    await withFallback(config, s => sendNotification(s, 'inbox', { message: 'x' }));
-    expect(server.requests.map(r => r.url)).toEqual(['https://ntfy.lan/inbox', 'https://ntfy.example.com/inbox']);
+    await withFallback(config, (s) => sendNotification(s, 'inbox', { message: 'x' }));
+    expect(server.requests.map((r) => r.url)).toEqual(['https://ntfy.lan/inbox', 'https://ntfy.example.com/inbox']);
   });
 
   it("doesn't retry an HTTP error: the server answered", async () => {
@@ -67,8 +67,8 @@ describe('receiving', () => {
 
     // Polls go to the server in use
     await receiver.sync();
-    const polls = server.requests.filter(r => r.url.includes('/json'));
-    expect(polls.every(r => r.url.startsWith(fallback))).toBe(true);
+    const polls = server.requests.filter((r) => r.url.includes('/json'));
+    expect(polls.every((r) => r.url.startsWith(fallback))).toBe(true);
 
     server.downHosts = [];
     await receiver.connect(); // the alarm calls this every minute

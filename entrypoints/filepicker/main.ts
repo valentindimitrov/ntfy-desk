@@ -41,19 +41,19 @@ async function processFiles(files: File[]): Promise<void> {
 
 dropZone.addEventListener('click', () => fileInput.click());
 
-dropZone.addEventListener('dragover', event => {
+dropZone.addEventListener('dragover', (event) => {
   event.preventDefault();
   event.stopPropagation();
   dropZone.classList.add('drag-over');
 });
 
-dropZone.addEventListener('dragleave', event => {
+dropZone.addEventListener('dragleave', (event) => {
   event.preventDefault();
   event.stopPropagation();
   dropZone.classList.remove('drag-over');
 });
 
-dropZone.addEventListener('drop', event => {
+dropZone.addEventListener('drop', (event) => {
   event.preventDefault();
   event.stopPropagation();
   dropZone.classList.remove('drag-over');
@@ -61,8 +61,8 @@ dropZone.addEventListener('drop', event => {
 });
 
 // A file dropped outside the zone shouldn't open in the window
-window.addEventListener('dragover', event => event.preventDefault());
-window.addEventListener('drop', event => event.preventDefault());
+window.addEventListener('dragover', (event) => event.preventDefault());
+window.addEventListener('drop', (event) => event.preventDefault());
 
 fileInput.addEventListener('change', () => {
   const files = Array.from(fileInput.files ?? []);

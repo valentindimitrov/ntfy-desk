@@ -1,71 +1,69 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Attach files - ntfy Desk</title>
     <style>
-        /* Filepicker layout overrides */
-        html,
-        body {
-            height: 100%;
-            overflow-y: auto;
-        }
+      /* Filepicker layout overrides */
+      html,
+      body {
+        height: 100%;
+        overflow-y: auto;
+      }
 
-        body {
-            display: flex;
-            flex-direction: column;
-        }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
 
-        .header {
-            min-height: 56px;
-            gap: 8px;
-            flex-shrink: 0;
-        }
+      .header {
+        min-height: 56px;
+        gap: 8px;
+        flex-shrink: 0;
+      }
 
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 10px 20px 8px 20px;
-            text-align: center;
-        }
+      .main-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 20px 8px 20px;
+        text-align: center;
+      }
 
-        .status {
-            margin-top: 8px;
-            padding: 10px;
-            border-radius: 8px;
-        }
+      .status {
+        margin-top: 8px;
+        padding: 10px;
+        border-radius: 8px;
+      }
     </style>
-</head>
+  </head>
 
-<body>
+  <body>
     <!-- Header -->
     <div class="header">
-        <div class="header-title">
-            <img src="/icon/48.png" alt="">
-            <span>Attach files</span>
-        </div>
+      <div class="header-title">
+        <img src="/icon/48.png" alt="" />
+        <span>Attach files</span>
+      </div>
     </div>
 
     <!-- Main Content -->
     <div class="main-content">
-        <p class="subtitle">Select or drop files to attach to your notifications</p>
+      <p class="subtitle">Select or drop files to attach to your notifications</p>
 
-        <div class="drop-zone" id="drop-zone">
-            <div class="drop-zone-icon">📎</div>
-            <div class="drop-zone-text">Drop files here</div>
-            <div class="drop-zone-hint">or click to browse</div>
-        </div>
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-icon">📎</div>
+        <div class="drop-zone-text">Drop files here</div>
+        <div class="drop-zone-hint">or click to browse</div>
+      </div>
 
-        <input type="file" id="file-input" class="file-input" multiple>
+      <input type="file" id="file-input" class="file-input" multiple />
 
-        <div class="status" id="status"></div>
+      <div class="status" id="status"></div>
     </div>
 
     <script type="module" src="./main.ts"></script>
-</body>
-
+  </body>
 </html>

@@ -34,7 +34,7 @@ describe('createZip', () => {
     expect(zip.type).toBe('application/zip');
 
     const entries = readZip(new Uint8Array(await zip.arrayBuffer()));
-    expect(entries.map(e => e.name)).toEqual(['notes.txt', 'Grüße.bin']);
+    expect(entries.map((e) => e.name)).toEqual(['notes.txt', 'Grüße.bin']);
     expect(entries[0]!.data.toString()).toBe('hello hello hello');
     expect([...entries[1]!.data]).toEqual([0, 1, 2, 255]);
     for (const entry of entries) {

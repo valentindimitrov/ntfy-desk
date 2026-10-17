@@ -63,7 +63,7 @@ export function createReceiver(events: ReceiverEvents) {
   /** The receiver is the only writer of the status, so it keeps the current one in memory */
   function setStatus(patch: Partial<ReceiverStatus>): void {
     status = { ...status, ...patch };
-    writeReceiverStatus(status).catch(error => console.error('Failed to save the connection status:', error));
+    writeReceiverStatus(status).catch((error) => console.error('Failed to save the connection status:', error));
   }
 
   // ntfy rejects a subscription to several topics if any one of them isn't readable, and a topic the
@@ -74,7 +74,7 @@ export function createReceiver(events: ReceiverEvents) {
       return readableTopicsCache.topics;
     }
 
-    const access = await Promise.all(config.topics.map(topic => canReadTopic(config, topic)));
+    const access = await Promise.all(config.topics.map((topic) => canReadTopic(config, topic)));
     // A topic the server couldn't be asked about (null) is kept, and the result isn't cached
     const topics = config.topics.filter((_, i) => access[i] !== false);
     const skipped = config.topics.filter((_, i) => access[i] === false);
@@ -245,7 +245,10 @@ export function createReceiver(events: ReceiverEvents) {
     const configured = await getConfig();
     if (!configured.apiUrl || configured.topics.length === 0) return;
     // The server the socket uses; before the first connect, pick one
-    const apiUrl = activeApiUrl && [configured.apiUrl, configured.fallbackUrl].includes(activeApiUrl) ? activeApiUrl : (await pickServer(configured)).apiUrl;
+    const apiUrl =
+      activeApiUrl && [configured.apiUrl, configured.fallbackUrl].includes(activeApiUrl)
+        ? activeApiUrl
+        : (await pickServer(configured)).apiUrl;
     const config = { ...configured, apiUrl };
 
     const states = await getTopicSyncStates();
@@ -295,4 +298,3 @@ export function createReceiver(events: ReceiverEvents) {
 }
 
 export type Receiver = ReturnType<typeof createReceiver>;
-

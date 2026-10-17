@@ -27,7 +27,7 @@ const message = (id: string, topic: string, minutesAgo: number, extra: Partial<N
 });
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
-const flush = () => new Promise(resolve => setTimeout(resolve, 20));
+const flush = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 async function openPopup(search = ''): Promise<void> {
   history.replaceState(null, '', `/popup.html${search}`);
@@ -50,10 +50,13 @@ beforeEach(async () => {
   vi.spyOn(window, 'close').mockImplementation(() => {
     closed = true;
   });
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
-    requests.push({ url, headers: new Headers(init.headers), body: init.body });
-    return new Response('', { status: 200 });
-  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      requests.push({ url, headers: new Headers(init.headers), body: init.body });
+      return new Response('', { status: 200 });
+    }),
+  );
 
   await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: 'alerts,coolify,inbox', lastTopic: 'inbox' });
   await fakeBrowser.storage.local.set({ accessToken: 'tk_x' });
@@ -70,9 +73,9 @@ describe('Receive tab', () => {
 
   it('lists the messages of all topics, with a topic list and unread counts', async () => {
     await openPopup('?tab=receive');
-    const sidebar = [...document.querySelectorAll('.topic-filter-btn')].map(button => button.textContent);
+    const sidebar = [...document.querySelectorAll('.topic-filter-btn')].map((button) => button.textContent);
     expect(sidebar).toEqual(['All topics2', 'alerts1', 'coolify1', 'inbox']);
-    const titles = [...document.querySelectorAll('.notification-title')].map(title => title.textContent);
+    const titles = [...document.querySelectorAll('.notification-title')].map((title) => title.textContent);
     expect(titles).toEqual(['a1', 'c1', 'a2']); // newest first
     expect($('.notification-time').textContent).toBe('alerts · 2m ago');
     expect(document.body.classList.contains('receive-active')).toBe(true);
@@ -83,7 +86,7 @@ describe('Receive tab', () => {
     await openPopup('?tab=receive');
     document.querySelectorAll<HTMLElement>('.topic-filter-btn')[1]!.click(); // alerts
     await flush();
-    expect([...document.querySelectorAll('.notification-title')].map(t => t.textContent)).toEqual(['a1', 'a2']);
+    expect([...document.querySelectorAll('.notification-title')].map((t) => t.textContent)).toEqual(['a1', 'a2']);
     expect(await fakeBrowser.storage.local.get('receiveTopicFilter')).toEqual({ receiveTopicFilter: 'alerts' });
 
     $('#delete-all-btn').click();
@@ -94,15 +97,23 @@ describe('Receive tab', () => {
 
   it('shows the connection state and marks topics the credentials can only send to', async () => {
     await fakeBrowser.storage.session.set({
-      receiverStatus: { state: 'reconnecting', server: 'ntfy.example', unreadableTopics: ['inbox'], unreachable: true, retryAt: Date.now() + 30000, syncErrors: { alerts: 'HTTP 502' }, lastSyncAt: null },
+      receiverStatus: {
+        state: 'reconnecting',
+        server: 'ntfy.example',
+        unreadableTopics: ['inbox'],
+        unreachable: true,
+        retryAt: Date.now() + 30000,
+        syncErrors: { alerts: 'HTTP 502' },
+        lastSyncAt: null,
+      },
     });
     await openPopup('?tab=receive');
-    const lines = [...document.querySelectorAll('.status-line')].map(line => [line.className, line.textContent]);
+    const lines = [...document.querySelectorAll('.status-line')].map((line) => [line.className, line.textContent]);
     expect(lines).toEqual([
       ['status-line error', "Can't reach ntfy.example, retrying in 30 s"],
       ['status-line warning', "Couldn't fetch missed messages: alerts (HTTP 502)"],
     ]);
-    const inbox = [...document.querySelectorAll<HTMLElement>('.topic-filter-btn')].find(b => b.textContent?.startsWith('inbox'))!;
+    const inbox = [...document.querySelectorAll<HTMLElement>('.topic-filter-btn')].find((b) => b.textContent?.startsWith('inbox'))!;
     expect(inbox.classList.contains('send-only')).toBe(true);
     expect(inbox.textContent).toBe('inboxsend only');
   });
@@ -121,8 +132,8 @@ describe('Receive tab', () => {
     });
     const create = mockResolved(fakeBrowser.tabs, 'create', {});
     await openPopup('?tab=receive');
-    const item = [...document.querySelectorAll<HTMLElement>('.notification-item')].find(el => el.dataset.id === 'linked')!;
-    expect([...item.querySelectorAll('.notification-view-action')].map(b => b.textContent)).toEqual(['↗ Logs']); // no http action
+    const item = [...document.querySelectorAll<HTMLElement>('.notification-item')].find((el) => el.dataset.id === 'linked')!;
+    expect([...item.querySelectorAll('.notification-view-action')].map((b) => b.textContent)).toEqual(['↗ Logs']); // no http action
     item.querySelector<HTMLElement>('.notification-link')!.click();
     item.querySelector<HTMLElement>('.notification-view-action')!.click();
     expect(create.mock.calls).toEqual([[{ url: 'https://status.example/incident' }], [{ url: 'https://logs.example' }]]);
@@ -144,12 +155,12 @@ describe('Receive tab', () => {
     search.value = 'COOLIFY';
     search.dispatchEvent(new Event('input'));
     await flush();
-    expect([...document.querySelectorAll('.notification-title')].map(t => t.textContent)).toEqual(['c1']);
+    expect([...document.querySelectorAll('.notification-title')].map((t) => t.textContent)).toEqual(['c1']);
 
     search.value = 'body a2';
     search.dispatchEvent(new Event('input'));
     await flush();
-    expect([...document.querySelectorAll('.notification-title')].map(t => t.textContent)).toEqual(['a2']);
+    expect([...document.querySelectorAll('.notification-title')].map((t) => t.textContent)).toEqual(['a2']);
 
     search.value = 'nothing like this';
     search.dispatchEvent(new Event('input'));
@@ -184,8 +195,10 @@ describe('Receive tab', () => {
       ],
     });
     await openPopup('?tab=receive');
-    const withImage = [...document.querySelectorAll<HTMLElement>('.notification-item')].filter(item => item.querySelector('.notification-image'));
-    expect(withImage.map(item => item.dataset.id)).toEqual(['onServer']);
+    const withImage = [...document.querySelectorAll<HTMLElement>('.notification-item')].filter((item) =>
+      item.querySelector('.notification-image'),
+    );
+    expect(withImage.map((item) => item.dataset.id)).toEqual(['onServer']);
     expect(withImage[0]!.querySelector('img')!.getAttribute('src')).toBe('https://ntfy.example/file/abc.png');
   });
 
@@ -251,7 +264,7 @@ describe('Send tab', () => {
     $('#send-btn').click();
     await vi.waitFor(() => expect($('#status').textContent).toBe('Notification sent!'));
     expect(requests).toHaveLength(1);
-    await new Promise(resolve => setTimeout(resolve, 150)); // past the popup's 100 ms close delay
+    await new Promise((resolve) => setTimeout(resolve, 150)); // past the popup's 100 ms close delay
     expect(closed).toBe(false);
   });
 });
@@ -291,7 +304,9 @@ describe('settings', () => {
     const token = $<HTMLInputElement>('#token-input');
     token.value = 'tk_new';
     token.dispatchEvent(new Event('input'));
-    await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' }), { timeout: 3000 });
+    await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' }), {
+      timeout: 3000,
+    });
     expect(await fakeBrowser.storage.sync.get('accessToken')).toEqual({});
   });
 
@@ -300,12 +315,12 @@ describe('settings', () => {
     $('#settings-btn').click();
     await flush();
     const selects = [...document.querySelectorAll<HTMLSelectElement>('.notify-rule-select')];
-    expect(selects.map(select => select.getAttribute('aria-label'))).toEqual([
+    expect(selects.map((select) => select.getAttribute('aria-label'))).toEqual([
       'Desktop notifications for alerts',
       'Desktop notifications for coolify',
       'Desktop notifications for inbox',
     ]);
-    expect(selects.every(select => select.value === 'all')).toBe(true);
+    expect(selects.every((select) => select.value === 'all')).toBe(true);
 
     selects[1]!.value = 'off';
     selects[1]!.dispatchEvent(new Event('change'));
@@ -323,7 +338,7 @@ describe('settings', () => {
   it('marks topics with notifications off in the Receive tab', async () => {
     await fakeBrowser.storage.sync.set({ notifyRules: { coolify: 'off' } });
     await openPopup('?tab=receive');
-    const coolify = [...document.querySelectorAll('.topic-filter-btn')].find(b => b.textContent?.startsWith('coolify'))!;
+    const coolify = [...document.querySelectorAll('.topic-filter-btn')].find((b) => b.textContent?.startsWith('coolify'))!;
     expect(coolify.querySelector('.topic-muted')?.textContent).toBe('🔕');
   });
 });

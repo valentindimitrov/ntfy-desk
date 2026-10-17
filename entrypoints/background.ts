@@ -10,7 +10,7 @@ const ALARM_NAME = 'ws-keepalive';
 
 export default defineBackground(() => {
   const receiver = createReceiver({
-    onNewMessage: message => void notifyNewMessage(message),
+    onNewMessage: (message) => void notifyNewMessage(message),
     onConnected: () => void updateUnreadBadge(),
   });
 
@@ -41,7 +41,7 @@ export default defineBackground(() => {
     }
   });
 
-  browser.alarms.onAlarm.addListener(alarm => {
+  browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM_NAME) {
       void receiver.connect();
       void receiver.sync();
@@ -50,7 +50,7 @@ export default defineBackground(() => {
 
   browser.contextMenus.onClicked.addListener((info, tab) => void handleContextMenuClick(info, tab));
   browser.notifications.onButtonClicked.addListener((id, index) => void handleNotificationButton(id, index));
-  browser.notifications.onClicked.addListener(id => void handleNotificationClick(id));
+  browser.notifications.onClicked.addListener((id) => void handleNotificationClick(id));
 
   // The popup asks for a sync when it opens and when the Receive tab is shown
   browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {

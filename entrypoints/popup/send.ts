@@ -72,7 +72,7 @@ function selectTopic(topic: string): void {
 }
 
 function updateDropdownSelection(selected: string): void {
-  elements.topicDropdownOptions.querySelectorAll<HTMLElement>('.custom-dropdown-option').forEach(option => {
+  elements.topicDropdownOptions.querySelectorAll<HTMLElement>('.custom-dropdown-option').forEach((option) => {
     option.classList.toggle('selected', option.dataset.value === selected);
   });
 }
@@ -86,7 +86,7 @@ function closeTopicDropdown(): void {
 // ==================
 
 export function updatePriorityUI(): void {
-  elements.priorityChips.querySelectorAll<HTMLElement>('.chip').forEach(chip => {
+  elements.priorityChips.querySelectorAll<HTMLElement>('.chip').forEach((chip) => {
     chip.classList.toggle('active', Number(chip.dataset.priority) === state.selectedPriority);
   });
 }
@@ -96,7 +96,7 @@ function saveTags(): void {
 }
 
 export function renderTags(): void {
-  elements.tagsContainer.querySelectorAll('.tag-badge').forEach(badge => badge.remove());
+  elements.tagsContainer.querySelectorAll('.tag-badge').forEach((badge) => badge.remove());
 
   state.tags.forEach((tag, index) => {
     const badge = document.createElement('div');
@@ -154,7 +154,7 @@ async function getLastBrowsingTabUrl(): Promise<string> {
     }
     const own = await browser.tabs.getCurrent();
     const tabs = await browser.tabs.query({ windowType: 'normal' });
-    const pages = tabs.filter(tab => tab.id !== own?.id && isHttpUrl(tab.url));
+    const pages = tabs.filter((tab) => tab.id !== own?.id && isHttpUrl(tab.url));
     pages.sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
     return pages[0]?.url ?? '';
   } catch {
@@ -189,7 +189,7 @@ export function applyUrlTitle(): void {
 
 function useTabUrl(): void {
   // Called directly from the click: permissions.request needs a user gesture
-  void browser.permissions.request({ permissions: ['tabs'] }).then(async granted => {
+  void browser.permissions.request({ permissions: ['tabs'] }).then(async (granted) => {
     if (!granted) {
       showStatus('Allow reading tabs to use the tab URL', 'warning');
       return;
@@ -236,7 +236,7 @@ function scheduleDraftSave(): void {
   cancelScheduledDraftSave();
   draftSaveTimer = setTimeout(() => {
     draftSaveTimer = null;
-    saveDraft().catch(error => console.error('Error saving draft:', error));
+    saveDraft().catch((error) => console.error('Error saving draft:', error));
   }, 250);
 }
 
@@ -348,7 +348,7 @@ function handleZipToggleChange(): void {
     return;
   }
   state.sendAsZipEnabled = elements.zipCheckbox.checked;
-  saveSync({ sendAsZipEnabled: state.sendAsZipEnabled }).catch(error => console.error('Error saving ZIP preference:', error));
+  saveSync({ sendAsZipEnabled: state.sendAsZipEnabled }).catch((error) => console.error('Error saving ZIP preference:', error));
 }
 
 async function setAttachments(files: StoredFile[]): Promise<void> {
@@ -482,15 +482,17 @@ export async function send(): Promise<void> {
   const servers = { apiUrl: state.apiUrl, fallbackUrl: state.fallbackUrl, accessToken: state.accessToken };
   try {
     if (files.length === 0) {
-      await withFallback(servers, server => sendNotification(server, topic, { message, title, priority, tags }));
+      await withFallback(servers, (server) => sendNotification(server, topic, { message, title, priority, tags }));
       await finishSuccessfulSend(0);
       return;
     }
 
     if (files.length > 1 && elements.zipCheckbox.checked) {
-      const zip = await createZip(files.map(file => ({ name: file.name, data: decodeDataUrl(file.data) })));
+      const zip = await createZip(files.map((file) => ({ name: file.name, data: decodeDataUrl(file.data) })));
       const filename = getZipFilename();
-      await withFallback(servers, server => sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }));
+      await withFallback(servers, (server) =>
+        sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
+      );
       await finishSuccessfulSend(files.length, 'ZIP sent!');
       return;
     }
@@ -501,19 +503,24 @@ export async function send(): Promise<void> {
     for (const file of files) {
       try {
         const data = decodeDataUrl(file.data) as BodyInit;
-        await withFallback(servers, server => sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags }));
+        await withFallback(servers, (server) =>
+          sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags }),
+        );
       } catch (error) {
         failures.push({ file, error: error as Error });
         continue;
       }
-      remaining = remaining.filter(other => other !== file);
+      remaining = remaining.filter((other) => other !== file);
       await setAttachments(remaining);
     }
 
     if (failures.length > 0) {
       // Failed files stay attached and the form stays as it is, for a retry
       const details = failures.map(({ file, error }) => `${file.name}: ${error.message}`).join('; ');
-      showStatus(`${files.length - failures.length} of ${files.length} attachment${files.length === 1 ? '' : 's'} sent. Failed: ${details}`, 'error');
+      showStatus(
+        `${files.length - failures.length} of ${files.length} attachment${files.length === 1 ? '' : 's'} sent. Failed: ${details}`,
+        'error',
+      );
       return;
     }
     await finishSuccessfulSend(files.length);
@@ -549,10 +556,10 @@ export function setupSend(): void {
 
   elements.zipCheckbox.addEventListener('change', handleZipToggleChange);
   elements.fileBtn.addEventListener('click', () => void openFilePicker());
-  elements.fileInput.addEventListener('change', event => void handleFileSelect(event));
-  elements.filePreview.addEventListener('click', event => void handleAttachmentRemove(event));
+  elements.fileInput.addEventListener('change', (event) => void handleFileSelect(event));
+  elements.filePreview.addEventListener('click', (event) => void handleAttachmentRemove(event));
 
-  elements.priorityChips.addEventListener('click', event => {
+  elements.priorityChips.addEventListener('click', (event) => {
     const chip = (event.target as Element).closest<HTMLElement>('.chip');
     if (!chip?.dataset.priority) return;
     state.selectedPriority = Number(chip.dataset.priority);
@@ -562,7 +569,7 @@ export function setupSend(): void {
 
   elements.newTagInput.addEventListener('keydown', handleTagKeydown);
   elements.newTagInput.addEventListener('input', updateTagInputHint);
-  elements.tagsContainer.addEventListener('click', event => {
+  elements.tagsContainer.addEventListener('click', (event) => {
     const target = event.target as HTMLElement;
     if (target.classList.contains('tag-remove')) {
       state.tags.splice(Number(target.dataset.index), 1);
@@ -582,7 +589,7 @@ export function setupSend(): void {
   });
 
   elements.topicDropdownSelected.addEventListener('click', () => elements.topicDropdown.classList.toggle('open'));
-  document.addEventListener('click', event => {
+  document.addEventListener('click', (event) => {
     if (!elements.topicDropdown.contains(event.target as Node)) {
       closeTopicDropdown();
     }

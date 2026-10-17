@@ -66,9 +66,11 @@ describe('status text', () => {
     expect(describeStatus({ ...base, state: 'no-readable-topics' })[0]!.level).toBe('error');
   });
 
-  it('counts down to the next attempt, and says when the server can\'t be reached', () => {
+  it("counts down to the next attempt, and says when the server can't be reached", () => {
     const now = 1_000_000;
-    expect(describeStatus({ ...base, state: 'reconnecting', retryAt: now + 9500 }, now)[0]!.text).toBe('Disconnected from ntfy.example, reconnecting in 10 s');
+    expect(describeStatus({ ...base, state: 'reconnecting', retryAt: now + 9500 }, now)[0]!.text).toBe(
+      'Disconnected from ntfy.example, reconnecting in 10 s',
+    );
     expect(describeStatus({ ...base, state: 'reconnecting', retryAt: now - 1, unreachable: true }, now)[0]).toEqual({
       text: "Can't reach ntfy.example, retrying…",
       level: 'error',

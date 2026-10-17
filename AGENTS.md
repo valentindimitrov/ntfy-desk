@@ -4,7 +4,8 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 
 ## Commands
 
-- `pnpm check`: type check (`tsc --noEmit`, strict with `noUncheckedIndexedAccess`) and Vitest. Run it before every commit.
+- `pnpm check`: format check, lint with type checking, and Vitest. Run it before every commit; `pnpm fmt` fixes formatting.
+- Lint and format come from Vite+ (`vp lint`, `vp fmt`; settings in `vite.config.ts`, used only by Vite+). Oxlint runs with type-aware rules and the full type check (`typeCheck`), strict with `noUncheckedIndexedAccess`; warnings fail. `pnpm compile` runs `tsc --noEmit` on its own. Markdown isn't formatted.
 - `pnpm build` / `pnpm build:firefox`: `.output/chrome-mv3`, `.output/firefox-mv3`.
 - `pnpm zip` / `pnpm zip:firefox`: the release zips.
 - `pnpm dev`: opens a browser with hot reload. The owner loads `.output/chrome-mv3` unpacked in Vivaldi on the laptop.

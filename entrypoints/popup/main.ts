@@ -18,7 +18,18 @@ import {
   updateTopicDropdown,
 } from './send';
 import { applyTheme, populateSettings, setupSettings, updateServerAccessUI } from './settings';
-import { elements, isConfigured, isPageMode, loadReceiveState, loadSettings, pageParams, pruneReceiveState, saveLocal, state, type Tab } from './state';
+import {
+  elements,
+  isConfigured,
+  isPageMode,
+  loadReceiveState,
+  loadSettings,
+  pageParams,
+  pruneReceiveState,
+  saveLocal,
+  state,
+  type Tab,
+} from './state';
 import { setupTooltips } from './ui';
 
 const appName = browser.runtime.getManifest().name;
@@ -33,8 +44,8 @@ function switchTab(tab: Tab): void {
   if (tab === state.activeTab) return;
   state.activeTab = tab;
 
-  elements.tabButtons.forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
-  elements.tabContents.forEach(content => content.classList.toggle('active', content.id === `tab-content-${tab}`));
+  elements.tabButtons.forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
+  elements.tabContents.forEach((content) => content.classList.toggle('active', content.id === `tab-content-${tab}`));
   document.body.classList.toggle('receive-active', tab === 'receive');
 
   if (tab === 'receive') {
@@ -91,7 +102,7 @@ async function openInTab(): Promise<void> {
 /** Right Ctrl + Enter sends */
 function setupKeyboardShortcut(): void {
   let rightCtrlDown = false;
-  document.addEventListener('keydown', event => {
+  document.addEventListener('keydown', (event) => {
     if (event.code === 'ControlRight') {
       rightCtrlDown = true;
     }
@@ -101,7 +112,7 @@ function setupKeyboardShortcut(): void {
       elements.sendBtn.click();
     }
   });
-  document.addEventListener('keyup', event => {
+  document.addEventListener('keyup', (event) => {
     if (event.code === 'ControlRight') {
       rightCtrlDown = false;
     }
@@ -131,7 +142,7 @@ async function init(): Promise<void> {
   elements.settingsBtn.addEventListener('click', showSettingsView);
   elements.backBtn.addEventListener('click', showMainView);
   elements.popoutBtn.addEventListener('click', () => void openInTab());
-  elements.tabButtons.forEach(button => button.addEventListener('click', () => switchTab(button.dataset.tab as Tab)));
+  elements.tabButtons.forEach((button) => button.addEventListener('click', () => switchTab(button.dataset.tab as Tab)));
 
   await updateServerAccessUI(state.apiUrl, state.accessToken);
   updateUI();

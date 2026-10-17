@@ -13,7 +13,7 @@ export function applyTheme(): void {
 }
 
 function updateThemeChips(): void {
-  elements.themeChips.querySelectorAll<HTMLElement>('.chip').forEach(chip => {
+  elements.themeChips.querySelectorAll<HTMLElement>('.chip').forEach((chip) => {
     chip.classList.toggle('active', chip.dataset.theme === state.theme);
   });
 }
@@ -36,7 +36,7 @@ export function serverOriginPattern(apiUrl: string): string | null {
 /** Sites of the main and fallback servers that send credentials (a token, or user:password in the URL) */
 function authenticatedPatterns(apiUrl: string, fallbackUrl: string, accessToken: string): string[] {
   const patterns = [apiUrl, fallbackUrl]
-    .filter(url => url && buildAuthHeaderValue(accessToken, url))
+    .filter((url) => url && buildAuthHeaderValue(accessToken, url))
     .map(serverOriginPattern)
     .filter((pattern): pattern is string => pattern !== null);
   return [...new Set(patterns)];
@@ -67,7 +67,7 @@ function requestServerAccess(): void {
   if (patterns.length === 0) return;
 
   // Called directly from the click: permissions.request needs a user gesture
-  void browser.permissions.request({ origins: patterns }).then(granted => {
+  void browser.permissions.request({ origins: patterns }).then((granted) => {
     showSettingsStatus(granted ? 'Server access granted' : 'Server access not granted', granted ? 'success' : 'error');
     void updateServerAccessUI(apiUrl, elements.tokenInput.value, fallbackUrl);
   });
@@ -118,7 +118,7 @@ function saveNotifyRules(): Promise<void> {
 function renderNotifyRules(): void {
   elements.notifyRulesGroup.style.display = state.topics.length > 0 ? '' : 'none';
   elements.notifyRules.replaceChildren(
-    ...state.topics.map(topic => {
+    ...state.topics.map((topic) => {
       const row = document.createElement('label');
       row.className = 'notify-rule';
 
@@ -150,7 +150,7 @@ function renderNotifyRules(): void {
 
 function renderTopics(): void {
   renderNotifyRules();
-  elements.topicsContainer.querySelectorAll('.topic-badge').forEach(badge => badge.remove());
+  elements.topicsContainer.querySelectorAll('.topic-badge').forEach((badge) => badge.remove());
 
   state.topics.forEach((topic, index) => {
     const badge = document.createElement('div');
@@ -217,7 +217,7 @@ export function setupSettings(): void {
 
   elements.newTopicInput.addEventListener('keydown', handleTopicKeydown);
   elements.newTopicInput.addEventListener('input', updateTopicInputHint);
-  elements.topicsContainer.addEventListener('click', event => {
+  elements.topicsContainer.addEventListener('click', (event) => {
     const target = event.target as HTMLElement;
     if (target.classList.contains('topic-remove')) {
       state.topics.splice(Number(target.dataset.index), 1);
@@ -230,7 +230,7 @@ export function setupSettings(): void {
     }
   });
 
-  elements.themeChips.addEventListener('click', event => {
+  elements.themeChips.addEventListener('click', (event) => {
     const theme = (event.target as Element).closest<HTMLElement>('.chip')?.dataset.theme;
     if (theme !== 'light' && theme !== 'dark' && theme !== 'auto') return;
     state.theme = theme satisfies Theme;

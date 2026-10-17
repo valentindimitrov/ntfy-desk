@@ -10,7 +10,7 @@ async function findExtensionTab(): Promise<{ tabId: number; windowId: number } |
   if (!browser.runtime.getContexts) return null;
   // The types declare ContextType as an enum; its value is this string in every browser
   const contexts = await browser.runtime.getContexts({ contextTypes: ['TAB' as Browser.runtime.ContextType] });
-  const open = contexts.find(context => context.documentUrl?.startsWith(pageUrl()));
+  const open = contexts.find((context) => context.documentUrl?.startsWith(pageUrl()));
   return open ? { tabId: open.tabId, windowId: open.windowId } : null;
 }
 

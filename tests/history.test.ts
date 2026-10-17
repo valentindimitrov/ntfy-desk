@@ -16,18 +16,18 @@ describe('history limit', () => {
       await recordMessage(message(`busy-${i}`, 'busy', i));
     }
     const { receivedNotifications } = await getHistoryState();
-    const busy = receivedNotifications.filter(m => m.topic === 'busy');
+    const busy = receivedNotifications.filter((m) => m.topic === 'busy');
     expect(busy).toHaveLength(MAX_HISTORY_PER_TOPIC);
     expect(busy[0]!.id).toBe(`busy-${MAX_HISTORY_PER_TOPIC + 19}`); // newest first
     expect(busy.at(-1)!.id).toBe('busy-20');
-    expect(receivedNotifications.some(m => m.id === 'quiet-1')).toBe(true);
+    expect(receivedNotifications.some((m) => m.id === 'quiet-1')).toBe(true);
   });
 
   it('trims per topic without reordering', () => {
     const messages = Array.from({ length: MAX_HISTORY_PER_TOPIC + 1 }, (_, i) => message(`a${i}`, 'a'));
     const trimmed = trimHistory([message('b0', 'b'), ...messages]);
     expect(trimmed[0]!.id).toBe('b0');
-    expect(trimmed.filter(m => m.topic === 'a')).toHaveLength(MAX_HISTORY_PER_TOPIC);
+    expect(trimmed.filter((m) => m.topic === 'a')).toHaveLength(MAX_HISTORY_PER_TOPIC);
   });
 });
 

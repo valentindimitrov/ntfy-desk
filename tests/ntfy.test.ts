@@ -22,7 +22,13 @@ describe('configuration', () => {
   it('reads the server and topics from sync, and the token from local storage only', async () => {
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: ' a, b ,,c', includeUrl: true, accessToken: 'tk_synced' });
     await setAccessToken('tk_local');
-    expect(await getConfig()).toEqual({ apiUrl: 'https://ntfy.example', fallbackUrl: '', accessToken: 'tk_local', topics: ['a', 'b', 'c'], includeUrl: true });
+    expect(await getConfig()).toEqual({
+      apiUrl: 'https://ntfy.example',
+      fallbackUrl: '',
+      accessToken: 'tk_local',
+      topics: ['a', 'b', 'c'],
+      includeUrl: true,
+    });
     expect(await fakeBrowser.storage.sync.get('accessToken')).toEqual({ accessToken: 'tk_synced' }); // never read from or written to sync
   });
 
@@ -73,10 +79,13 @@ describe('helpers', () => {
 describe('requests', () => {
   function stubFetch(body = '', status = 200) {
     const calls: { url: string; init: RequestInit }[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
-      calls.push({ url, init });
-      return new Response(body, { status, statusText: status === 200 ? 'OK' : 'Forbidden' });
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({ url, init });
+        return new Response(body, { status, statusText: status === 200 ? 'OK' : 'Forbidden' });
+      }),
+    );
     return calls;
   }
   const server = { apiUrl: 'https://ntfy.example', accessToken: 'tk_x' };
@@ -101,7 +110,12 @@ describe('requests', () => {
 
   it('sends an attachment with its filename, message and content type', async () => {
     const calls = stubFetch();
-    await sendAttachment(server, 'inbox', { data: new Uint8Array([1, 2]), filename: 'ä.zip', contentType: 'application/zip', message: 'm' });
+    await sendAttachment(server, 'inbox', {
+      data: new Uint8Array([1, 2]),
+      filename: 'ä.zip',
+      contentType: 'application/zip',
+      message: 'm',
+    });
     const headers = new Headers(calls[0]!.init.headers);
     expect(headers.get('X-Filename')).toMatch(/^=\?utf-8\?B\?/);
     expect(headers.get('Content-Type')).toBe('application/zip');
@@ -118,11 +132,11 @@ describe('requests', () => {
       { id: 'o', event: 'open', topic: 'a', time: 1 },
       { id: 'm1', event: 'message', topic: 'a', time: 2 },
       { id: 'k', event: 'keepalive', topic: 'a', time: 3 },
-    ].map(line => JSON.stringify(line));
+    ].map((line) => JSON.stringify(line));
     const calls = stubFetch([...lines, 'not json', ''].join('\n'));
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const messages = await getNotifications(server, 'a', 10);
     expect(calls[0]!.url).toBe('https://ntfy.example/a/json?poll=1&since=10');
-    expect(messages.map(m => m.id)).toEqual(['m1']);
+    expect(messages.map((m) => m.id)).toEqual(['m1']);
   });
 });

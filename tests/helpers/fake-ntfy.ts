@@ -75,12 +75,12 @@ export function installFakeNtfy(): FakeServer {
   };
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input));
+    const url = new URL(input instanceof Request ? input.url : input.toString());
     const headers = new Headers(init?.headers);
     server.requests.push({ url: url.toString(), auth: headers.get('Authorization') });
     const topic = url.pathname.split('/')[1] ?? '';
     // Some latency, so concurrent calls interleave
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 3));
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 3));
     if (server.downHosts.includes(url.host)) {
       throw new TypeError('Failed to fetch');
     }
@@ -98,16 +98,16 @@ export function installFakeNtfy(): FakeServer {
       return new Response('', { status: server.pollStatus });
     }
     const since = url.searchParams.get('since') ?? 'all';
-    let messages = server.messages.filter(m => m.topic === topic);
+    let messages = server.messages.filter((m) => m.topic === topic);
     if (/^\d+$/.test(since)) {
-      messages = messages.filter(m => m.time >= Number(since));
+      messages = messages.filter((m) => m.time >= Number(since));
     } else if (/^\d+h$/.test(since)) {
-      messages = messages.filter(m => m.time >= server.now - parseInt(since, 10) * 3600);
+      messages = messages.filter((m) => m.time >= server.now - parseInt(since, 10) * 3600);
     } else if (since !== 'all') {
-      const row = server.messages.findIndex(m => m.id === since);
-      messages = messages.filter(m => server.messages.indexOf(m) > row);
+      const row = server.messages.findIndex((m) => m.id === since);
+      messages = messages.filter((m) => server.messages.indexOf(m) > row);
     }
-    return new Response(messages.map(m => JSON.stringify(m)).join('\n'), { status: 200 });
+    return new Response(messages.map((m) => JSON.stringify(m)).join('\n'), { status: 200 });
   });
 
   FakeWebSocket.instances = [];
@@ -116,4 +116,4 @@ export function installFakeNtfy(): FakeServer {
   return server;
 }
 
-export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

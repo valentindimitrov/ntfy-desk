@@ -14,7 +14,7 @@ async function configure(topics: string, accessToken = 'tk_test') {
 }
 
 function newReceiver() {
-  return createReceiver({ onNewMessage: message => notified.push(message) });
+  return createReceiver({ onNewMessage: (message) => notified.push(message) });
 }
 
 const lastSocket = () => FakeWebSocket.instances.at(-1)!;
@@ -43,7 +43,12 @@ describe('sync and live messages', () => {
     expect(notified).toEqual([]); // the first sync of a topic is silent
 
     // Live messages on both topics while polls run concurrently
-    const live = [server.publish('backups', 10001), server.publish('alerts', 10002), server.publish('backups', 10003), server.publish('alerts', 10003)];
+    const live = [
+      server.publish('backups', 10001),
+      server.publish('alerts', 10002),
+      server.publish('backups', 10003),
+      server.publish('alerts', 10003),
+    ];
     for (const message of live) {
       void ws.deliver(message);
       void receiver.sync();
@@ -51,25 +56,25 @@ describe('sync and live messages', () => {
     await sleep(30);
     for (let i = 0; i < 3; i++) await receiver.sync();
     await sleep(30);
-    expect(notified.map(m => m.id).sort()).toEqual(live.map(m => m.id).sort());
+    expect(notified.map((m) => m.id).sort()).toEqual(live.map((m) => m.id).sort());
 
     // Published while the socket was down: the next sync delivers it once
     const missed = server.publish('alerts', 10010);
     await receiver.sync();
     await receiver.sync();
-    expect(notified.filter(m => m.id === missed.id)).toHaveLength(1);
+    expect(notified.filter((m) => m.id === missed.id)).toHaveLength(1);
 
     // No history update lost, no duplicates
     const { receivedNotifications } = await getHistoryState();
     expect(receivedNotifications).toHaveLength(7);
-    expect(new Set(receivedNotifications.map(m => m.id)).size).toBe(7);
+    expect(new Set(receivedNotifications.map((m) => m.id)).size).toBe(7);
 
     // Cursors per topic, and polls by time, never since=<id>
     const states = await getTopicSyncStates();
     expect(states.alerts?.since).toBe(10010);
     expect(states.backups?.since).toBe(10003);
-    expect(server.requests.every(r => !/since=m\d/.test(r.url))).toBe(true);
-    expect(server.requests.every(r => r.auth === 'Bearer tk_test')).toBe(true);
+    expect(server.requests.every((r) => !/since=m\d/.test(r.url))).toBe(true);
+    expect(server.requests.every((r) => r.auth === 'Bearer tk_test')).toBe(true);
   });
 
   it('syncs a new topic silently and forgets removed topics', async () => {
@@ -91,7 +96,7 @@ describe('sync and live messages', () => {
     const first = server.publish('empty', 10020);
     await receiver.sync();
     await receiver.sync();
-    expect(notified.map(m => m.id)).toEqual([first.id]);
+    expect(notified.map((m) => m.id)).toEqual([first.id]);
   });
 
   it("doesn't re-add or notify a message deleted in the popup", async () => {
@@ -118,8 +123,8 @@ describe('topics the credentials can only send to', () => {
     expect(path(lastSocket().url)).toBe('/alerts,coolify/ws');
 
     await receiver.sync();
-    const polled = server.requests.filter(r => r.url.includes('/json')).map(r => path(r.url));
-    expect(polled.some(p => p.startsWith('/inbox'))).toBe(false);
+    const polled = server.requests.filter((r) => r.url.includes('/json')).map((r) => path(r.url));
+    expect(polled.some((p) => p.startsWith('/inbox'))).toBe(false);
   });
 
   it('reuses the check, and re-checks when the topics change', async () => {
@@ -129,7 +134,7 @@ describe('topics the credentials can only send to', () => {
     await receiver.connect();
     lastSocket().accept();
 
-    const authCalls = () => server.requests.filter(r => r.url.endsWith('/auth')).length;
+    const authCalls = () => server.requests.filter((r) => r.url.endsWith('/auth')).length;
     const before = authCalls();
     await receiver.connect();
     expect(authCalls()).toBe(before);
@@ -189,7 +194,7 @@ describe('WebSocket', () => {
     lastSocket().onclose?.({ code: 1006, reason: '' });
     receiver.close();
     expect(logs.length).toBeGreaterThan(0);
-    expect(logs.some(line => line.includes('auth=') || line.includes('tk_secret'))).toBe(false);
+    expect(logs.some((line) => line.includes('auth=') || line.includes('tk_secret'))).toBe(false);
   });
 
   it('sends a keepalive frame while open, and stops after closing', async () => {
@@ -203,7 +208,7 @@ describe('WebSocket', () => {
       vi.advanceTimersByTime(WS_KEEPALIVE_INTERVAL * 3);
       expect(ws.sent).toEqual(['keepalive', 'keepalive', 'keepalive']);
       // ntfy discards client frames of up to 64 bytes
-      expect(ws.sent.every(frame => frame.length <= 64)).toBe(true);
+      expect(ws.sent.every((frame) => frame.length <= 64)).toBe(true);
 
       receiver.close();
       vi.advanceTimersByTime(WS_KEEPALIVE_INTERVAL * 3);

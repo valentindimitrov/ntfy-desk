@@ -1,15 +1,14 @@
 {
   "name": "ntfy-desk",
-  "description": "Browser extension to send and receive ntfy notifications",
   "version": "0.1.0",
-  "license": "GPL-3.0-only",
   "private": true,
-  "type": "module",
-  "packageManager": "pnpm@12.14.0",
+  "description": "Browser extension to send and receive ntfy notifications",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/valentindimitrov/ntfy-desk.git"
   },
+  "type": "module",
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
@@ -18,17 +17,22 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "lint": "vp lint --deny-warnings",
+    "fmt": "vp fmt",
+    "fmt:check": "vp fmt --check",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm compile && pnpm test",
+    "check": "vp fmt --check && vp lint --deny-warnings && vitest run",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
     "happy-dom": "^21.0.3",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
+    "vite-plus": "1.3.0",
     "vitest": "^5.0.5",
     "web-ext": "^10.5.0",
     "wxt": "^0.21.3"
-  }
+  },
+  "packageManager": "pnpm@12.14.0"
 }

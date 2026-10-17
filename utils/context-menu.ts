@@ -35,7 +35,12 @@ export async function updateContextMenu(): Promise<void> {
 
   for (const kind of KINDS) {
     if (topics.length === 1) {
-      browser.contextMenus.create({ id: kind.id, parentId: PARENT_MENU_ID, title: `${kind.label} (${topics[0]})`, contexts: kind.contexts });
+      browser.contextMenus.create({
+        id: kind.id,
+        parentId: PARENT_MENU_ID,
+        title: `${kind.label} (${topics[0]})`,
+        contexts: kind.contexts,
+      });
       continue;
     }
     const submenuId = `${PARENT_MENU_ID}-${kind.id}`;
@@ -114,18 +119,20 @@ export async function handleContextMenuClick(info: Browser.contextMenus.OnClickD
 
   try {
     if (isKind(menuId, SEND_SELECTION_ID)) {
-      await withFallback(config, server => sendNotification(server, topic, { message: info.selectionText, title: pageUrlTitle(config, tab) }));
+      await withFallback(config, (server) =>
+        sendNotification(server, topic, { message: info.selectionText, title: pageUrlTitle(config, tab) }),
+      );
     } else if (isKind(menuId, SEND_IMAGE_ID) && info.srcUrl) {
       const srcUrl = info.srcUrl;
-      await withFallback(config, server => sendImageFromUrl(server, topic, srcUrl, '', pageUrlTitle(config, tab)));
+      await withFallback(config, (server) => sendImageFromUrl(server, topic, srcUrl, '', pageUrlTitle(config, tab)));
     } else if (isKind(menuId, SEND_LINK_ID) && info.linkUrl) {
       // The link text is the title, so the page URL goes in the message
       const title = await getLinkText(tab, info.linkUrl);
       const pageUrl = pageUrlTitle(config, tab);
       const message = pageUrl ? `${info.linkUrl}\n\nSent from: ${pageUrl}` : info.linkUrl;
-      await withFallback(config, server => sendNotification(server, topic, { message, title }));
+      await withFallback(config, (server) => sendNotification(server, topic, { message, title }));
     } else if (isKind(menuId, SEND_TAB_ID)) {
-      await withFallback(config, server => sendNotification(server, topic, { message: tab?.url, title: tab?.title }));
+      await withFallback(config, (server) => sendNotification(server, topic, { message: tab?.url, title: tab?.title }));
     } else {
       return;
     }

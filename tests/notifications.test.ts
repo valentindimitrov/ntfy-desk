@@ -1,12 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { callsOf, mockResolved } from './helpers/mock';
-import { handleNotificationButton, handleNotificationClick, notificationButtons, showDesktopNotification, updateUnreadBadge } from '@/utils/notifications';
+import {
+  handleNotificationButton,
+  handleNotificationClick,
+  notificationButtons,
+  showDesktopNotification,
+  updateUnreadBadge,
+} from '@/utils/notifications';
 import type { NtfyMessage } from '@/utils/ntfy';
 
 type Options = Browser.notifications.NotificationCreateOptions;
 
-const message = (id: string, extra: Partial<NtfyMessage> = {}): NtfyMessage => ({ id, event: 'message', topic: 'alerts', time: 1, ...extra });
+const message = (id: string, extra: Partial<NtfyMessage> = {}): NtfyMessage => ({
+  id,
+  event: 'message',
+  topic: 'alerts',
+  time: 1,
+  ...extra,
+});
 
 beforeEach(() => {
   fakeBrowser.reset();
@@ -20,7 +32,12 @@ describe('desktop notifications', () => {
 
     const [id, options] = callsOf<[string, Options]>(create)[0]!;
     expect(id).toBe('a');
-    expect(options).toMatchObject({ title: 'Disk full [⇈ Urgent]', message: '91%', contextMessage: 'Topic: alerts', requireInteraction: true });
+    expect(options).toMatchObject({
+      title: 'Disk full [⇈ Urgent]',
+      message: '91%',
+      contextMessage: 'Topic: alerts',
+      requireInteraction: true,
+    });
     const low = callsOf<[string, Options]>(create)[1]![1];
     expect(low).toMatchObject({ title: 'Notification [↓ Low]', requireInteraction: false });
   });
@@ -35,7 +52,7 @@ describe('desktop notifications', () => {
     const create = mockResolved(fakeBrowser.notifications, 'create', '');
     showDesktopNotification(message('good', { attachment: { url: 'https://ntfy.example/file/a.png' } }));
     showDesktopNotification(message('bad', { attachment: { url: 'javascript:alert(1)' } }));
-    const buttons = callsOf<[string, Options]>(create).map(call => call[1].buttons);
+    const buttons = callsOf<[string, Options]>(create).map((call) => call[1].buttons);
     expect(buttons).toEqual([[{ title: '🔗 Open Attachment' }], undefined]);
   });
 
@@ -69,9 +86,15 @@ describe('desktop notifications', () => {
 
   it('opens the click URL when the notification is clicked, else the message in the extension tab', async () => {
     await fakeBrowser.storage.local.set({
-      receivedNotifications: [message('withUrl', { click: 'https://status.example/x' }), message('plain'), message('badUrl', { click: 'file:///x' })],
+      receivedNotifications: [
+        message('withUrl', { click: 'https://status.example/x' }),
+        message('plain'),
+        message('badUrl', { click: 'file:///x' }),
+      ],
     });
-    vi.spyOn(fakeBrowser.runtime, 'getURL').mockImplementation(((path: string) => `chrome-extension://id${path}`) as typeof fakeBrowser.runtime.getURL);
+    vi.spyOn(fakeBrowser.runtime, 'getURL').mockImplementation(
+      ((path: string) => `chrome-extension://id${path}`) as typeof fakeBrowser.runtime.getURL,
+    );
     mockResolved(fakeBrowser.runtime, 'getContexts', []);
     const create = mockResolved(fakeBrowser.tabs, 'create', {});
     const clear = mockResolved(fakeBrowser.notifications, 'clear', true);
@@ -89,7 +112,10 @@ describe('desktop notifications', () => {
 
   it('opens only http(s) attachment URLs from the button', async () => {
     await fakeBrowser.storage.local.set({
-      receivedNotifications: [message('good', { attachment: { url: 'https://ntfy.example/f' } }), message('bad', { attachment: { url: 'file:///etc/passwd' } })],
+      receivedNotifications: [
+        message('good', { attachment: { url: 'https://ntfy.example/f' } }),
+        message('bad', { attachment: { url: 'file:///etc/passwd' } }),
+      ],
     });
     const create = mockResolved(fakeBrowser.tabs, 'create', {});
     await handleNotificationButton('bad', 0);

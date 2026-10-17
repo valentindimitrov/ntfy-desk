@@ -18,8 +18,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm compile
-      - run: pnpm test
+      # Format, lint with type checking (Vite+), tests
+      - run: pnpm check
       - run: pnpm zip
       - run: pnpm zip:firefox
       - uses: actions/upload-artifact@v7

@@ -67,7 +67,7 @@ export async function notifyNewMessage(message: NtfyMessage): Promise<void> {
 
 async function findMessage(id: string): Promise<NtfyMessage | undefined> {
   const { receivedNotifications } = await getHistoryState();
-  return receivedNotifications.find(message => message.id === id);
+  return receivedNotifications.find((message) => message.id === id);
 }
 
 /** A notification button: open its URL (http(s) only), and dismiss the notification if the action says so */

@@ -17,7 +17,9 @@ describe('renderMarkdown', () => {
   });
 
   it('links to http(s) only, opening in a new tab', () => {
-    expect(html('[logs](https://logs.example/a)')).toBe('<p><a href="https://logs.example/a" target="_blank" rel="noopener noreferrer">logs</a></p>');
+    expect(html('[logs](https://logs.example/a)')).toBe(
+      '<p><a href="https://logs.example/a" target="_blank" rel="noopener noreferrer">logs</a></p>',
+    );
     expect(html('[click](javascript:alert(1))')).toBe('<p>click)</p>');
     expect(html('[file](file:///etc/passwd)')).toBe('<p>file</p>');
   });
@@ -32,6 +34,8 @@ describe('renderMarkdown', () => {
 
 describe('markdownToText', () => {
   it('strips the markup for desktop notifications', () => {
-    expect(markdownToText('# Alert\n**Disk** at *91%*, see [logs](https://x.example)\n- `sda`')).toBe('Alert\nDisk at 91%, see logs\n• sda');
+    expect(markdownToText('# Alert\n**Disk** at *91%*, see [logs](https://x.example)\n- `sda`')).toBe(
+      'Alert\nDisk at 91%, see logs\n• sda',
+    );
   });
 });

@@ -5,7 +5,13 @@ import type { NtfyMessage } from '@/utils/ntfy';
 import { getTopicRules, shouldNotify, type TopicRules } from '@/utils/rules';
 import { callsOf, mockResolved } from './helpers/mock';
 
-const message = (topic: string, priority?: number): NtfyMessage => ({ id: `${topic}-${priority}`, event: 'message', topic, time: 1, priority });
+const message = (topic: string, priority?: number): NtfyMessage => ({
+  id: `${topic}-${priority}`,
+  event: 'message',
+  topic,
+  time: 1,
+  priority,
+});
 
 beforeEach(() => {
   fakeBrowser.reset();
@@ -36,6 +42,6 @@ describe('notification rules', () => {
     await fakeBrowser.storage.sync.set({ notifyRules: { coolify: 'off' } });
     await notifyNewMessage(message('coolify', 5));
     await notifyNewMessage(message('alerts', 2));
-    expect(callsOf<[string]>(create).map(call => call[0])).toEqual(['alerts-2']);
+    expect(callsOf<[string]>(create).map((call) => call[0])).toEqual(['alerts-2']);
   });
 });

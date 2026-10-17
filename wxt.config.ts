@@ -6,7 +6,8 @@ export default defineConfig({
   manifestVersion: 3,
   manifest: ({ browser }) => ({
     name: 'ntfy Desk',
-    description: 'Send and receive ntfy notifications: desktop notifications, a message list per topic, file attachments, priority and tags',
+    description:
+      'Send and receive ntfy notifications: desktop notifications, a message list per topic, file attachments, priority and tags',
     // WebSocket traffic keeps an extension service worker running since Chrome 116
     minimum_chrome_version: '116',
     permissions: ['activeTab', 'storage', 'unlimitedStorage', 'contextMenus', 'scripting', 'notifications', 'alarms'],

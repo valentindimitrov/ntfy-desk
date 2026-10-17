@@ -20,10 +20,13 @@ beforeEach(async () => {
   vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ name: 'ntfy Desk', version: '0', manifest_version: 3 });
   vi.spyOn(fakeBrowser.action, 'setBadgeText').mockResolvedValue();
   vi.spyOn(fakeBrowser.action, 'setBadgeBackgroundColor').mockResolvedValue();
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
-    published.push({ url, headers: new Headers(init.headers), body: init.body });
-    return new Response('', { status: 200 });
-  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      published.push({ url, headers: new Headers(init.headers), body: init.body });
+      return new Response('', { status: 200 });
+    }),
+  );
   await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', includeUrl: true });
 });
 
@@ -35,14 +38,17 @@ describe('menu', () => {
   it('has one item per kind for a single topic', async () => {
     await fakeBrowser.storage.sync.set({ topics: 'inbox' });
     await updateContextMenu();
-    expect(created.map(item => item.title)).toEqual(['ntfy Desk', 'Page (inbox)', 'Text (inbox)', 'Image (inbox)', 'Link (inbox)']);
+    expect(created.map((item) => item.title)).toEqual(['ntfy Desk', 'Page (inbox)', 'Text (inbox)', 'Image (inbox)', 'Link (inbox)']);
   });
 
   it('has a submenu of topics per kind for several topics', async () => {
     await fakeBrowser.storage.sync.set({ topics: 'inbox,alerts' });
     await updateContextMenu();
-    const page = created.filter(item => item.parentId === 'ntfy-parent-ntfy-send-tab');
-    expect(page.map(item => [item.id, item.title])).toEqual([['ntfy-send-tab-0', 'inbox'], ['ntfy-send-tab-1', 'alerts']]);
+    const page = created.filter((item) => item.parentId === 'ntfy-parent-ntfy-send-tab');
+    expect(page.map((item) => [item.id, item.title])).toEqual([
+      ['ntfy-send-tab-0', 'inbox'],
+      ['ntfy-send-tab-1', 'alerts'],
+    ]);
   });
 
   it('is empty without a server or topics', async () => {

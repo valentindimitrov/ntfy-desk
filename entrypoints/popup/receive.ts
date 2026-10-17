@@ -28,10 +28,10 @@ export function formatTime(unixTime: number, now = new Date()): string {
 /** All topics, then each configured topic, with unread counts */
 function renderTopicSidebar(messages: NtfyMessage[]): void {
   const unreadCount = (topic: string) =>
-    messages.filter(m => (topic === 'all' || m.topic === topic) && !state.readMessageIds.includes(m.id)).length;
+    messages.filter((m) => (topic === 'all' || m.topic === topic) && !state.readMessageIds.includes(m.id)).length;
 
   elements.topicSidebar.replaceChildren(
-    ...['all', ...state.topics].map(topic => {
+    ...['all', ...state.topics].map((topic) => {
       const button = document.createElement('button');
       button.className = 'topic-filter-btn';
       button.classList.toggle('active', topic === state.receiveFilter);
@@ -89,7 +89,7 @@ export function focusMessage(id: string): void {
 function applyPendingFocus(): void {
   if (!pendingFocus || !focusedId) return;
   const id = focusedId;
-  const item = [...elements.notificationsList.querySelectorAll<HTMLElement>('.notification-item')].find(el => el.dataset.id === id);
+  const item = [...elements.notificationsList.querySelectorAll<HTMLElement>('.notification-item')].find((el) => el.dataset.id === id);
   if (!item) return;
   pendingFocus = false;
   item.scrollIntoView({ block: 'center' });
@@ -104,7 +104,7 @@ export function matchesSearch(message: NtfyMessage, query: string): boolean {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
   const text = [message.title, message.message, message.topic, ...(message.tags ?? []), message.attachment?.name].join(' ').toLowerCase();
-  return words.every(word => text.includes(word));
+  return words.every((word) => text.includes(word));
 }
 
 /**
@@ -116,7 +116,7 @@ export function previewableImage(message: NtfyMessage, serverUrls: string[], now
   if (!attachment?.type?.startsWith('image/') || !isHttpUrl(attachment.url)) return null;
   if (attachment.expires && attachment.expires * 1000 < now) return null;
   const origin = new URL(attachment.url).origin;
-  const onServer = serverUrls.some(url => {
+  const onServer = serverUrls.some((url) => {
     try {
       return new URL(url).origin === origin;
     } catch {
@@ -244,22 +244,24 @@ export async function loadNotifications(): Promise<void> {
 
   try {
     const { receivedNotifications } = await getHistoryState();
-    const all = receivedNotifications.filter(m => !state.deletedMessageIds.includes(m.id));
+    const all = receivedNotifications.filter((m) => !state.deletedMessageIds.includes(m.id));
 
     if (state.receiveFilter !== 'all' && !state.topics.includes(state.receiveFilter)) {
       state.receiveFilter = 'all';
     }
     renderTopicSidebar(all);
 
-    const inTopic = state.receiveFilter === 'all' ? all : all.filter(m => m.topic === state.receiveFilter);
+    const inTopic = state.receiveFilter === 'all' ? all : all.filter((m) => m.topic === state.receiveFilter);
     const query = elements.notificationsSearch.value;
-    const shown = inTopic.filter(m => matchesSearch(m, query));
+    const shown = inTopic.filter((m) => matchesSearch(m, query));
     state.currentNotifications = shown;
     // Hidden rather than removed, so the heading doesn't move
     elements.notificationsControlBar.style.visibility = shown.length > 0 ? 'visible' : 'hidden';
 
     if (shown.length === 0) {
-      elements.notificationsList.replaceChildren(emptyMessage(inTopic.length > 0 ? 'No messages match the search' : 'No recent notifications'));
+      elements.notificationsList.replaceChildren(
+        emptyMessage(inTopic.length > 0 ? 'No messages match the search' : 'No recent notifications'),
+      );
       return;
     }
     shown.sort((a, b) => b.time - a.time);
@@ -330,9 +332,9 @@ async function copyLink(url: string, button: HTMLElement): Promise<void> {
 }
 
 async function markAllRead(): Promise<void> {
-  const unread = state.currentNotifications.filter(m => !state.readMessageIds.includes(m.id));
+  const unread = state.currentNotifications.filter((m) => !state.readMessageIds.includes(m.id));
   if (unread.length === 0) return;
-  state.readMessageIds.push(...unread.map(m => m.id));
+  state.readMessageIds.push(...unread.map((m) => m.id));
   try {
     await saveLocal({ readMessageIds: state.readMessageIds });
     showStatus('All marked as read', 'success');
@@ -349,9 +351,9 @@ async function deleteAll(): Promise<void> {
     return;
   }
 
-  const ids = state.currentNotifications.map(m => m.id);
+  const ids = state.currentNotifications.map((m) => m.id);
   state.deletedMessageIds = [...new Set([...state.deletedMessageIds, ...ids])];
-  state.readMessageIds = state.readMessageIds.filter(id => !ids.includes(id));
+  state.readMessageIds = state.readMessageIds.filter((id) => !ids.includes(id));
   try {
     await saveLocal({ deletedMessageIds: state.deletedMessageIds, readMessageIds: state.readMessageIds });
     showStatus('All notifications deleted', 'success');

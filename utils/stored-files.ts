@@ -31,7 +31,8 @@ export function readFileAsDataUrl(file: File): Promise<StoredFile> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      resolve({ name: file.name, type: file.type, size: file.size, data: String(reader.result) });
+      // readAsDataURL: the result is a string
+      resolve({ name: file.name, type: file.type, size: file.size, data: typeof reader.result === 'string' ? reader.result : '' });
     };
     reader.onerror = () => reject(new Error(`Failed to read "${file.name}"`));
     reader.onabort = () => reject(new Error(`Reading "${file.name}" was cancelled`));

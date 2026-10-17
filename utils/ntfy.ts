@@ -26,7 +26,8 @@ export interface NtfyAttachment {
 /** An action button of a message (https://docs.ntfy.sh/publish/#action-buttons) */
 export interface NtfyAction {
   id?: string;
-  action: 'view' | 'http' | 'broadcast' | string;
+  /** view, http or broadcast (other values may come with newer servers) */
+  action: string;
   label: string;
   url?: string;
   /** Dismiss the notification when the action is used */
@@ -67,7 +68,12 @@ export interface AttachmentOptions extends PublishOptions {
 }
 
 export function parseTopics(value: unknown): string[] {
-  return typeof value === 'string' ? value.split(',').map(topic => topic.trim()).filter(Boolean) : [];
+  return typeof value === 'string'
+    ? value
+        .split(',')
+        .map((topic) => topic.trim())
+        .filter(Boolean)
+    : [];
 }
 
 /** Server URL and topics come from storage.sync; the access token stays in storage.local, so browser sync doesn't copy it */
@@ -267,8 +273,8 @@ export async function getNotifications(server: NtfyServer, topic: string, since:
   // NDJSON; keep message events only (not open or keepalive)
   return text
     .split('\n')
-    .filter(line => line.trim())
-    .map(line => {
+    .filter((line) => line.trim())
+    .map((line) => {
       try {
         return JSON.parse(line) as NtfyMessage;
       } catch (error) {

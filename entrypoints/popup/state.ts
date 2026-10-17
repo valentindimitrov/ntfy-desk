@@ -12,7 +12,17 @@ export type Theme = 'light' | 'dark' | 'auto';
 export type Tab = 'send' | 'receive';
 
 /** Settings in storage.sync, except the access token (storage.local) */
-export const SYNC_KEYS = ['topics', 'apiUrl', 'theme', 'priority', 'lastTags', 'lastTopic', 'sendAnotherEnabled', 'includeUrl', 'sendAsZipEnabled'] as const;
+export const SYNC_KEYS = [
+  'topics',
+  'apiUrl',
+  'theme',
+  'priority',
+  'lastTags',
+  'lastTopic',
+  'sendAnotherEnabled',
+  'includeUrl',
+  'sendAsZipEnabled',
+] as const;
 
 export interface PopupState {
   apiUrl: string;
@@ -111,7 +121,10 @@ export async function loadSettings(): Promise<void> {
 export async function pruneReceiveState(): Promise<void> {
   const history = await getHistoryState();
   const pruned = pruneReadState(history);
-  if (pruned.readMessageIds.length !== history.readMessageIds.length || pruned.deletedMessageIds.length !== history.deletedMessageIds.length) {
+  if (
+    pruned.readMessageIds.length !== history.readMessageIds.length ||
+    pruned.deletedMessageIds.length !== history.deletedMessageIds.length
+  ) {
     await browser.storage.local.set(pruned);
   }
 }

@@ -63,7 +63,7 @@ export function setupTooltips(): void {
     tooltip.style.left = `${left}px`;
   }
 
-  document.addEventListener('mouseover', event => {
+  document.addEventListener('mouseover', (event) => {
     const target = (event.target as Element).closest<HTMLElement>('[title], [data-tooltip]');
     // Still on the same element: keep the timer
     if (activeElement && target === activeElement) {
@@ -93,7 +93,7 @@ export function setupTooltips(): void {
     }, 1000);
   });
 
-  document.addEventListener('mouseout', event => {
+  document.addEventListener('mouseout', (event) => {
     const target = event.target as Element;
     if (activeElement && (target === activeElement || target.closest('[data-tooltip]') === activeElement)) {
       // Moving to a child of the element doesn't leave it
@@ -114,7 +114,7 @@ let dragType: string | null = null;
 export function setupDragAndDrop(element: HTMLElement, index: number, type: string, onMove: (from: number, to: number) => void): void {
   element.draggable = true;
 
-  element.addEventListener('dragstart', event => {
+  element.addEventListener('dragstart', (event) => {
     dragSrcIndex = index;
     dragType = type;
     element.classList.add('dragging');
@@ -130,14 +130,14 @@ export function setupDragAndDrop(element: HTMLElement, index: number, type: stri
     dragType = null;
   });
 
-  element.addEventListener('dragover', event => {
+  element.addEventListener('dragover', (event) => {
     event.preventDefault(); // allows dropping
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'move';
     }
   });
 
-  element.addEventListener('dragenter', event => {
+  element.addEventListener('dragenter', (event) => {
     event.preventDefault();
     if (dragType === type && dragSrcIndex !== index) {
       element.classList.add('drag-over');
@@ -146,7 +146,7 @@ export function setupDragAndDrop(element: HTMLElement, index: number, type: stri
 
   element.addEventListener('dragleave', () => element.classList.remove('drag-over'));
 
-  element.addEventListener('drop', event => {
+  element.addEventListener('drop', (event) => {
     event.preventDefault();
     event.stopPropagation();
     element.classList.remove('drag-over');
