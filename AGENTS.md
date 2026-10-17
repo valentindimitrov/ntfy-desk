@@ -37,4 +37,4 @@ Update the status here when an item lands. Each item comes with tests.
 | 4 | Clickable notifications: the message's `click` URL, or the message in the extension's tab; `view` actions as buttons. `http` and `broadcast` actions stay out (they would make the browser send requests the publisher chose). | Done: `notificationButtons`, `handleNotificationClick`, `utils/extension-tab.ts`; no buttons in Firefox (unsupported) |
 | 5 | Fallback server URL (e.g. LAN first, the public URL when it doesn't answer) for receiving and sending | Done: `utils/servers.ts` (`/v1/health`; sending retries on network errors only) |
 | 6 | Receive tab: search, image attachment previews (attachments on the ntfy server only), Markdown messages rendered safely (no `innerHTML`) | Done: `matchesSearch`, `previewableImage` (receive.ts), `utils/markdown.ts` |
-| 7 | Run-test the Firefox build in Firefox | Not started: only `web-ext lint` so far |
+| 7 | Run-test the Firefox build in Firefox | Open: `web-ext lint` passes; `web-ext run` can't attach while another Firefox instance is running. Close Firefox, then `pnpm dev:firefox` |
