@@ -357,7 +357,7 @@ export function createReceiver(events: ReceiverEvents) {
     await pruneTopicSyncStates((await getConfig()).topics);
   }
 
-  /** Fetch missed messages; concurrent callers (socket open, alarm, popup) share the sync already running */
+  /** Fetch missed messages; concurrent callers (stream open, alarm, popup) share the sync already running */
   function sync(): Promise<void> {
     if (!syncInFlight) {
       syncInFlight = runSync().finally(() => {
@@ -369,5 +369,3 @@ export function createReceiver(events: ReceiverEvents) {
 
   return { connect, sync, close };
 }
-
-export type Receiver = ReturnType<typeof createReceiver>;

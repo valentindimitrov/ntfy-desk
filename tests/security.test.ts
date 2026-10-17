@@ -122,10 +122,10 @@ describe('#4 a hostile server cannot fill storage', () => {
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: 'alerts' });
     const receiver = createReceiver({ onNewMessage: () => {} });
     await receiver.connect();
-    const socket = FakeStream.instances.at(-1)!;
-    socket.accept();
-    await socket.deliver({ id: 'x1', event: 'message', topic: 'invented', time: 1 });
-    await socket.deliver({ id: 'a1', event: 'message', topic: 'alerts', time: 1 });
+    const stream = FakeStream.instances.at(-1)!;
+    stream.accept();
+    await stream.deliver({ id: 'x1', event: 'message', topic: 'invented', time: 1 });
+    await stream.deliver({ id: 'a1', event: 'message', topic: 'alerts', time: 1 });
     expect((await getHistoryState()).receivedNotifications.map((m) => m.id)).toEqual(['a1']);
     receiver.close();
   });

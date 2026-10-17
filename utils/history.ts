@@ -135,7 +135,7 @@ function pruneSeen(state: TopicSyncState): void {
 }
 
 /**
- * Record a message from the socket or a poll. Resolves to true if it is new to the history (not seen
+ * Record a message from the live stream or a poll. Resolves to true if it is new to the history (not seen
  * before and not deleted), which is when a desktop notification is due. The sync state and the
  * history are written together, so a failed write can't mark a message seen without storing it.
  */
@@ -160,7 +160,7 @@ export function recordMessage(message: NtfyMessage): Promise<boolean> {
 
 /**
  * A topic's poll completed: mark the topic synced and move its watermark to the newest message the
- * poll returned (messages recorded meanwhile by the socket are newer or seen, so nothing is skipped).
+ * poll returned (messages recorded meanwhile from the stream are newer or seen, so nothing is skipped).
  */
 export function completePoll(topic: string, newestTime: number | null): Promise<void> {
   return serialized(async () => {

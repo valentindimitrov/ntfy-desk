@@ -1,4 +1,5 @@
-// Receive tab: topic list with unread counts, and the received messages with read and delete actions.
+// Receive tab: topic list with unread counts, connection status, search, and the received messages
+// (Markdown, image previews, the click URL on the title) with read and delete actions.
 
 import { browser } from 'wxt/browser';
 import { getHistoryState } from '@/utils/history';

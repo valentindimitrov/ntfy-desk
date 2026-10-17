@@ -1,4 +1,4 @@
-// ntfy server API: configuration, authentication, publishing and polling.
+// ntfy server API: configuration, authentication, publishing, polling and the subscription stream.
 // Used by the background script and the popup.
 
 import { browser } from 'wxt/browser';

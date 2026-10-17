@@ -15,7 +15,7 @@ let server: FakeServer;
 let notified: string[];
 
 const newReceiver = () => createReceiver({ onNewMessage: (message) => notified.push(message.id) });
-const lastSocket = () => FakeStream.instances.at(-1)!;
+const lastStream = () => FakeStream.instances.at(-1)!;
 const path = (url: string) => new URL(url).pathname;
 
 async function configure(topics: string) {
@@ -41,8 +41,8 @@ describe('#1 catch-up after a reconnect', () => {
     let releasePolls!: () => void;
     server.pollGate = new Promise((resolve) => (releasePolls = resolve));
     await receiver.connect();
-    lastSocket().accept(); // starts the catch-up poll, held by the gate
-    await lastSocket().deliver(live); // arrives before the reconnect's poll
+    lastStream().accept(); // starts the catch-up poll, held by the gate
+    await lastStream().deliver(live); // arrives before the reconnect's poll
     releasePolls();
     await receiver.sync();
 
@@ -97,13 +97,13 @@ describe('#7 read access revoked for one topic', () => {
     await configure('alerts,inbox');
     const receiver = newReceiver();
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts,inbox/json');
+    expect(path(lastStream().url)).toBe('/alerts,inbox/json');
 
     server.unreadable = ['inbox'];
-    lastSocket().refuse(403); // refused before it opened
+    lastStream().refuse(403); // refused before it opened
     await sleep(10);
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts/json');
+    expect(path(lastStream().url)).toBe('/alerts/json');
     receiver.close();
   });
 });

@@ -19,7 +19,7 @@ function newReceiver() {
   return createReceiver({ onNewMessage: (message) => notified.push(message) });
 }
 
-const lastSocket = () => FakeStream.instances.at(-1)!;
+const lastStream = () => FakeStream.instances.at(-1)!;
 const path = (url: string) => new URL(url).pathname;
 
 beforeEach(() => {
@@ -38,8 +38,8 @@ describe('sync and live messages', () => {
 
     const receiver = newReceiver();
     await receiver.connect();
-    const ws = lastSocket();
-    ws.accept();
+    const stream = lastStream();
+    stream.accept();
     await receiver.sync();
     await sleep(10);
     expect(notified).toEqual([]); // the first sync of a topic is silent
@@ -52,7 +52,7 @@ describe('sync and live messages', () => {
       server.publish('alerts', 10003),
     ];
     for (const message of live) {
-      void ws.deliver(message);
+      void stream.deliver(message);
       void receiver.sync();
     }
     await sleep(30);
@@ -60,7 +60,7 @@ describe('sync and live messages', () => {
     await sleep(30);
     expect(notified.map((m) => m.id).sort()).toEqual(live.map((m) => m.id).sort());
 
-    // Published while the socket was down: the next sync delivers it once
+    // Published while the stream was down: the next sync delivers it once
     const missed = server.publish('alerts', 10010);
     await receiver.sync();
     await receiver.sync();
@@ -122,7 +122,7 @@ describe('topics the credentials can only send to', () => {
 
     await receiver.connect();
     expect(FakeStream.instances).toHaveLength(1);
-    expect(path(lastSocket().url)).toBe('/alerts,coolify/json');
+    expect(path(lastStream().url)).toBe('/alerts,coolify/json');
 
     await receiver.sync();
     const polled = server.requests.filter((r) => r.url.includes('/json')).map((r) => path(r.url));
@@ -134,22 +134,22 @@ describe('topics the credentials can only send to', () => {
     server.unreadable = ['inbox'];
     const receiver = newReceiver();
     await receiver.connect();
-    lastSocket().accept();
+    lastStream().accept();
 
     const authCalls = () => server.requests.filter((r) => r.url.endsWith('/auth')).length;
     const before = authCalls();
     await receiver.connect();
     expect(authCalls()).toBe(before);
-    expect(FakeStream.instances).toHaveLength(1); // same socket kept
+    expect(FakeStream.instances).toHaveLength(1); // same stream kept
 
     await fakeBrowser.storage.sync.set({ topics: 'alerts,inbox' });
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts/json');
+    expect(path(lastStream().url)).toBe('/alerts/json');
 
     await fakeBrowser.storage.sync.set({ topics: 'inbox' });
-    const sockets = FakeStream.instances.length;
+    const streams = FakeStream.instances.length;
     await receiver.connect();
-    expect(FakeStream.instances).toHaveLength(sockets); // nothing readable: no socket
+    expect(FakeStream.instances).toHaveLength(streams); // nothing readable: no stream
   });
 
   it("keeps a topic the server couldn't be asked about, and asks again next time", async () => {
@@ -157,13 +157,13 @@ describe('topics the credentials can only send to', () => {
     server.authDown = true;
     const receiver = newReceiver();
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts,inbox/json');
+    expect(path(lastStream().url)).toBe('/alerts,inbox/json');
 
     server.authDown = false;
     server.unreadable = ['inbox'];
-    lastSocket().accept();
+    lastStream().accept();
     await receiver.connect();
-    expect(path(lastSocket().url)).toBe('/alerts/json');
+    expect(path(lastStream().url)).toBe('/alerts/json');
   });
 });
 
@@ -172,14 +172,14 @@ describe('subscription stream', () => {
     await configure('a,b', 'tk_x');
     const receiver = newReceiver();
     await receiver.connect();
-    expect(lastSocket().url).toBe('https://ntfy.example/a,b/json');
-    expect(lastSocket().auth).toBe('Bearer tk_x');
+    expect(lastStream().url).toBe('https://ntfy.example/a,b/json');
+    expect(lastStream().auth).toBe('Bearer tk_x');
     receiver.close();
 
     await fakeBrowser.storage.local.set({ accessToken: '', serverCredentials: { username: 'usér', password: 'p@ss' } });
     await receiver.connect();
-    expect(lastSocket().auth).toBe(`Basic ${Buffer.from('usér:p@ss').toString('base64')}`);
-    expect(lastSocket().url).toBe('https://ntfy.example/a,b/json');
+    expect(lastStream().auth).toBe(`Basic ${Buffer.from('usér:p@ss').toString('base64')}`);
+    expect(lastStream().url).toBe('https://ntfy.example/a,b/json');
     receiver.close();
   });
 
@@ -191,7 +191,7 @@ describe('subscription stream', () => {
     }
     const receiver = newReceiver();
     await receiver.connect();
-    lastSocket().refuse(401);
+    lastStream().refuse(401);
     await sleep(10);
     receiver.close();
     expect(logs.length).toBeGreaterThan(0);
@@ -203,7 +203,7 @@ describe('subscription stream', () => {
     const receiver = newReceiver();
     await receiver.sync(); // first, silent sync
     await receiver.connect();
-    const stream = lastSocket();
+    const stream = lastStream();
     stream.accept();
     const line = JSON.stringify({ id: 'split', event: 'message', topic: 'alerts', time: 10001 });
     await stream.send(line.slice(0, 20));
@@ -218,14 +218,14 @@ describe('subscription stream', () => {
     await configure('alerts');
     const receiver = newReceiver();
     await receiver.connect();
-    lastSocket().accept();
+    lastStream().accept();
     await sleep(5);
-    lastSocket().end();
+    lastStream().end();
     await sleep(10);
     await receiver.connect(); // the reconnect timer or the alarm
     expect(FakeStream.instances).toHaveLength(2);
     receiver.close();
-    expect(lastSocket().aborted).toBe(true);
+    expect(lastStream().aborted).toBe(true);
   });
 
   it('calls an extension API while open, to keep the service worker running, and stops after closing', async () => {
@@ -235,7 +235,7 @@ describe('subscription stream', () => {
       await configure('alerts');
       const receiver = newReceiver();
       await receiver.connect();
-      lastSocket().accept();
+      lastStream().accept();
       await sleep(5);
       vi.advanceTimersByTime(KEEPALIVE_INTERVAL * 3);
       expect(ping).toHaveBeenCalledTimes(3);
@@ -254,7 +254,7 @@ describe('subscription stream', () => {
     await receiver.connect();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      const stream = lastSocket();
+      const stream = lastStream();
       stream.accept();
       await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT - 1000);
       await stream.send('{"event":"keepalive"}\n');
@@ -267,7 +267,7 @@ describe('subscription stream', () => {
 
       // A stream that never sends anything is given up too
       await receiver.connect(); // the reconnect timer or the alarm
-      const silent = lastSocket();
+      const silent = lastStream();
       expect(silent).not.toBe(stream);
       silent.accept();
       await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT + 1000);

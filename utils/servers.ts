@@ -1,5 +1,5 @@
 // Main and fallback server (e.g. the LAN address first, the public one when it doesn't answer).
-// Both are the same ntfy server, so message ids, sync cursors and the token are shared.
+// Both are the same ntfy server, so message ids, sync state and the token are shared.
 
 import { isNoResponse, type NtfyConfig, type NtfyServer } from './ntfy';
 

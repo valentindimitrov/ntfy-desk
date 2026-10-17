@@ -25,12 +25,12 @@ describe('receiver status', () => {
     await receiver.connect();
     expect(await status()).toMatchObject({ state: 'connecting', server: 'ntfy.example', unreadableTopics: ['inbox'], unreachable: false });
 
-    const ws = FakeStream.instances.at(-1)!;
-    ws.accept();
+    const stream = FakeStream.instances.at(-1)!;
+    stream.accept();
     expect(await status()).toMatchObject({ state: 'connected', retryAt: null });
 
     const before = Date.now();
-    ws.end();
+    stream.end();
     const closed = await status();
     expect(closed.state).toBe('reconnecting');
     expect(closed.retryAt).toBeGreaterThanOrEqual(before + 5000);
