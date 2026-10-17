@@ -48,6 +48,8 @@ export interface NtfyMessage {
   actions?: NtfyAction[];
   attachment?: NtfyAttachment;
   expires?: number;
+  /** text/markdown for Markdown messages */
+  content_type?: string;
 }
 
 export interface PublishOptions {

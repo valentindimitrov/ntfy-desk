@@ -15,7 +15,7 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 - Enums in the types (`contextMenus.ContextType`, `runtime.ContextType`) are passed as their string values, cast to the enum type: the enum objects don't exist at runtime in every browser.
 - Storage: settings in `storage.sync`; the access token and everything else (received messages, read and deleted ids, per-topic sync state, attachments, draft) in `storage.local`. Never put the token in `storage.sync`.
 - Never log a WebSocket URL with `?auth=`, or an error or event object that contains it; `buildWsUrl` returns a `logUrl` for logging.
-- Messages from the server are rendered with `textContent` only; URLs from messages are opened or copied only if `isHttpUrl`.
+- Messages from the server are rendered with `textContent` only (Markdown through `utils/markdown.ts`, which builds nodes); URLs from messages are opened, linked or copied only if `isHttpUrl`; images are previewed only from the ntfy server's own origin.
 - Tests: `tests/*.test.ts`. `tests/helpers/fake-ntfy.ts` is a fake ntfy server (fetch) and WebSocket; popup tests load the real `index.html` in happy-dom.
 
 ## Behaviour that is easy to break
@@ -36,5 +36,5 @@ Update the status here when an item lands. Each item comes with tests.
 | 3 | Per-topic desktop notification rules: all, from a priority up, or off (the topic stays listed) | Done: `utils/rules.ts`, set in the settings, 🔕 in the topic list |
 | 4 | Clickable notifications: the message's `click` URL, or the message in the extension's tab; `view` actions as buttons. `http` and `broadcast` actions stay out (they would make the browser send requests the publisher chose). | Done: `notificationButtons`, `handleNotificationClick`, `utils/extension-tab.ts`; no buttons in Firefox (unsupported) |
 | 5 | Fallback server URL (e.g. LAN first, the public URL when it doesn't answer) for receiving and sending | Done: `utils/servers.ts` (`/v1/health`; sending retries on network errors only) |
-| 6 | Receive tab: search, image attachment previews (attachments on the ntfy server only), Markdown messages rendered safely (no `innerHTML`) | Planned |
+| 6 | Receive tab: search, image attachment previews (attachments on the ntfy server only), Markdown messages rendered safely (no `innerHTML`) | Done: `matchesSearch`, `previewableImage` (receive.ts), `utils/markdown.ts` |
 | 7 | Run-test the Firefox build in Firefox | Not started: only `web-ext lint` so far |

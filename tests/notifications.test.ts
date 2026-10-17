@@ -25,6 +25,12 @@ describe('desktop notifications', () => {
     expect(low).toMatchObject({ title: 'Notification [↓ Low]', requireInteraction: false });
   });
 
+  it('shows Markdown messages as plain text', () => {
+    const create = mockResolved(fakeBrowser.notifications, 'create', '');
+    showDesktopNotification(message('md', { message: '**Disk** at [91%](https://x.example)', content_type: 'text/markdown' }));
+    expect(callsOf<[string, Options]>(create)[0]![1].message).toBe('Disk at 91%');
+  });
+
   it('offers an attachment button for http(s) attachments only', () => {
     const create = mockResolved(fakeBrowser.notifications, 'create', '');
     showDesktopNotification(message('good', { attachment: { url: 'https://ntfy.example/file/a.png' } }));

@@ -3,6 +3,7 @@
 import { browser } from 'wxt/browser';
 import { getHistoryState } from '@/utils/history';
 import { isHttpUrl, type NtfyMessage } from '@/utils/ntfy';
+import { renderMarkdown } from '@/utils/markdown';
 import { ruleFor } from '@/utils/rules';
 import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
 import { elements, isConfigured, loadReceiveState, saveLocal, state } from './state';
@@ -98,6 +99,33 @@ function applyPendingFocus(): void {
   }
 }
 
+/** Whether a message contains every word of the search */
+export function matchesSearch(message: NtfyMessage, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const text = [message.title, message.message, message.topic, ...(message.tags ?? []), message.attachment?.name].join(' ').toLowerCase();
+  return words.every(word => text.includes(word));
+}
+
+/**
+ * Image attachments are previewed only when the ntfy server hosts them (not an external URL a
+ * publisher chose) and they haven't expired.
+ */
+export function previewableImage(message: NtfyMessage, serverUrls: string[], now = Date.now()): string | null {
+  const attachment = message.attachment;
+  if (!attachment?.type?.startsWith('image/') || !isHttpUrl(attachment.url)) return null;
+  if (attachment.expires && attachment.expires * 1000 < now) return null;
+  const origin = new URL(attachment.url).origin;
+  const onServer = serverUrls.some(url => {
+    try {
+      return new URL(url).origin === origin;
+    } catch {
+      return false;
+    }
+  });
+  return onServer ? attachment.url : null;
+}
+
 function openUrl(url: string): void {
   void browser.tabs.create({ url });
 }
@@ -130,7 +158,24 @@ function renderMessage(message: NtfyMessage): HTMLElement {
 
   const body = document.createElement('div');
   body.className = 'notification-message';
-  body.textContent = message.message || '';
+  if (message.content_type === 'text/markdown') {
+    body.classList.add('markdown');
+    body.append(renderMarkdown(message.message || ''));
+  } else {
+    body.textContent = message.message || '';
+  }
+
+  const imageUrl = previewableImage(message, [state.apiUrl, state.fallbackUrl]);
+  let preview: HTMLElement | null = null;
+  if (imageUrl) {
+    const image = document.createElement('img');
+    image.className = 'notification-image';
+    image.src = imageUrl;
+    image.alt = message.attachment?.name ?? 'Image attachment';
+    image.loading = 'lazy';
+    image.addEventListener('click', () => openUrl(imageUrl));
+    preview = image;
+  }
 
   const footer = document.createElement('div');
   footer.className = 'notification-footer';
@@ -186,7 +231,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   actions.appendChild(deleteButton);
 
   footer.appendChild(actions);
-  item.append(header, body, footer);
+  item.append(header, body, ...(preview ? [preview] : []), footer);
   return item;
 }
 
@@ -206,13 +251,15 @@ export async function loadNotifications(): Promise<void> {
     }
     renderTopicSidebar(all);
 
-    const shown = state.receiveFilter === 'all' ? all : all.filter(m => m.topic === state.receiveFilter);
+    const inTopic = state.receiveFilter === 'all' ? all : all.filter(m => m.topic === state.receiveFilter);
+    const query = elements.notificationsSearch.value;
+    const shown = inTopic.filter(m => matchesSearch(m, query));
     state.currentNotifications = shown;
     // Hidden rather than removed, so the heading doesn't move
     elements.notificationsControlBar.style.visibility = shown.length > 0 ? 'visible' : 'hidden';
 
     if (shown.length === 0) {
-      elements.notificationsList.replaceChildren(emptyMessage('No recent notifications'));
+      elements.notificationsList.replaceChildren(emptyMessage(inTopic.length > 0 ? 'No messages match the search' : 'No recent notifications'));
       return;
     }
     shown.sort((a, b) => b.time - a.time);
@@ -349,6 +396,7 @@ export function setupReceive(): void {
   });
 
   elements.markAllReadBtn.addEventListener('click', () => void markAllRead());
+  elements.notificationsSearch.addEventListener('input', () => void loadNotifications());
   elements.deleteAllBtn.addEventListener('click', () => void deleteAll());
 
   // New messages from the background, and read or delete actions from another popup or tab

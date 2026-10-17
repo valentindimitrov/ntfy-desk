@@ -138,6 +138,57 @@ describe('Receive tab', () => {
     expect(readMessageIds).toContain('a1');
   });
 
+  it('searches titles, messages, tags and topics', async () => {
+    await openPopup('?tab=receive');
+    const search = $<HTMLInputElement>('#notifications-search');
+    search.value = 'COOLIFY';
+    search.dispatchEvent(new Event('input'));
+    await flush();
+    expect([...document.querySelectorAll('.notification-title')].map(t => t.textContent)).toEqual(['c1']);
+
+    search.value = 'body a2';
+    search.dispatchEvent(new Event('input'));
+    await flush();
+    expect([...document.querySelectorAll('.notification-title')].map(t => t.textContent)).toEqual(['a2']);
+
+    search.value = 'nothing like this';
+    search.dispatchEvent(new Event('input'));
+    await flush();
+    expect($('.notifications-empty').textContent).toBe('No messages match the search');
+  });
+
+  it('renders Markdown messages, and leaves other messages as plain text', async () => {
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [
+        message('md', 'alerts', 1, { message: '**Disk** at 91%, [logs](https://logs.example)', content_type: 'text/markdown' }),
+        message('plain', 'alerts', 2, { message: '**not bold** <b>x</b>' }),
+      ],
+    });
+    await openPopup('?tab=receive');
+    const bodies = [...document.querySelectorAll<HTMLElement>('.notification-message')];
+    expect(bodies[0]!.querySelector('strong')?.textContent).toBe('Disk');
+    expect(bodies[0]!.querySelector('a')?.getAttribute('href')).toBe('https://logs.example');
+    expect(bodies[1]!.children).toHaveLength(0);
+    expect(bodies[1]!.textContent).toBe('**not bold** <b>x</b>');
+  });
+
+  it('previews image attachments hosted on the server only, while they last', async () => {
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    const image = (url: string, expires = future) => ({ url, type: 'image/png', name: 'shot.png', expires });
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [
+        message('onServer', 'alerts', 1, { attachment: image('https://ntfy.example/file/abc.png') }),
+        message('external', 'alerts', 2, { attachment: image('https://tracker.example/pixel.png') }),
+        message('expired', 'alerts', 3, { attachment: image('https://ntfy.example/file/old.png', 1000) }),
+        message('notImage', 'alerts', 4, { attachment: { url: 'https://ntfy.example/file/a.zip', type: 'application/zip' } }),
+      ],
+    });
+    await openPopup('?tab=receive');
+    const withImage = [...document.querySelectorAll<HTMLElement>('.notification-item')].filter(item => item.querySelector('.notification-image'));
+    expect(withImage.map(item => item.dataset.id)).toEqual(['onServer']);
+    expect(withImage[0]!.querySelector('img')!.getAttribute('src')).toBe('https://ntfy.example/file/abc.png');
+  });
+
   it('keeps the heading in place when the list is empty', async () => {
     await fakeBrowser.storage.local.set({ receiveTopicFilter: 'inbox' });
     await openPopup('?tab=receive');

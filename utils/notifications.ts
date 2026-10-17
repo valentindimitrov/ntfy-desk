@@ -3,6 +3,7 @@
 import { browser, type Browser } from 'wxt/browser';
 import { countUnread, getHistoryState } from './history';
 import { openExtensionTab } from './extension-tab';
+import { markdownToText } from './markdown';
 import { isHttpUrl, type NtfyMessage } from './ntfy';
 import { getTopicRules, shouldNotify } from './rules';
 
@@ -44,7 +45,7 @@ export function showDesktopNotification(message: NtfyMessage): void {
     type: 'basic',
     iconUrl: browser.runtime.getURL('/icon/128.png'),
     title: (message.title || 'Notification') + (label ? ` [${label}]` : ''),
-    message: message.message || '',
+    message: message.content_type === 'text/markdown' ? markdownToText(message.message || '') : message.message || '',
     contextMessage: `Topic: ${message.topic}`,
     // High and urgent messages stay until dismissed
     requireInteraction: (message.priority ?? 3) >= 4,

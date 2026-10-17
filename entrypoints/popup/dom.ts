@@ -76,6 +76,7 @@ export function getElements() {
     topicSidebar: byId('topic-sidebar'),
     notificationsControlBar: byId('notifications-control-bar'),
     connectionStatus: byId('connection-status'),
+    notificationsSearch: byId<HTMLInputElement>('notifications-search'),
     markAllReadBtn: byId<HTMLButtonElement>('mark-all-read-btn'),
     deleteAllBtn: byId<HTMLButtonElement>('delete-all-btn'),
 
