@@ -4,6 +4,9 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   // Firefox too (WXT builds Firefox as MV2 by default); Firefox 142+ is required anyway
   manifestVersion: 3,
+  // No <link rel="modulepreload"> for shared chunks: Chrome doesn't use them on extension pages ("cross-world
+  // extension resource mismatch" on the extensions page), and extension files load from disk anyway
+  vite: () => ({ build: { modulePreload: false } }),
   manifest: ({ browser }) => ({
     name: 'ntfy Desk',
     description:
