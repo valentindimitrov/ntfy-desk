@@ -1,8 +1,9 @@
 // Popup (also opened as a page in its own tab): Send and Receive tabs, and the settings view.
 
 import '@/assets/styles.css';
-import { browser, type Browser } from 'wxt/browser';
-import { loadNotifications, setupReceive } from './receive';
+import { browser } from 'wxt/browser';
+import { openExtensionTab } from '@/utils/extension-tab';
+import { focusMessage, loadNotifications, setupReceive } from './receive';
 import {
   applyUrlTitle,
   cleanUpAfterBrowserRestart,
@@ -17,7 +18,7 @@ import {
   updateTopicDropdown,
 } from './send';
 import { applyTheme, populateSettings, setupSettings, updateServerAccessUI } from './settings';
-import { elements, isConfigured, isPageMode, loadReceiveState, loadSettings, pageParams, pruneReceiveState, state, type Tab } from './state';
+import { elements, isConfigured, isPageMode, loadReceiveState, loadSettings, pageParams, pruneReceiveState, saveLocal, state, type Tab } from './state';
 import { setupTooltips } from './ui';
 
 const appName = browser.runtime.getManifest().name;
@@ -83,20 +84,7 @@ function showMainView(): void {
 
 /** Open this page in a browser tab (any size), or switch to that tab if it is already open */
 async function openInTab(): Promise<void> {
-  const pageUrl = browser.runtime.getURL('/popup.html?mode=page');
-  // runtime.getContexts: Chrome 116+
-  if (browser.runtime.getContexts) {
-    // The types declare ContextType as an enum; its value is this string in every browser
-    const contexts = await browser.runtime.getContexts({ contextTypes: ['TAB' as Browser.runtime.ContextType] });
-    const open = contexts.find(context => context.documentUrl?.startsWith(pageUrl));
-    if (open) {
-      await browser.tabs.update(open.tabId, { active: true });
-      await browser.windows.update(open.windowId, { focused: true });
-      window.close();
-      return;
-    }
-  }
-  await browser.tabs.create({ url: `${pageUrl}&tab=${state.activeTab}` });
+  await openExtensionTab({ tab: state.activeTab });
   window.close();
 }
 
@@ -165,6 +153,14 @@ async function init(): Promise<void> {
   }
   applyUrlTitle();
 
+  // Opened by a click on a desktop notification: show that message
+  const messageId = pageParams.get('message');
+  if (messageId) {
+    // All topics, saved: reloads of the receive state read the filter back
+    state.receiveFilter = 'all';
+    await saveLocal({ receiveTopicFilter: 'all' });
+    focusMessage(messageId);
+  }
   if (pageParams.get('tab') === 'receive') {
     switchTab('receive');
   } else {

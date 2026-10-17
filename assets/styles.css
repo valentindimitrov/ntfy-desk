@@ -1531,3 +1531,43 @@ body.page-mode .topic-sidebar {
     flex: none;
     font-size: 11px;
 }
+
+/* ========================================
+   Receive Tab: Links and Actions
+   ======================================== */
+
+button.notification-title {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 15px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.notification-link:hover {
+    color: var(--primary-light);
+    text-decoration: underline;
+}
+
+.notification-view-action {
+    padding: 3px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: none;
+    color: var(--primary-light);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.notification-view-action:hover {
+    background-color: var(--bg-input);
+}
+
+/* The message a desktop notification click opened */
+.notification-item.focused {
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 1px var(--primary-light);
+}

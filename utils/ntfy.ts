@@ -21,6 +21,16 @@ export interface NtfyAttachment {
   url: string;
 }
 
+/** An action button of a message (https://docs.ntfy.sh/publish/#action-buttons) */
+export interface NtfyAction {
+  id?: string;
+  action: 'view' | 'http' | 'broadcast' | string;
+  label: string;
+  url?: string;
+  /** Dismiss the notification when the action is used */
+  clear?: boolean;
+}
+
 /** A message as ntfy delivers it (JSON stream, poll or WebSocket) */
 export interface NtfyMessage {
   id: string;
@@ -31,7 +41,9 @@ export interface NtfyMessage {
   message?: string;
   priority?: number;
   tags?: string[];
+  /** URL to open when the notification is clicked */
   click?: string;
+  actions?: NtfyAction[];
   attachment?: NtfyAttachment;
   expires?: number;
 }

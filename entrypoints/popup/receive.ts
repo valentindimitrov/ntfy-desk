@@ -75,18 +75,54 @@ function renderTopicSidebar(messages: NtfyMessage[]): void {
   );
 }
 
+// The message a click on its desktop notification opened: highlighted in every render, scrolled
+// to and marked read once
+let focusedId: string | null = null;
+let pendingFocus = false;
+
+export function focusMessage(id: string): void {
+  focusedId = id;
+  pendingFocus = true;
+}
+
+function applyPendingFocus(): void {
+  if (!pendingFocus || !focusedId) return;
+  const id = focusedId;
+  const item = [...elements.notificationsList.querySelectorAll<HTMLElement>('.notification-item')].find(el => el.dataset.id === id);
+  if (!item) return;
+  pendingFocus = false;
+  item.scrollIntoView({ block: 'center' });
+  if (!state.readMessageIds.includes(id)) {
+    const readButton = item.querySelector<HTMLElement>('.read-btn');
+    if (readButton) void toggleRead(id, item, readButton);
+  }
+}
+
+function openUrl(url: string): void {
+  void browser.tabs.create({ url });
+}
+
 function renderMessage(message: NtfyMessage): HTMLElement {
   const item = document.createElement('div');
   item.className = 'notification-item';
+  item.dataset.id = message.id;
+  item.classList.toggle('focused', message.id === focusedId);
   item.dataset.priority = String(message.priority ?? 3);
   const isRead = state.readMessageIds.includes(message.id);
   item.classList.toggle('read', isRead);
 
   const header = document.createElement('div');
   header.className = 'notification-header';
-  const title = document.createElement('span');
+  // With a click URL (http(s) only), the title opens it
+  const clickUrl = message.click;
+  const title = document.createElement(isHttpUrl(clickUrl) ? 'button' : 'span');
   title.className = 'notification-title';
   title.textContent = message.title || 'Notification';
+  if (isHttpUrl(clickUrl)) {
+    title.classList.add('notification-link');
+    title.title = clickUrl;
+    title.addEventListener('click', () => openUrl(clickUrl));
+  }
   const time = document.createElement('span');
   time.className = 'notification-time';
   time.textContent = `${message.topic} · ${formatTime(message.time)}`;
@@ -112,6 +148,18 @@ function renderMessage(message: NtfyMessage): HTMLElement {
 
   const actions = document.createElement('div');
   actions.className = 'notification-actions';
+
+  // View actions (http(s) only); http and broadcast actions are left out
+  for (const action of message.actions ?? []) {
+    const url = action.url;
+    if (action.action !== 'view' || !isHttpUrl(url)) continue;
+    const button = document.createElement('button');
+    button.className = 'notification-view-action';
+    button.textContent = `↗ ${action.label}`;
+    button.title = url;
+    button.addEventListener('click', () => openUrl(url));
+    actions.appendChild(button);
+  }
 
   const readButton = document.createElement('button');
   readButton.className = 'notification-action-btn read-btn';
@@ -169,6 +217,7 @@ export async function loadNotifications(): Promise<void> {
     }
     shown.sort((a, b) => b.time - a.time);
     elements.notificationsList.replaceChildren(...shown.map(renderMessage));
+    applyPendingFocus();
   } catch (error) {
     console.error('Error loading notifications:', error);
     const errorDiv = document.createElement('div');

@@ -2,6 +2,7 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import { countUnread, getHistoryState } from './history';
+import { openExtensionTab } from './extension-tab';
 import { isHttpUrl, type NtfyMessage } from './ntfy';
 import { getTopicRules, shouldNotify } from './rules';
 
@@ -11,6 +12,31 @@ const PRIORITY_LABELS: Record<number, string> = {
   4: '↑ High',
   5: '⇈ Urgent',
 };
+
+export interface NotificationButton {
+  title: string;
+  url: string;
+  /** Dismiss the notification when the button is used */
+  clear: boolean;
+}
+
+/**
+ * Buttons of a message's notification: its view actions (http(s) URLs only), then its attachment.
+ * Chrome shows at most two. http and broadcast actions are left out: they would make the browser send
+ * requests the publisher chose.
+ */
+export function notificationButtons(message: NtfyMessage): NotificationButton[] {
+  const buttons: NotificationButton[] = [];
+  for (const action of message.actions ?? []) {
+    if (action.action === 'view' && isHttpUrl(action.url)) {
+      buttons.push({ title: action.label, url: action.url, clear: action.clear === true });
+    }
+  }
+  if (message.attachment && isHttpUrl(message.attachment.url)) {
+    buttons.push({ title: '🔗 Open Attachment', url: message.attachment.url, clear: false });
+  }
+  return buttons.slice(0, 2);
+}
 
 export function showDesktopNotification(message: NtfyMessage): void {
   const label = message.priority ? PRIORITY_LABELS[message.priority] : undefined;
@@ -23,8 +49,10 @@ export function showDesktopNotification(message: NtfyMessage): void {
     // High and urgent messages stay until dismissed
     requireInteraction: (message.priority ?? 3) >= 4,
   };
-  if (message.attachment && isHttpUrl(message.attachment.url)) {
-    options.buttons = [{ title: '🔗 Open Attachment' }];
+  const buttons = notificationButtons(message);
+  // Firefox doesn't support notification buttons (BROWSER, not FIREFOX: env flags are strings in tests)
+  if (buttons.length > 0 && import.meta.env.BROWSER !== 'firefox') {
+    options.buttons = buttons.map(({ title }) => ({ title }));
   }
   void browser.notifications.create(message.id, options);
 }
@@ -36,13 +64,30 @@ export async function notifyNewMessage(message: NtfyMessage): Promise<void> {
   }
 }
 
-/** "Open Attachment" button: open the attachment of that message, http(s) only */
-export async function handleNotificationButton(notificationId: string, buttonIndex: number): Promise<void> {
-  if (buttonIndex !== 0) return;
+async function findMessage(id: string): Promise<NtfyMessage | undefined> {
   const { receivedNotifications } = await getHistoryState();
-  const url = receivedNotifications.find(n => n.id === notificationId)?.attachment?.url;
-  if (isHttpUrl(url)) {
-    await browser.tabs.create({ url });
+  return receivedNotifications.find(message => message.id === id);
+}
+
+/** A notification button: open its URL (http(s) only), and dismiss the notification if the action says so */
+export async function handleNotificationButton(notificationId: string, buttonIndex: number): Promise<void> {
+  const message = await findMessage(notificationId);
+  const button = message ? notificationButtons(message)[buttonIndex] : undefined;
+  if (!button || !isHttpUrl(button.url)) return;
+  await browser.tabs.create({ url: button.url });
+  if (button.clear) {
+    await browser.notifications.clear(notificationId);
+  }
+}
+
+/** A click on the notification: the message's click URL (http(s) only), else the message in the extension's tab */
+export async function handleNotificationClick(notificationId: string): Promise<void> {
+  await browser.notifications.clear(notificationId);
+  const message = await findMessage(notificationId);
+  if (message && isHttpUrl(message.click)) {
+    await browser.tabs.create({ url: message.click });
+  } else {
+    await openExtensionTab({ tab: 'receive', message: notificationId });
   }
 }
 

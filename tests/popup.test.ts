@@ -107,6 +107,37 @@ describe('Receive tab', () => {
     expect(inbox.textContent).toBe('inboxsend only');
   });
 
+  it('opens the click URL from the title and view actions from their buttons', async () => {
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [
+        message('linked', 'alerts', 1, {
+          click: 'https://status.example/incident',
+          actions: [
+            { action: 'view', label: 'Logs', url: 'https://logs.example' },
+            { action: 'http', label: 'Restart', url: 'https://api.example/restart' },
+          ],
+        }),
+      ],
+    });
+    const create = mockResolved(fakeBrowser.tabs, 'create', {});
+    await openPopup('?tab=receive');
+    const item = [...document.querySelectorAll<HTMLElement>('.notification-item')].find(el => el.dataset.id === 'linked')!;
+    expect([...item.querySelectorAll('.notification-view-action')].map(b => b.textContent)).toEqual(['↗ Logs']); // no http action
+    item.querySelector<HTMLElement>('.notification-link')!.click();
+    item.querySelector<HTMLElement>('.notification-view-action')!.click();
+    expect(create.mock.calls).toEqual([[{ url: 'https://status.example/incident' }], [{ url: 'https://logs.example' }]]);
+  });
+
+  it('shows and marks read the message a notification click opened', async () => {
+    await fakeBrowser.storage.local.set({ receiveTopicFilter: 'coolify' });
+    await openPopup('?mode=page&tab=receive&message=a1');
+    const focused = $('.notification-item.focused');
+    expect(focused.dataset.id).toBe('a1'); // shown although another topic was selected
+    await flush();
+    const { readMessageIds } = await fakeBrowser.storage.local.get('readMessageIds');
+    expect(readMessageIds).toContain('a1');
+  });
+
   it('keeps the heading in place when the list is empty', async () => {
     await fakeBrowser.storage.local.set({ receiveTopicFilter: 'inbox' });
     await openPopup('?tab=receive');

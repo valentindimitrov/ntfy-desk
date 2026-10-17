@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { callsOf, mockResolved } from './helpers/mock';
-import { handleNotificationButton, showDesktopNotification, updateUnreadBadge } from '@/utils/notifications';
+import { handleNotificationButton, handleNotificationClick, notificationButtons, showDesktopNotification, updateUnreadBadge } from '@/utils/notifications';
 import type { NtfyMessage } from '@/utils/ntfy';
 
 type Options = Browser.notifications.NotificationCreateOptions;
@@ -31,6 +31,54 @@ describe('desktop notifications', () => {
     showDesktopNotification(message('bad', { attachment: { url: 'javascript:alert(1)' } }));
     const buttons = callsOf<[string, Options]>(create).map(call => call[1].buttons);
     expect(buttons).toEqual([[{ title: '🔗 Open Attachment' }], undefined]);
+  });
+
+  it('makes buttons of view actions (http(s) only) and the attachment, at most two', () => {
+    const actions = [
+      { action: 'http', label: 'Restart', url: 'https://api.example/restart' },
+      { action: 'view', label: 'Logs', url: 'https://logs.example', clear: true },
+      { action: 'view', label: 'Bad', url: 'javascript:alert(1)' },
+      { action: 'view', label: 'Grafana', url: 'https://grafana.example' },
+    ];
+    expect(notificationButtons(message('a', { actions }))).toEqual([
+      { title: 'Logs', url: 'https://logs.example', clear: true },
+      { title: 'Grafana', url: 'https://grafana.example', clear: false },
+    ]);
+    expect(notificationButtons(message('b', { actions: actions.slice(0, 2), attachment: { url: 'https://ntfy.example/f' } }))).toEqual([
+      { title: 'Logs', url: 'https://logs.example', clear: true },
+      { title: '🔗 Open Attachment', url: 'https://ntfy.example/f', clear: false },
+    ]);
+  });
+
+  it('opens a view action from its button, and dismisses the notification if the action says so', async () => {
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [message('a', { actions: [{ action: 'view', label: 'Logs', url: 'https://logs.example', clear: true }] })],
+    });
+    const create = mockResolved(fakeBrowser.tabs, 'create', {});
+    const clear = mockResolved(fakeBrowser.notifications, 'clear', true);
+    await handleNotificationButton('a', 0);
+    expect(create.mock.calls).toEqual([[{ url: 'https://logs.example' }]]);
+    expect(clear.mock.calls).toEqual([['a']]);
+  });
+
+  it('opens the click URL when the notification is clicked, else the message in the extension tab', async () => {
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [message('withUrl', { click: 'https://status.example/x' }), message('plain'), message('badUrl', { click: 'file:///x' })],
+    });
+    vi.spyOn(fakeBrowser.runtime, 'getURL').mockImplementation(((path: string) => `chrome-extension://id${path}`) as typeof fakeBrowser.runtime.getURL);
+    mockResolved(fakeBrowser.runtime, 'getContexts', []);
+    const create = mockResolved(fakeBrowser.tabs, 'create', {});
+    const clear = mockResolved(fakeBrowser.notifications, 'clear', true);
+
+    await handleNotificationClick('withUrl');
+    await handleNotificationClick('plain');
+    await handleNotificationClick('badUrl');
+    expect(create.mock.calls).toEqual([
+      [{ url: 'https://status.example/x' }],
+      [{ url: 'chrome-extension://id/popup.html?mode=page&tab=receive&message=plain' }],
+      [{ url: 'chrome-extension://id/popup.html?mode=page&tab=receive&message=badUrl' }],
+    ]);
+    expect(clear).toHaveBeenCalledTimes(3);
   });
 
   it('opens only http(s) attachment URLs from the button', async () => {
