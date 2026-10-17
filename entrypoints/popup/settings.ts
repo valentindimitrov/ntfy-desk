@@ -1,7 +1,7 @@
 // Settings view: server URL, access token, topics, include-URL option and theme. Changes save as you type.
 
 import { browser } from 'wxt/browser';
-import { buildAuthHeaderValue, setAccessToken } from '@/utils/ntfy';
+import { hasAuthentication, setAccessToken, setCredentials, splitCredentials, type Credentials } from '@/utils/ntfy';
 import { NOTIFY_RULES, NOTIFY_RULES_KEY, RULE_LABELS, isNotifyRule, ruleFor, storedTopicRules, type TopicRules } from '@/utils/rules';
 import { updateTopicDropdown } from './send';
 import { elements, isConfigured, saveSync, state, type Theme } from './state';
@@ -33,18 +33,23 @@ export function serverOriginPattern(apiUrl: string): string | null {
   }
 }
 
-/** Sites of the main and fallback servers that send credentials (a token, or user:password in the URL) */
-function authenticatedPatterns(apiUrl: string, fallbackUrl: string, accessToken: string): string[] {
+/** Sites of the main and fallback servers, when requests to them send credentials */
+function authenticatedPatterns(apiUrl: string, fallbackUrl: string, authenticated: boolean): string[] {
+  if (!authenticated) return [];
   const patterns = [apiUrl, fallbackUrl]
-    .filter((url) => url && buildAuthHeaderValue(accessToken, url))
+    .filter(Boolean)
     .map(serverOriginPattern)
     .filter((pattern): pattern is string => pattern !== null);
   return [...new Set(patterns)];
 }
 
 /** Show "Allow access to this server" when authentication is set but a server's site isn't granted */
-export async function updateServerAccessUI(apiUrl: string, accessToken: string, fallbackUrl = state.fallbackUrl): Promise<void> {
-  const patterns = authenticatedPatterns(apiUrl, fallbackUrl, accessToken);
+export async function updateServerAccessUI(
+  apiUrl = state.apiUrl,
+  fallbackUrl = state.fallbackUrl,
+  authenticated = hasAuthentication(state),
+): Promise<void> {
+  const patterns = authenticatedPatterns(apiUrl, fallbackUrl, authenticated);
   let missing = false;
   if (patterns.length > 0) {
     try {
@@ -61,22 +66,41 @@ export async function updateServerAccessUI(apiUrl: string, accessToken: string, 
 }
 
 function requestServerAccess(): void {
-  const apiUrl = elements.urlInput.value.trim();
-  const fallbackUrl = elements.fallbackUrlInput.value.trim();
-  const patterns = authenticatedPatterns(apiUrl, fallbackUrl, elements.tokenInput.value);
+  const apiUrl = splitCredentials(elements.urlInput.value.trim()).url;
+  const fallbackUrl = splitCredentials(elements.fallbackUrlInput.value.trim()).url;
+  const authenticated = Boolean(elements.tokenInput.value || elements.usernameInput.value || elements.passwordInput.value);
+  const patterns = authenticatedPatterns(apiUrl, fallbackUrl, authenticated);
   if (patterns.length === 0) return;
 
   // Called directly from the click: permissions.request needs a user gesture
   void browser.permissions.request({ origins: patterns }).then((granted) => {
     showSettingsStatus(granted ? 'Server access granted' : 'Server access not granted', granted ? 'success' : 'error');
-    void updateServerAccessUI(apiUrl, elements.tokenInput.value, fallbackUrl);
+    void updateServerAccessUI(apiUrl, fallbackUrl, authenticated);
   });
 }
 
+/**
+ * user:password@ typed or pasted into a server URL goes into the username and password fields, and
+ * the URL keeps the rest: URLs are synced, credentials stay on this device
+ */
+function moveUrlCredentialsToFields(): { apiUrl: string; fallbackUrl: string } {
+  const main = splitCredentials(elements.urlInput.value.trim());
+  const fallback = splitCredentials(elements.fallbackUrlInput.value.trim());
+  const fromUrl = main.credentials ?? fallback.credentials;
+  if (fromUrl) {
+    elements.usernameInput.value = fromUrl.username;
+    elements.passwordInput.value = fromUrl.password;
+  }
+  if (main.credentials) elements.urlInput.value = main.url;
+  if (fallback.credentials) elements.fallbackUrlInput.value = fallback.url;
+  return { apiUrl: main.url, fallbackUrl: fallback.url };
+}
+
 async function saveSettings(): Promise<void> {
-  const apiUrl = elements.urlInput.value.trim();
-  const fallbackUrl = elements.fallbackUrlInput.value.trim();
+  const { apiUrl, fallbackUrl } = moveUrlCredentialsToFields();
   const accessToken = elements.tokenInput.value;
+  const typed: Credentials = { username: elements.usernameInput.value, password: elements.passwordInput.value };
+  const credentials = typed.username || typed.password ? typed : null;
   try {
     await saveSync({
       apiUrl,
@@ -86,19 +110,21 @@ async function saveSettings(): Promise<void> {
       includeUrl: elements.includeUrlCheckbox.checked,
       sendAsZipEnabled: state.sendAsZipEnabled,
     });
-    // The token stays in storage.local, so browser sync doesn't copy it to other browsers
+    // The token and the credentials stay in storage.local, so browser sync doesn't copy them
     await setAccessToken(accessToken);
+    await setCredentials(credentials);
     await saveNotifyRules();
     state.apiUrl = apiUrl;
     state.fallbackUrl = fallbackUrl;
     state.accessToken = accessToken;
+    state.credentials = credentials;
     state.includeUrl = elements.includeUrlCheckbox.checked;
 
     // Not a full refresh: that would disturb typing
     updateTopicDropdown();
     renderTopics();
     updateThemeChips();
-    void updateServerAccessUI(state.apiUrl, state.accessToken);
+    void updateServerAccessUI();
   } catch {
     showSettingsStatus('Failed to save settings', 'error');
   }
@@ -201,10 +227,12 @@ export function populateSettings(): void {
   elements.urlInput.value = state.apiUrl;
   elements.fallbackUrlInput.value = state.fallbackUrl;
   elements.tokenInput.value = state.accessToken;
+  elements.usernameInput.value = state.credentials?.username ?? '';
+  elements.passwordInput.value = state.credentials?.password ?? '';
   elements.includeUrlCheckbox.checked = state.includeUrl;
   renderTopics();
   updateThemeChips();
-  void updateServerAccessUI(state.apiUrl, state.accessToken);
+  void updateServerAccessUI();
 }
 
 export function setupSettings(): void {
@@ -212,6 +240,8 @@ export function setupSettings(): void {
   elements.urlInput.addEventListener('input', debouncedSave);
   elements.fallbackUrlInput.addEventListener('input', debouncedSave);
   elements.tokenInput.addEventListener('input', debouncedSave);
+  elements.usernameInput.addEventListener('input', debouncedSave);
+  elements.passwordInput.addEventListener('input', debouncedSave);
   elements.includeUrlCheckbox.addEventListener('change', () => void saveSettings());
   elements.serverAccessBtn.addEventListener('click', requestServerAccess);
 

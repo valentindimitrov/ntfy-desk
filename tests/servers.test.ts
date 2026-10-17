@@ -31,6 +31,17 @@ describe('picking a server', () => {
     expect(await pickServer(config)).toMatchObject({ apiUrl: main, isFallback: false });
   });
 
+  it('sends Basic authentication from the stored credentials to the fallback too', async () => {
+    server.downHosts = ['ntfy.lan'];
+    const credentials = { username: 'alice', password: 'secret' };
+    await withFallback({ ...config, accessToken: '', credentials }, (s) => sendNotification(s, 'inbox', { message: 'x' }));
+    const basic = `Basic ${Buffer.from('alice:secret').toString('base64')}`;
+    expect(server.requests.map((r) => [r.url, r.auth])).toEqual([
+      ['https://ntfy.lan/inbox', basic],
+      ['https://ntfy.example.com/inbox', basic],
+    ]);
+  });
+
   it('skips the health check without a fallback', async () => {
     await pickServer({ ...config, fallbackUrl: '' });
     expect(server.requests).toEqual([]);

@@ -231,6 +231,22 @@
           <label class="form-label" for="token-input">Access Token (optional)</label>
           <input type="password" class="form-input" id="token-input" placeholder="tk_..." />
           <p class="form-hint">For private topics or authenticated servers</p>
+        </div>
+
+        <div class="form-group">
+          <div class="form-label">Username and password (optional)</div>
+          <div class="credentials-row">
+            <input type="text" class="form-input" id="username-input" placeholder="Username" autocomplete="off" aria-label="Username" />
+            <input
+              type="password"
+              class="form-input"
+              id="password-input"
+              placeholder="Password"
+              autocomplete="new-password"
+              aria-label="Password"
+            />
+          </div>
+          <p class="form-hint">Instead of a token. Kept on this device only, not synced</p>
           <button class="chip" id="server-access-btn" style="display: none">🔓 Allow access to this server</button>
           <p class="form-hint" id="server-access-hint" style="display: none">Needed to send and receive with authentication</p>
         </div>

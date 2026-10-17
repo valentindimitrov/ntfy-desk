@@ -342,6 +342,46 @@ describe('settings', () => {
     expect(request).toHaveBeenCalledWith({ origins: ['https://ntfy.example/*', 'https://ntfy.lan/*'] });
   });
 
+  it('moves user:password@ from a typed URL into the username and password, kept locally', async () => {
+    await openPopup();
+    $('#settings-btn').click();
+    await flush();
+    const url = $<HTMLInputElement>('#url-input');
+    url.value = 'https://alice:s%40cret@ntfy.lan';
+    url.dispatchEvent(new Event('input'));
+    await vi.waitFor(async () => expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.lan' }), {
+      timeout: 3000,
+    });
+
+    expect(url.value).toBe('https://ntfy.lan');
+    expect($<HTMLInputElement>('#username-input').value).toBe('alice');
+    expect($<HTMLInputElement>('#password-input').value).toBe('s@cret');
+    expect($<HTMLInputElement>('#password-input').type).toBe('password');
+    expect(await fakeBrowser.storage.local.get('serverCredentials')).toEqual({
+      serverCredentials: { username: 'alice', password: 's@cret' },
+    });
+    expect(JSON.stringify(await fakeBrowser.storage.sync.get(null))).not.toContain('cret');
+  });
+
+  it('asks for server access with a username and password, without a token', async () => {
+    await fakeBrowser.storage.local.set({ accessToken: '', serverCredentials: { username: 'alice', password: 'secret' } });
+    mockResolved(fakeBrowser.permissions, 'contains', false);
+    await openPopup();
+    $('#settings-btn').click();
+    await flush();
+    expect($<HTMLInputElement>('#username-input').value).toBe('alice');
+    expect($('#server-access-btn').style.display).toBe('');
+  });
+
+  it('opens the server in a tab without credentials in the address', async () => {
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://alice:secret@ntfy.example' });
+    const create = mockResolved(fakeBrowser.tabs, 'create', {});
+    await openPopup();
+    $('#open-url-btn').click();
+    await flush();
+    expect(create.mock.calls).toEqual([[{ url: 'https://ntfy.example/inbox' }]]);
+  });
+
   it('saves the token to local storage, not sync', async () => {
     await openPopup();
     $('#settings-btn').click();

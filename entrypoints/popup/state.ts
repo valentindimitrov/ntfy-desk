@@ -1,7 +1,7 @@
 // State shared by the popup's modules.
 
 import { browser } from 'wxt/browser';
-import { getConfig, parseTopics, type NtfyMessage } from '@/utils/ntfy';
+import { getConfig, parseTopics, type Credentials, type NtfyMessage } from '@/utils/ntfy';
 import { getTopicRules, type TopicRules } from '@/utils/rules';
 import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFile } from '@/utils/stored-files';
@@ -27,6 +27,7 @@ export interface PopupState {
   apiUrl: string;
   fallbackUrl: string;
   accessToken: string;
+  credentials: Credentials | null;
   topics: string[];
   theme: Theme;
   includeUrl: boolean;
@@ -69,6 +70,7 @@ export const state: PopupState = {
   apiUrl: '',
   fallbackUrl: '',
   accessToken: '',
+  credentials: null,
   topics: [],
   theme: 'auto',
   includeUrl: false,
@@ -96,6 +98,7 @@ export async function loadSettings(): Promise<void> {
   state.apiUrl = config.apiUrl;
   state.fallbackUrl = config.fallbackUrl;
   state.accessToken = config.accessToken;
+  state.credentials = config.credentials;
   state.topics = parseTopics(items.topics);
   state.includeUrl = config.includeUrl;
   state.theme = items.theme === 'light' || items.theme === 'dark' ? items.theme : 'auto';

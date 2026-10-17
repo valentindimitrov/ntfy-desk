@@ -22,13 +22,16 @@ export interface ChosenServer extends NtfyServer {
 }
 
 /** The main server if it is up or there's no fallback; else the fallback if that is up; else the main one */
-export async function pickServer(config: Pick<NtfyConfig, 'apiUrl' | 'accessToken' | 'fallbackUrl'>): Promise<ChosenServer> {
-  const main = { apiUrl: config.apiUrl, accessToken: config.accessToken, isFallback: false };
+export async function pickServer(
+  config: Pick<NtfyConfig, 'apiUrl' | 'accessToken' | 'fallbackUrl'> & Partial<Pick<NtfyConfig, 'credentials'>>,
+): Promise<ChosenServer> {
+  const auth = { accessToken: config.accessToken, credentials: config.credentials ?? null };
+  const main = { apiUrl: config.apiUrl, ...auth, isFallback: false };
   if (!config.fallbackUrl || (await isServerUp(config.apiUrl))) {
     return main;
   }
   if (await isServerUp(config.fallbackUrl)) {
-    return { apiUrl: config.fallbackUrl, accessToken: config.accessToken, isFallback: true };
+    return { apiUrl: config.fallbackUrl, ...auth, isFallback: true };
   }
   return main;
 }
@@ -39,14 +42,15 @@ export async function pickServer(config: Pick<NtfyConfig, 'apiUrl' | 'accessToke
  * limit the main server may still have taken the message, so it can arrive twice: better than not at all.
  */
 export async function withFallback<T>(
-  config: Pick<NtfyConfig, 'apiUrl' | 'accessToken' | 'fallbackUrl'>,
+  config: Pick<NtfyConfig, 'apiUrl' | 'accessToken' | 'fallbackUrl'> & Partial<Pick<NtfyConfig, 'credentials'>>,
   request: (server: NtfyServer) => Promise<T>,
 ): Promise<T> {
+  const auth = { accessToken: config.accessToken, credentials: config.credentials ?? null };
   try {
-    return await request({ apiUrl: config.apiUrl, accessToken: config.accessToken });
+    return await request({ apiUrl: config.apiUrl, ...auth });
   } catch (error) {
     if (isNoResponse(error) && config.fallbackUrl) {
-      return request({ apiUrl: config.fallbackUrl, accessToken: config.accessToken });
+      return request({ apiUrl: config.fallbackUrl, ...auth });
     }
     throw error;
   }

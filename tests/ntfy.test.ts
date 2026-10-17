@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import {
   base64UrlEncode,
+  CREDENTIALS_KEY,
   buildAuthHeaderValue,
   buildTopicUrl,
   encodeHeaderValue,
@@ -12,10 +13,59 @@ import {
   sendAttachment,
   sendNotification,
   setAccessToken,
+  setCredentials,
+  splitCredentials,
 } from '@/utils/ntfy';
 
 beforeEach(() => {
   fakeBrowser.reset();
+});
+
+describe('credentials in server URLs', () => {
+  it('splits user:password@ from a URL, keeping the rest as written', () => {
+    expect(splitCredentials('https://us%C3%A9r:p%40ss@ntfy.example:8443/path?x=1')).toEqual({
+      url: 'https://ntfy.example:8443/path?x=1',
+      credentials: { username: 'usér', password: 'p@ss' },
+    });
+    expect(splitCredentials('https://u:p@ss@ntfy.example')).toEqual({
+      url: 'https://ntfy.example',
+      credentials: { username: 'u', password: 'p@ss' },
+    });
+    expect(splitCredentials('https://ntfy.example')).toEqual({ url: 'https://ntfy.example', credentials: null });
+    expect(splitCredentials('not a url')).toEqual({ url: 'not a url', credentials: null });
+  });
+
+  it('moves credentials saved in synced URLs to local storage, and syncs the URLs without them', async () => {
+    await fakeBrowser.storage.sync.set({
+      apiUrl: 'https://alice:secret@ntfy.lan',
+      fallbackUrl: 'https://alice:secret@ntfy.example.com',
+      topics: 'a',
+    });
+    const config = await getConfig();
+    expect(config).toMatchObject({
+      apiUrl: 'https://ntfy.lan',
+      fallbackUrl: 'https://ntfy.example.com',
+      credentials: { username: 'alice', password: 'secret' },
+    });
+    expect(await fakeBrowser.storage.sync.get(['apiUrl', 'fallbackUrl'])).toEqual({
+      apiUrl: 'https://ntfy.lan',
+      fallbackUrl: 'https://ntfy.example.com',
+    });
+    expect(await fakeBrowser.storage.local.get(CREDENTIALS_KEY)).toEqual({ [CREDENTIALS_KEY]: { username: 'alice', password: 'secret' } });
+    expect(JSON.stringify(await fakeBrowser.storage.sync.get(null))).not.toContain('secret');
+  });
+
+  it('keeps credentials already stored locally over ones found in a synced URL', async () => {
+    await setCredentials({ username: 'local', password: 'kept' });
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://old:stale@ntfy.lan' });
+    expect((await getConfig()).credentials).toEqual({ username: 'local', password: 'kept' });
+  });
+
+  it('removes the credentials when both fields are empty', async () => {
+    await setCredentials({ username: 'a', password: 'b' });
+    await setCredentials({ username: '', password: '' });
+    expect(await fakeBrowser.storage.local.get(CREDENTIALS_KEY)).toEqual({});
+  });
 });
 
 describe('configuration', () => {
@@ -26,6 +76,7 @@ describe('configuration', () => {
       apiUrl: 'https://ntfy.example',
       fallbackUrl: '',
       accessToken: 'tk_local',
+      credentials: null,
       topics: ['a', 'b', 'c'],
       includeUrl: true,
     });
@@ -33,18 +84,20 @@ describe('configuration', () => {
   });
 
   it('defaults to nothing configured', async () => {
-    expect(await getConfig()).toEqual({ apiUrl: '', fallbackUrl: '', accessToken: '', topics: [], includeUrl: false });
+    expect(await getConfig()).toEqual({ apiUrl: '', fallbackUrl: '', accessToken: '', credentials: null, topics: [], includeUrl: false });
     expect(parseTopics(undefined)).toEqual([]);
   });
 });
 
 describe('authentication', () => {
-  it('uses the token, else credentials in the server URL', () => {
-    expect(buildAuthHeaderValue('tk_x', 'https://u:p@ntfy.example')).toBe('Bearer tk_x');
-    const basic = buildAuthHeaderValue('', 'https://us%C3%A9r:p%40ss@ntfy.example');
-    expect(basic).toBe(`Basic ${Buffer.from('usér:p@ss').toString('base64')}`);
-    expect(buildAuthHeaderValue('', 'https://ntfy.example')).toBe('');
-    expect(buildAuthHeaderValue('', 'not a url')).toBe('');
+  it('uses the token, else the username and password, else credentials still in the URL', () => {
+    const basic = (pair: string) => `Basic ${Buffer.from(pair).toString('base64')}`;
+    const credentials = { username: 'usér', password: 'p@ss' };
+    expect(buildAuthHeaderValue({ apiUrl: 'https://ntfy.example', accessToken: 'tk_x', credentials })).toBe('Bearer tk_x');
+    expect(buildAuthHeaderValue({ apiUrl: 'https://ntfy.example', accessToken: '', credentials })).toBe(basic('usér:p@ss'));
+    expect(buildAuthHeaderValue({ apiUrl: 'https://us%C3%A9r:p%40ss@ntfy.example', accessToken: '' })).toBe(basic('usér:p@ss'));
+    expect(buildAuthHeaderValue({ apiUrl: 'https://ntfy.example', accessToken: '', credentials: null })).toBe('');
+    expect(buildAuthHeaderValue({ apiUrl: 'not a url', accessToken: '' })).toBe('');
   });
 
   it('encodes ?auth= as unpadded base64url, as ntfy (Go RawURLEncoding) decodes it', () => {

@@ -3,17 +3,67 @@
 
 import { browser } from 'wxt/browser';
 
+/** Username and password for Basic authentication (used when there's no access token) */
+export interface Credentials {
+  username: string;
+  password: string;
+}
+
 export interface NtfyConfig {
+  /** Server URL, without credentials */
   apiUrl: string;
-  /** Another URL of the same server, used when apiUrl doesn't answer ('' for none) */
+  /** Another URL of the same server, used when apiUrl doesn't answer ('' for none); without credentials */
   fallbackUrl: string;
   accessToken: string;
+  /** For both URLs (they are the same server); null without */
+  credentials: Credentials | null;
   topics: string[];
   includeUrl: boolean;
 }
 
-/** The server and credentials a request needs */
-export type NtfyServer = Pick<NtfyConfig, 'apiUrl' | 'accessToken'>;
+/** The server and authentication a request needs */
+export type NtfyServer = Pick<NtfyConfig, 'apiUrl' | 'accessToken'> & { credentials?: Credentials | null };
+
+/** Where the username and password live: storage.local, so browser sync doesn't copy them */
+export const CREDENTIALS_KEY = 'serverCredentials';
+
+/**
+ * A server URL without user:password@, and the credentials it carried (decoded). The rest of the URL
+ * is kept as written.
+ */
+export function splitCredentials(url: string): { url: string; credentials: Credentials | null } {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { url, credentials: null };
+  }
+  if (!parsed.username && !parsed.password) {
+    return { url, credentials: null };
+  }
+  const credentials = { username: decodeURIComponent(parsed.username), password: decodeURIComponent(parsed.password) };
+  // Everything after the userinfo, as written (URL.toString() would add a trailing slash). The
+  // userinfo ends at the last @ before the path, as the URL parser reads it.
+  const authorityStart = url.indexOf('//') + 2;
+  const pathStart = url.slice(authorityStart).search(/[/?#]/);
+  const authorityEnd = pathStart === -1 ? url.length : authorityStart + pathStart;
+  const rest = url.slice(url.lastIndexOf('@', authorityEnd) + 1);
+  return { url: `${parsed.protocol}//${rest}`, credentials };
+}
+
+function isCredentials(value: unknown): value is Credentials {
+  const candidate = value as Partial<Credentials> | null;
+  return typeof candidate?.username === 'string' && typeof candidate.password === 'string';
+}
+
+/** Save the username and password (storage.local), or remove them when both are empty */
+export async function setCredentials(credentials: Credentials | null): Promise<void> {
+  if (credentials && (credentials.username || credentials.password)) {
+    await browser.storage.local.set({ [CREDENTIALS_KEY]: credentials });
+  } else {
+    await browser.storage.local.remove([CREDENTIALS_KEY]);
+  }
+}
 
 export interface NtfyAttachment {
   name?: string;
@@ -76,16 +126,33 @@ export function parseTopics(value: unknown): string[] {
     : [];
 }
 
-/** Server URL and topics come from storage.sync; the access token stays in storage.local, so browser sync doesn't copy it */
+/**
+ * Server URLs and topics come from storage.sync; the access token and the username and password stay
+ * in storage.local, so browser sync doesn't copy them. A synced URL that still carries user:password@
+ * (saved by an earlier version) is moved: credentials to storage.local, the URL without them.
+ */
 export async function getConfig(): Promise<NtfyConfig> {
   const [synced, local] = await Promise.all([
     browser.storage.sync.get(['apiUrl', 'fallbackUrl', 'topics', 'includeUrl']),
-    browser.storage.local.get(['accessToken']),
+    browser.storage.local.get(['accessToken', CREDENTIALS_KEY]),
   ]);
+  const main = splitCredentials(typeof synced.apiUrl === 'string' ? synced.apiUrl : '');
+  const fallback = splitCredentials(typeof synced.fallbackUrl === 'string' ? synced.fallbackUrl : '');
+  const stored = local[CREDENTIALS_KEY];
+  const credentials = isCredentials(stored) ? stored : (main.credentials ?? fallback.credentials);
+
+  if (main.credentials || fallback.credentials) {
+    if (!isCredentials(stored)) {
+      await setCredentials(credentials);
+    }
+    await browser.storage.sync.set({ apiUrl: main.url, fallbackUrl: fallback.url });
+  }
+
   return {
-    apiUrl: typeof synced.apiUrl === 'string' ? synced.apiUrl : '',
-    fallbackUrl: typeof synced.fallbackUrl === 'string' ? synced.fallbackUrl : '',
+    apiUrl: main.url,
+    fallbackUrl: fallback.url,
     accessToken: typeof local.accessToken === 'string' ? local.accessToken : '',
+    credentials,
     topics: parseTopics(synced.topics),
     includeUrl: synced.includeUrl === true,
   };
@@ -112,29 +179,28 @@ export function base64UrlEncode(value: string): string {
   return base64Encode(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** Authorization header value: Bearer token, or Basic from credentials in the server URL; '' without authentication */
-export function buildAuthHeaderValue(accessToken: string, apiUrl: string): string {
-  if (accessToken) {
-    return `Bearer ${accessToken}`;
+/**
+ * Authorization header value: Bearer with the access token, else Basic with the username and password
+ * (else with credentials still in the URL); '' without authentication
+ */
+export function buildAuthHeaderValue(server: NtfyServer): string {
+  if (server.accessToken) {
+    return `Bearer ${server.accessToken}`;
   }
-  if (apiUrl) {
-    try {
-      const url = new URL(apiUrl);
-      if (url.username || url.password) {
-        const username = decodeURIComponent(url.username);
-        const password = decodeURIComponent(url.password);
-        return `Basic ${base64Encode(`${username}:${password}`)}`;
-      }
-    } catch {
-      // Invalid URL: no authentication
-    }
+  const credentials = server.credentials ?? splitCredentials(server.apiUrl).credentials;
+  if (credentials && (credentials.username || credentials.password)) {
+    return `Basic ${base64Encode(`${credentials.username}:${credentials.password}`)}`;
   }
   return '';
 }
 
-export function buildAuthHeaders(accessToken: string, apiUrl: string): Headers {
+export function hasAuthentication(server: NtfyServer): boolean {
+  return buildAuthHeaderValue(server) !== '';
+}
+
+export function buildAuthHeaders(server: NtfyServer): Headers {
   const headers = new Headers();
-  const auth = buildAuthHeaderValue(accessToken, apiUrl);
+  const auth = buildAuthHeaderValue(server);
   if (auth) {
     headers.set('Authorization', auth);
   }
@@ -201,13 +267,13 @@ async function post(url: string, headers: Headers, body: BodyInit, timeout: numb
 }
 
 export function sendNotification(server: NtfyServer, topic: string, options: PublishOptions): Promise<Response> {
-  const headers = buildAuthHeaders(server.accessToken, server.apiUrl);
+  const headers = buildAuthHeaders(server);
   setPublishHeaders(headers, options);
   return post(buildTopicUrl(server.apiUrl, topic), headers, options.message || '', TIMEOUTS.publish);
 }
 
 export function sendAttachment(server: NtfyServer, topic: string, options: AttachmentOptions): Promise<Response> {
-  const headers = buildAuthHeaders(server.accessToken, server.apiUrl);
+  const headers = buildAuthHeaders(server);
   headers.set('X-Filename', encodeHeaderValue(options.filename));
   if (options.contentType) {
     headers.set('Content-Type', options.contentType);
@@ -252,7 +318,7 @@ export async function canReadTopic(server: NtfyServer, topic: string): Promise<b
   try {
     const response = await fetch(`${buildTopicUrl(server.apiUrl, topic)}/auth`, {
       method: 'GET',
-      headers: buildAuthHeaders(server.accessToken, server.apiUrl),
+      headers: buildAuthHeaders(server),
       signal: AbortSignal.timeout(TIMEOUTS.check),
     });
     if (response.ok) {
@@ -275,7 +341,7 @@ export async function getNotifications(server: NtfyServer, topic: string, since:
 
   const response = await fetch(`${buildTopicUrl(server.apiUrl, topic)}/json?poll=1&since=${since}`, {
     method: 'GET',
-    headers: buildAuthHeaders(server.accessToken, server.apiUrl),
+    headers: buildAuthHeaders(server),
     signal: AbortSignal.timeout(TIMEOUTS.poll),
   });
   if (!response.ok) {

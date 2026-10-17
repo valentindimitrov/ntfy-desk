@@ -132,7 +132,7 @@ async function init(): Promise<void> {
   elements.popoutBtn.addEventListener('click', () => void openInTab());
   elements.tabButtons.forEach((button) => button.addEventListener('click', () => switchTab(button.dataset.tab as Tab)));
 
-  await updateServerAccessUI(state.apiUrl, state.accessToken);
+  await updateServerAccessUI();
   updateUI();
   applyTheme();
   renderTags();

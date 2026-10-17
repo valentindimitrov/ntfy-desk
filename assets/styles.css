@@ -1651,3 +1651,9 @@ button.notification-title {
 .notification-message.markdown a {
   color: var(--primary-light);
 }
+
+/* Settings: username and password side by side */
+.credentials-row {
+  display: flex;
+  gap: 12px;
+}

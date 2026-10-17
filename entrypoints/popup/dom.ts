@@ -62,6 +62,8 @@ export function getElements() {
     urlInput: byId<HTMLInputElement>('url-input'),
     fallbackUrlInput: byId<HTMLInputElement>('fallback-url-input'),
     tokenInput: byId<HTMLInputElement>('token-input'),
+    usernameInput: byId<HTMLInputElement>('username-input'),
+    passwordInput: byId<HTMLInputElement>('password-input'),
     serverAccessBtn: byId<HTMLButtonElement>('server-access-btn'),
     serverAccessHint: byId('server-access-hint'),
     includeUrlCheckbox: byId<HTMLInputElement>('include-url-checkbox'),

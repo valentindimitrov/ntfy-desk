@@ -5,6 +5,7 @@ import { browser } from 'wxt/browser';
 import { handleContextMenuClick, updateContextMenu } from '@/utils/context-menu';
 import { handleNotificationButton, handleNotificationClick, notifyNewMessage, updateUnreadBadge } from '@/utils/notifications';
 import { handlePopupRequest } from '@/utils/messages';
+import { CREDENTIALS_KEY } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 
 const ALARM_NAME = 'ws-keepalive';
@@ -33,7 +34,7 @@ export default defineBackground(() => {
       void receiver.connect();
     }
     if (area === 'local') {
-      if (changes.accessToken) {
+      if (changes.accessToken || changes[CREDENTIALS_KEY]) {
         void receiver.connect();
       }
       if (changes.receivedNotifications || changes.readMessageIds || changes.deletedMessageIds) {

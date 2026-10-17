@@ -33,7 +33,7 @@ In the settings (gear icon):
 
 1. **Server URL**: `https://ntfy.sh`, or your own server.
 2. **Fallback URL** (optional): another address of the same server, e.g. the public URL when the main one is a LAN address. Receiving switches to it while the main server doesn't answer (checked every minute) and back when it returns; sending retries on it when the main server gives no response.
-3. **Access Token**: if your server needs one. It is stored locally and isn't copied to other browsers by browser sync. Credentials in the server URL (`https://user:password@host`) work too.
+3. **Access Token**, or **Username and password**: if your server needs them. Both are stored on this device only and aren't copied to other browsers by browser sync. Credentials typed into a server URL (`https://user:password@host`) move to the username and password fields; the URL is synced without them.
 4. **Allow access to this server**: appears when a token or credentials are set. ntfy's CORS headers don't allow the `Authorization` header, so the extension needs permission for the server's site (both sites, with a fallback URL) to send authenticated requests.
 5. **Topics**: the topics to send to and receive from. The extension receives from the topics your credentials can read; a topic you can only send to is used for sending only.
 6. **Include current tab's URL**: puts the page URL in the message title. In the extension's own tab, **Use tab URL** fills in the page you were on last (it asks once for permission to read tabs).

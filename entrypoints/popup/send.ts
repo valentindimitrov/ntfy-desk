@@ -1,7 +1,7 @@
 // Send tab: topic, title (optionally the tab's URL), message, attachments, priority and tags.
 
 import { browser } from 'wxt/browser';
-import { isHttpUrl, sendAttachment, sendNotification } from '@/utils/ntfy';
+import { isHttpUrl, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
 import {
   STORED_FILES_KEY,
   decodeDataUrl,
@@ -496,7 +496,7 @@ async function sendNow(): Promise<void> {
   renderAttachments();
 
   // The fallback server is tried when the main one gives no response
-  const servers = { apiUrl: state.apiUrl, fallbackUrl: state.fallbackUrl, accessToken: state.accessToken };
+  const servers = { apiUrl: state.apiUrl, fallbackUrl: state.fallbackUrl, accessToken: state.accessToken, credentials: state.credentials };
   try {
     if (files.length === 0) {
       await withFallback(servers, (server) => sendNotification(server, topic, { message, title, priority, tags }));
@@ -546,12 +546,13 @@ async function sendNow(): Promise<void> {
   }
 }
 
-/** Open the server's web app on the selected topic */
+/** Open the server's web app on the selected topic; never with credentials in the address */
 function openNtfyUrl(): void {
-  if (!state.apiUrl) return;
+  const apiUrl = splitCredentials(state.apiUrl).url;
+  if (!apiUrl) return;
   const topic = elements.topicSelect.value;
-  const base = withoutTrailingSlash(state.apiUrl);
-  void browser.tabs.create({ url: topic && state.topics.includes(topic) ? `${base}/${topic}` : state.apiUrl });
+  const base = withoutTrailingSlash(apiUrl);
+  void browser.tabs.create({ url: topic && state.topics.includes(topic) ? `${base}/${topic}` : apiUrl });
 }
 
 export function setupSend(): void {

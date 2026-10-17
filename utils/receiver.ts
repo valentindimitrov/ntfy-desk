@@ -34,7 +34,10 @@ export interface ReceiverEvents {
 }
 
 /** url may carry the credentials in ?auth=; logUrl never does */
-export function buildWsUrl(config: Pick<NtfyConfig, 'apiUrl' | 'accessToken' | 'topics'>): { url: string; logUrl: string } {
+export function buildWsUrl(config: Pick<NtfyConfig, 'apiUrl' | 'accessToken' | 'topics'> & Partial<Pick<NtfyConfig, 'credentials'>>): {
+  url: string;
+  logUrl: string;
+} {
   const apiUrl = /^https?:\/\//i.test(config.apiUrl) ? config.apiUrl : `https://${config.apiUrl}`;
 
   // Host only, like the HTTP calls: credentials embedded in the URL must not end up in the WebSocket URL
@@ -43,7 +46,7 @@ export function buildWsUrl(config: Pick<NtfyConfig, 'apiUrl' | 'accessToken' | '
   const logUrl = `${scheme}//${urlObj.host}/${config.topics.join(',')}/ws`;
 
   // Browsers can't set headers on a WebSocket, so ntfy accepts the Authorization header value in ?auth=
-  const auth = buildAuthHeaderValue(config.accessToken, config.apiUrl);
+  const auth = buildAuthHeaderValue(config);
   const url = auth ? `${logUrl}?auth=${base64UrlEncode(auth)}` : logUrl;
 
   return { url, logUrl };
@@ -75,7 +78,7 @@ export function createReceiver(events: ReceiverEvents) {
   // ntfy rejects a subscription to several topics if any one of them isn't readable, and a topic the
   // token can only send to is a normal setup. So subscribe to, and poll, the readable topics only.
   async function getReadableTopics(config: NtfyConfig): Promise<string[]> {
-    const key = JSON.stringify([config.apiUrl, config.accessToken, config.topics]);
+    const key = JSON.stringify([config.apiUrl, config.accessToken, config.credentials, config.topics]);
     if (readableTopicsCache.key === key && Date.now() - readableTopicsCache.time < READABLE_TOPICS_TTL) {
       return readableTopicsCache.topics;
     }
