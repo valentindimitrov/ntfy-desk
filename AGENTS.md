@@ -27,6 +27,7 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 - Live messages come from ntfy's JSON stream (`openMessageStream`, GET `/<topics>/json`), not a WebSocket: a WebSocket can't carry headers, so it would need the credentials in the URL (`?auth=`), where browser error lists and proxy access logs record them. Never put credentials in a URL.
 - Everything from the server is untrusted: messages go through `parseMessage` / `parseMessageJson` (types checked, unknown fields dropped) before they are stored, and again when the history is read. Limits: `MAX_MESSAGE_JSON` per message, `MAX_POLL_BYTES` per poll response, `MAX_POLL_MESSAGES` per poll, `MAX_HISTORY_PER_TOPIC` and `MAX_HISTORY_SIZE` stored; only messages of subscribed or polled topics are stored. The stream is read one chunk at a time, after the lines before it are stored, so a flooding server is slowed down rather than queued. The Receive tab renders each message on its own (`renderMessageSafely`).
 - Messages from the server are rendered with `textContent` only (Markdown through `utils/markdown.ts`, which builds nodes); URLs from messages are opened, linked or copied only if `isHttpUrl`; images are previewed only from the ntfy server's own origin.
+- Desktop notifications get buttons for a message's `view` actions only (`notificationButtons`); `http` and `broadcast` actions stay out, since they would make the browser send requests the publisher chose. Firefox shows no notification buttons.
 - Unit tests: `tests/*.test.ts` (Vitest). `tests/helpers/fake-ntfy.ts` is a fake ntfy server (fetch, with `FakeStream` for subscriptions: accept, refuse, deliver, end); popup tests load the real `index.html` in happy-dom. End-to-end tests: `e2e/*.spec.ts`; the fixtures in `e2e/fixtures.ts` give the service worker (`serviceWorker.evaluate` runs in it), `configure`, `notified` (desktop notifications recorded in the worker) and `openPopup`.
 
 ## Behaviour that is easy to break
@@ -41,14 +42,8 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 
 ## Roadmap
 
-Update the status here when an item lands. Each item comes with tests.
+Open items; remove a row when it lands (the design goes to `ARCHITECTURE.md` if it matters). Each item comes with tests.
 
 | # | Improvement | Status |
 |---|---|---|
-| 1 | History: a limit per topic instead of 50 across all topics; prune the read and deleted id lists | Done: 100 per topic; the popup prunes the id lists |
-| 2 | Connection state in the Receive tab: connected, reconnecting, server unreachable, topics without read access, sync errors | Done: `utils/status.ts`, written by the receiver to storage.session |
-| 3 | Per-topic desktop notification rules: all, from a priority up, or off (the topic stays listed) | Done: `utils/rules.ts`, set in the settings, 🔕 in the topic list |
-| 4 | Clickable notifications: the message's `click` URL, or the message in the extension's tab; `view` actions as buttons. `http` and `broadcast` actions stay out (they would make the browser send requests the publisher chose). | Done: `notificationButtons`, `handleNotificationClick`, `utils/extension-tab.ts`; no buttons in Firefox (unsupported) |
-| 5 | Fallback server URL (e.g. LAN first, the public URL when it doesn't answer) for receiving and sending | Done: `utils/servers.ts` (`/v1/health`; sending retries on network errors only) |
-| 6 | Receive tab: search, image attachment previews (attachments on the ntfy server only), Markdown messages rendered safely (no `innerHTML`) | Done: `matchesSearch`, `previewableImage` (receive.ts), `utils/markdown.ts` |
 | 7 | Run-test the Firefox build in Firefox | Open: `web-ext lint` passes; `web-ext run` can't attach while another Firefox instance is running. Close Firefox, then `pnpm dev:firefox` |
