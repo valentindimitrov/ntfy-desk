@@ -3,6 +3,7 @@
 import { browser } from 'wxt/browser';
 import { getHistoryState, pruneReadState } from '@/utils/history';
 import { getConfig, parseTopics, type NtfyMessage } from '@/utils/ntfy';
+import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFile } from '@/utils/stored-files';
 import { getElements, type Elements } from './dom';
 
@@ -39,6 +40,8 @@ export interface PopupState {
   deletedMessageIds: string[];
   /** Messages shown on the Receive tab, for Mark all read and Delete all */
   currentNotifications: NtfyMessage[];
+  /** The background's connection state */
+  receiverStatus: ReceiverStatus | null;
 
   serverAccessMissing: boolean;
 }
@@ -69,6 +72,7 @@ export const state: PopupState = {
   readMessageIds: [],
   deletedMessageIds: [],
   currentNotifications: [],
+  receiverStatus: null,
   serverAccessMissing: false,
 };
 

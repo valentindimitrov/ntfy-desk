@@ -11,6 +11,8 @@ export interface FakeServer {
   unreadable: string[];
   /** /auth fails with a network error */
   authDown: boolean;
+  /** HTTP status of polls (200 by default) */
+  pollStatus: number;
   now: number;
   requests: { url: string; auth: string | null }[];
   publish(topic: string, time: number, extra?: Partial<NtfyMessage>): NtfyMessage;
@@ -59,6 +61,7 @@ export function installFakeNtfy(): FakeServer {
     messages: [],
     unreadable: [],
     authDown: false,
+    pollStatus: 200,
     now: 10000,
     requests: [],
     publish(topic, time, extra = {}) {
@@ -82,6 +85,9 @@ export function installFakeNtfy(): FakeServer {
       return new Response('{"success":true}', { status: readable ? 200 : 403 });
     }
 
+    if (server.pollStatus !== 200) {
+      return new Response('', { status: server.pollStatus });
+    }
     const since = url.searchParams.get('since') ?? 'all';
     let messages = server.messages.filter(m => m.topic === topic);
     if (/^\d+$/.test(since)) {

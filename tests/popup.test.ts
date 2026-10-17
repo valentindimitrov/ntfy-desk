@@ -92,6 +92,21 @@ describe('Receive tab', () => {
     expect(deletedMessageIds).toEqual(['a1', 'a2']);
   });
 
+  it('shows the connection state and marks topics the credentials can only send to', async () => {
+    await fakeBrowser.storage.session.set({
+      receiverStatus: { state: 'reconnecting', server: 'ntfy.example', unreadableTopics: ['inbox'], unreachable: true, retryAt: Date.now() + 30000, syncErrors: { alerts: 'HTTP 502' }, lastSyncAt: null },
+    });
+    await openPopup('?tab=receive');
+    const lines = [...document.querySelectorAll('.status-line')].map(line => [line.className, line.textContent]);
+    expect(lines).toEqual([
+      ['status-line error', "Can't reach ntfy.example, retrying in 30 s"],
+      ['status-line warning', "Couldn't fetch missed messages: alerts (HTTP 502)"],
+    ]);
+    const inbox = [...document.querySelectorAll<HTMLElement>('.topic-filter-btn')].find(b => b.textContent?.startsWith('inbox'))!;
+    expect(inbox.classList.contains('send-only')).toBe(true);
+    expect(inbox.textContent).toBe('inboxsend only');
+  });
+
   it('keeps the heading in place when the list is empty', async () => {
     await fakeBrowser.storage.local.set({ receiveTopicFilter: 'inbox' });
     await openPopup('?tab=receive');

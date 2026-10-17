@@ -2,6 +2,7 @@
 // missed while the socket was down or the browser closed.
 
 import { getTopicSyncStates, initTopicSyncState, pruneTopicSyncStates, recordMessage } from './history';
+import { INITIAL_STATUS, writeReceiverStatus, type ReceiverStatus } from './status';
 import {
   base64UrlEncode,
   buildAuthHeaderValue,
@@ -54,6 +55,13 @@ export function createReceiver(events: ReceiverEvents) {
   let reconnectDelay = INITIAL_RECONNECT_DELAY;
   let readableTopicsCache: { key: string | null; topics: string[]; time: number } = { key: null, topics: [], time: 0 };
   let syncInFlight: Promise<void> | null = null;
+  let status: ReceiverStatus = { ...INITIAL_STATUS };
+
+  /** The receiver is the only writer of the status, so it keeps the current one in memory */
+  function setStatus(patch: Partial<ReceiverStatus>): void {
+    status = { ...status, ...patch };
+    writeReceiverStatus(status).catch(error => console.error('Failed to save the connection status:', error));
+  }
 
   // ntfy rejects a subscription to several topics if any one of them isn't readable, and a topic the
   // token can only send to is a normal setup. So subscribe to, and poll, the readable topics only.
@@ -70,10 +78,20 @@ export function createReceiver(events: ReceiverEvents) {
     if (skipped.length > 0) {
       console.log(`Not receiving from topics without read access: ${skipped.join(', ')}`);
     }
-    if (!access.includes(null)) {
+    const unreachable = access.includes(null);
+    if (!unreachable) {
       readableTopicsCache = { key, topics, time: Date.now() };
     }
+    setStatus({ unreadableTopics: skipped, unreachable });
     return topics;
+  }
+
+  function hostOf(apiUrl: string): string {
+    try {
+      return new URL(/^https?:\/\//i.test(apiUrl) ? apiUrl : `https://${apiUrl}`).host;
+    } catch {
+      return apiUrl;
+    }
   }
 
   function startKeepalive(socket: WebSocket): void {
@@ -110,6 +128,7 @@ export function createReceiver(events: ReceiverEvents) {
     if (reconnectTimer) return;
 
     console.log(`Scheduling WebSocket reconnect in ${reconnectDelay / 1000}s...`);
+    setStatus({ state: 'reconnecting', retryAt: Date.now() + reconnectDelay });
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
@@ -134,9 +153,16 @@ export function createReceiver(events: ReceiverEvents) {
       ws = socket;
       wsUrl = url;
 
+      if (status.state !== 'reconnecting') {
+        setStatus({ state: 'connecting', server: hostOf(config.apiUrl), retryAt: null });
+      } else {
+        setStatus({ server: hostOf(config.apiUrl) });
+      }
+
       socket.onopen = () => {
         console.log('WebSocket connected successfully.');
         reconnectDelay = INITIAL_RECONNECT_DELAY;
+        setStatus({ state: 'connected', retryAt: null, unreachable: false });
         startKeepalive(socket);
         void sync();
         events.onConnected?.();
@@ -176,6 +202,7 @@ export function createReceiver(events: ReceiverEvents) {
     if (!config.apiUrl || config.topics.length === 0) {
       console.log('ntfy is not configured, skipping WebSocket connection.');
       close();
+      setStatus({ ...INITIAL_STATUS });
       return;
     }
 
@@ -183,6 +210,7 @@ export function createReceiver(events: ReceiverEvents) {
     if (topics.length === 0) {
       console.log('No configured topic is readable, skipping WebSocket connection.');
       close();
+      setStatus({ state: 'no-readable-topics', server: hostOf(config.apiUrl), retryAt: null });
       return;
     }
     const subscription = { ...config, topics };
@@ -209,6 +237,8 @@ export function createReceiver(events: ReceiverEvents) {
 
     const states = await getTopicSyncStates();
     const topics = await getReadableTopics(config);
+    const syncErrors: Record<string, string> = {};
+    let unreachable = false;
 
     for (const topic of topics) {
       // A topic synced for the first time gets its recent history without desktop notifications
@@ -225,10 +255,16 @@ export function createReceiver(events: ReceiverEvents) {
           await initTopicSyncState(topic);
         }
       } catch (error) {
-        console.error(`Failed to sync missed messages for topic ${topic}:`, (error as Error).message);
+        const message = (error as Error).message;
+        console.error(`Failed to sync missed messages for topic ${topic}:`, message);
+        // A network error (fetch rejects with a TypeError) or a 5xx: the server didn't answer
+        const serverDown = error instanceof TypeError || /^HTTP 5\d\d/.test(message);
+        unreachable ||= serverDown;
+        syncErrors[topic] = error instanceof TypeError ? 'no response' : message.replace(/:\s*$/, '');
       }
     }
 
+    setStatus({ syncErrors, lastSyncAt: Date.now(), ...(unreachable && { unreachable: true }) });
     await pruneTopicSyncStates(config.topics);
   }
 

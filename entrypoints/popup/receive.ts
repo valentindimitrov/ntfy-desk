@@ -3,6 +3,7 @@
 import { browser } from 'wxt/browser';
 import { getHistoryState } from '@/utils/history';
 import { isHttpUrl, type NtfyMessage } from '@/utils/ntfy';
+import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
 import { elements, isConfigured, loadReceiveState, saveLocal, state } from './state';
 import { showStatus } from './ui';
 
@@ -37,6 +38,15 @@ function renderTopicSidebar(messages: NtfyMessage[]): void {
       name.className = 'topic-filter-name';
       name.textContent = topic === 'all' ? 'All topics' : topic;
       button.appendChild(name);
+
+      if (state.receiverStatus?.unreadableTopics.includes(topic)) {
+        button.classList.add('send-only');
+        button.title = 'No read access: this topic is used for sending only';
+        const label = document.createElement('span');
+        label.className = 'topic-send-only';
+        label.textContent = 'send only';
+        button.appendChild(label);
+      }
 
       const count = unreadCount(topic);
       if (count > 0) {
@@ -246,7 +256,40 @@ async function deleteAll(): Promise<void> {
   }
 }
 
+/** Connection state line(s) above the list */
+export function renderConnectionStatus(): void {
+  elements.connectionStatus.replaceChildren(
+    ...describeStatus(state.receiverStatus).map(({ text, level }) => {
+      const line = document.createElement('div');
+      line.className = `status-line ${level}`;
+      line.textContent = text;
+      return line;
+    }),
+  );
+}
+
+async function loadConnectionStatus(): Promise<void> {
+  state.receiverStatus = await getReceiverStatus();
+  renderConnectionStatus();
+  void loadNotifications(); // the topic list marks send-only topics
+}
+
 export function setupReceive(): void {
+  void loadConnectionStatus();
+  // The reconnect countdown
+  setInterval(() => {
+    if (state.activeTab === 'receive' && state.receiverStatus?.retryAt) {
+      renderConnectionStatus();
+    }
+  }, 1000);
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'session' && changes[STATUS_KEY]) {
+      state.receiverStatus = (changes[STATUS_KEY].newValue as ReceiverStatus | undefined) ?? null;
+      renderConnectionStatus();
+      void loadNotifications();
+    }
+  });
+
   elements.markAllReadBtn.addEventListener('click', () => void markAllRead());
   elements.deleteAllBtn.addEventListener('click', () => void deleteAll());
 
