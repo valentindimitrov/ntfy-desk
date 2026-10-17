@@ -2,6 +2,7 @@
 // missed while the socket was down or the browser closed.
 
 import { getTopicSyncStates, initTopicSyncState, pruneTopicSyncStates, recordMessage } from './history';
+import { pickServer } from './servers';
 import { INITIAL_STATUS, writeReceiverStatus, type ReceiverStatus } from './status';
 import {
   base64UrlEncode,
@@ -56,6 +57,8 @@ export function createReceiver(events: ReceiverEvents) {
   let readableTopicsCache: { key: string | null; topics: string[]; time: number } = { key: null, topics: [], time: 0 };
   let syncInFlight: Promise<void> | null = null;
   let status: ReceiverStatus = { ...INITIAL_STATUS };
+  /** Server picked at the last connect (main or fallback), also used by the polls */
+  let activeApiUrl: string | null = null;
 
   /** The receiver is the only writer of the status, so it keeps the current one in memory */
   function setStatus(patch: Partial<ReceiverStatus>): void {
@@ -206,14 +209,21 @@ export function createReceiver(events: ReceiverEvents) {
       return;
     }
 
-    const topics = await getReadableTopics(config);
+    // Main server, or the fallback if the main one doesn't answer; checked again at every connect
+    // (the alarm calls it each minute), so it switches back when the main server returns
+    const server = await pickServer(config);
+    activeApiUrl = server.apiUrl;
+    setStatus({ usingFallback: server.isFallback });
+    const onServer = { ...config, apiUrl: server.apiUrl };
+
+    const topics = await getReadableTopics(onServer);
     if (topics.length === 0) {
       console.log('No configured topic is readable, skipping WebSocket connection.');
       close();
-      setStatus({ state: 'no-readable-topics', server: hostOf(config.apiUrl), retryAt: null });
+      setStatus({ state: 'no-readable-topics', server: hostOf(server.apiUrl), retryAt: null });
       return;
     }
-    const subscription = { ...config, topics };
+    const subscription = { ...onServer, topics };
 
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
       let expectedUrl: string | null = null;
@@ -232,8 +242,11 @@ export function createReceiver(events: ReceiverEvents) {
   }
 
   async function runSync(): Promise<void> {
-    const config = await getConfig();
-    if (!config.apiUrl || config.topics.length === 0) return;
+    const configured = await getConfig();
+    if (!configured.apiUrl || configured.topics.length === 0) return;
+    // The server the socket uses; before the first connect, pick one
+    const apiUrl = activeApiUrl && [configured.apiUrl, configured.fallbackUrl].includes(activeApiUrl) ? activeApiUrl : (await pickServer(configured)).apiUrl;
+    const config = { ...configured, apiUrl };
 
     const states = await getTopicSyncStates();
     const topics = await getReadableTopics(config);

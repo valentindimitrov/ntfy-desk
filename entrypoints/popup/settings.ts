@@ -33,13 +33,22 @@ export function serverOriginPattern(apiUrl: string): string | null {
   }
 }
 
-/** Show "Allow access to this server" when authentication is set but the server's site isn't granted */
-export async function updateServerAccessUI(apiUrl: string, accessToken: string): Promise<void> {
-  const pattern = serverOriginPattern(apiUrl);
+/** Sites of the main and fallback servers that send credentials (a token, or user:password in the URL) */
+function authenticatedPatterns(apiUrl: string, fallbackUrl: string, accessToken: string): string[] {
+  const patterns = [apiUrl, fallbackUrl]
+    .filter(url => url && buildAuthHeaderValue(accessToken, url))
+    .map(serverOriginPattern)
+    .filter((pattern): pattern is string => pattern !== null);
+  return [...new Set(patterns)];
+}
+
+/** Show "Allow access to this server" when authentication is set but a server's site isn't granted */
+export async function updateServerAccessUI(apiUrl: string, accessToken: string, fallbackUrl = state.fallbackUrl): Promise<void> {
+  const patterns = authenticatedPatterns(apiUrl, fallbackUrl, accessToken);
   let missing = false;
-  if (pattern && buildAuthHeaderValue(accessToken, apiUrl)) {
+  if (patterns.length > 0) {
     try {
-      missing = !(await browser.permissions.contains({ origins: [pattern] }));
+      missing = !(await browser.permissions.contains({ origins: patterns }));
     } catch {
       missing = false;
     }
@@ -52,22 +61,26 @@ export async function updateServerAccessUI(apiUrl: string, accessToken: string):
 }
 
 function requestServerAccess(): void {
-  const pattern = serverOriginPattern(elements.urlInput.value.trim());
-  if (!pattern) return;
+  const apiUrl = elements.urlInput.value.trim();
+  const fallbackUrl = elements.fallbackUrlInput.value.trim();
+  const patterns = authenticatedPatterns(apiUrl, fallbackUrl, elements.tokenInput.value);
+  if (patterns.length === 0) return;
 
   // Called directly from the click: permissions.request needs a user gesture
-  void browser.permissions.request({ origins: [pattern] }).then(granted => {
+  void browser.permissions.request({ origins: patterns }).then(granted => {
     showSettingsStatus(granted ? 'Server access granted' : 'Server access not granted', granted ? 'success' : 'error');
-    void updateServerAccessUI(elements.urlInput.value.trim(), elements.tokenInput.value);
+    void updateServerAccessUI(apiUrl, elements.tokenInput.value, fallbackUrl);
   });
 }
 
 async function saveSettings(): Promise<void> {
   const apiUrl = elements.urlInput.value.trim();
+  const fallbackUrl = elements.fallbackUrlInput.value.trim();
   const accessToken = elements.tokenInput.value;
   try {
     await saveSync({
       apiUrl,
+      fallbackUrl,
       topics: state.topics.join(','),
       theme: state.theme,
       includeUrl: elements.includeUrlCheckbox.checked,
@@ -77,6 +90,7 @@ async function saveSettings(): Promise<void> {
     await setAccessToken(accessToken);
     await saveNotifyRules();
     state.apiUrl = apiUrl;
+    state.fallbackUrl = fallbackUrl;
     state.accessToken = accessToken;
     state.includeUrl = elements.includeUrlCheckbox.checked;
 
@@ -185,6 +199,7 @@ function updateTopicInputHint(): void {
 /** Fill the form from the current settings, when the view opens */
 export function populateSettings(): void {
   elements.urlInput.value = state.apiUrl;
+  elements.fallbackUrlInput.value = state.fallbackUrl;
   elements.tokenInput.value = state.accessToken;
   elements.includeUrlCheckbox.checked = state.includeUrl;
   renderTopics();
@@ -195,6 +210,7 @@ export function populateSettings(): void {
 export function setupSettings(): void {
   const debouncedSave = debounce(() => void saveSettings(), 1000);
   elements.urlInput.addEventListener('input', debouncedSave);
+  elements.fallbackUrlInput.addEventListener('input', debouncedSave);
   elements.tokenInput.addEventListener('input', debouncedSave);
   elements.includeUrlCheckbox.addEventListener('change', () => void saveSettings());
   elements.serverAccessBtn.addEventListener('click', requestServerAccess);

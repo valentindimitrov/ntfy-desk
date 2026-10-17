@@ -13,6 +13,8 @@ export interface FakeServer {
   authDown: boolean;
   /** HTTP status of polls (200 by default) */
   pollStatus: number;
+  /** Hosts that don't answer: requests to them reject with a TypeError, like fetch does */
+  downHosts: string[];
   now: number;
   requests: { url: string; auth: string | null }[];
   publish(topic: string, time: number, extra?: Partial<NtfyMessage>): NtfyMessage;
@@ -62,6 +64,7 @@ export function installFakeNtfy(): FakeServer {
     unreadable: [],
     authDown: false,
     pollStatus: 200,
+    downHosts: [],
     now: 10000,
     requests: [],
     publish(topic, time, extra = {}) {
@@ -78,6 +81,12 @@ export function installFakeNtfy(): FakeServer {
     const topic = url.pathname.split('/')[1] ?? '';
     // Some latency, so concurrent calls interleave
     await new Promise(resolve => setTimeout(resolve, Math.random() * 3));
+    if (server.downHosts.includes(url.host)) {
+      throw new TypeError('Failed to fetch');
+    }
+    if (url.pathname === '/v1/health') {
+      return new Response('{"healthy":true}', { status: 200 });
+    }
 
     if (url.pathname.endsWith('/auth')) {
       if (server.authDown) throw new TypeError('Failed to fetch');

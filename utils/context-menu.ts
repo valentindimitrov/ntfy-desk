@@ -3,6 +3,7 @@
 import { browser, type Browser } from 'wxt/browser';
 import { showSendResult } from './notifications';
 import { getConfig, sendImageFromUrl, sendNotification, type NtfyConfig } from './ntfy';
+import { withFallback } from './servers';
 
 const PARENT_MENU_ID = 'ntfy-parent';
 const SEND_SELECTION_ID = 'ntfy-send-selection';
@@ -113,17 +114,18 @@ export async function handleContextMenuClick(info: Browser.contextMenus.OnClickD
 
   try {
     if (isKind(menuId, SEND_SELECTION_ID)) {
-      await sendNotification(config, topic, { message: info.selectionText, title: pageUrlTitle(config, tab) });
+      await withFallback(config, server => sendNotification(server, topic, { message: info.selectionText, title: pageUrlTitle(config, tab) }));
     } else if (isKind(menuId, SEND_IMAGE_ID) && info.srcUrl) {
-      await sendImageFromUrl(config, topic, info.srcUrl, '', pageUrlTitle(config, tab));
+      const srcUrl = info.srcUrl;
+      await withFallback(config, server => sendImageFromUrl(server, topic, srcUrl, '', pageUrlTitle(config, tab)));
     } else if (isKind(menuId, SEND_LINK_ID) && info.linkUrl) {
       // The link text is the title, so the page URL goes in the message
       const title = await getLinkText(tab, info.linkUrl);
       const pageUrl = pageUrlTitle(config, tab);
       const message = pageUrl ? `${info.linkUrl}\n\nSent from: ${pageUrl}` : info.linkUrl;
-      await sendNotification(config, topic, { message, title });
+      await withFallback(config, server => sendNotification(server, topic, { message, title }));
     } else if (isKind(menuId, SEND_TAB_ID)) {
-      await sendNotification(config, topic, { message: tab?.url, title: tab?.title });
+      await withFallback(config, server => sendNotification(server, topic, { message: tab?.url, title: tab?.title }));
     } else {
       return;
     }

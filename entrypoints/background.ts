@@ -27,7 +27,7 @@ export default defineBackground(() => {
   browser.runtime.onStartup.addListener(setUp);
 
   browser.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && (changes.topics || changes.apiUrl)) {
+    if (area === 'sync' && (changes.topics || changes.apiUrl || changes.fallbackUrl)) {
       void updateContextMenu();
       void receiver.connect();
     }

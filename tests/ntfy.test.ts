@@ -22,12 +22,12 @@ describe('configuration', () => {
   it('reads the server and topics from sync, and the token from local storage only', async () => {
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: ' a, b ,,c', includeUrl: true, accessToken: 'tk_synced' });
     await setAccessToken('tk_local');
-    expect(await getConfig()).toEqual({ apiUrl: 'https://ntfy.example', accessToken: 'tk_local', topics: ['a', 'b', 'c'], includeUrl: true });
+    expect(await getConfig()).toEqual({ apiUrl: 'https://ntfy.example', fallbackUrl: '', accessToken: 'tk_local', topics: ['a', 'b', 'c'], includeUrl: true });
     expect(await fakeBrowser.storage.sync.get('accessToken')).toEqual({ accessToken: 'tk_synced' }); // never read from or written to sync
   });
 
   it('defaults to nothing configured', async () => {
-    expect(await getConfig()).toEqual({ apiUrl: '', accessToken: '', topics: [], includeUrl: false });
+    expect(await getConfig()).toEqual({ apiUrl: '', fallbackUrl: '', accessToken: '', topics: [], includeUrl: false });
     expect(parseTopics(undefined)).toEqual([]);
   });
 });

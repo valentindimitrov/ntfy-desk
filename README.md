@@ -8,6 +8,9 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 ## Features
 
 - **Receive**: live messages over a WebSocket, as desktop notifications, with an unread count on the icon. Messages published while the browser was closed are fetched when it starts. High and urgent priority notifications stay until dismissed.
+- **Notification rules per topic**: all, from a priority up, or off; the messages are still listed.
+- **Clickable notifications**: a click opens the message's link, or the message in the extension's tab; `view` actions become buttons.
+- **Connection state**: the Receive tab shows whether it's connected, reconnecting or can't reach the server, topics you can only send to, and failed fetches.
 - **Received messages**: the Receive tab lists the messages of all topics, with a topic list on the left (unread counts per topic), mark as read and delete (kept locally).
 - **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
@@ -29,10 +32,11 @@ ntfy Desk isn't in the extension stores yet.
 In the settings (gear icon):
 
 1. **Server URL**: `https://ntfy.sh`, or your own server.
-2. **Access Token**: if your server needs one. It is stored locally and isn't copied to other browsers by browser sync. Credentials in the server URL (`https://user:password@host`) work too.
-3. **Allow access to this server**: appears when a token or credentials are set. ntfy's CORS headers don't allow the `Authorization` header, so the extension needs permission for the server's site to send authenticated requests.
-4. **Topics**: the topics to send to and receive from. The extension receives from the topics your credentials can read; a topic you can only send to is used for sending only.
-5. **Include current tab's URL**: puts the page URL in the message title. In the extension's own tab, **Use tab URL** fills in the page you were on last (it asks once for permission to read tabs).
+2. **Fallback URL** (optional): another address of the same server, e.g. the public URL when the main one is a LAN address. Receiving switches to it while the main server doesn't answer (checked every minute) and back when it returns; sending retries on it when the main server gives no response.
+3. **Access Token**: if your server needs one. It is stored locally and isn't copied to other browsers by browser sync. Credentials in the server URL (`https://user:password@host`) work too.
+4. **Allow access to this server**: appears when a token or credentials are set. ntfy's CORS headers don't allow the `Authorization` header, so the extension needs permission for the server's site (both sites, with a fallback URL) to send authenticated requests.
+5. **Topics**: the topics to send to and receive from. The extension receives from the topics your credentials can read; a topic you can only send to is used for sending only.
+6. **Include current tab's URL**: puts the page URL in the message title. In the extension's own tab, **Use tab URL** fills in the page you were on last (it asks once for permission to read tabs).
 
 ### Receiving and the browser
 

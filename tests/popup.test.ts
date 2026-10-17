@@ -155,14 +155,12 @@ describe('Send tab', () => {
 
     $<HTMLTextAreaElement>('#message-input').value = 'look at this';
     $('#send-btn').click();
-    await flush();
-    expect(requests).toHaveLength(1);
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.url).toBe('https://ntfy.example/inbox');
     expect(requests[0]!.body).toBe('look at this');
     expect(requests[0]!.headers.get('X-Title')).toBe('https://news.example/story');
     expect(requests[0]!.headers.get('Authorization')).toBe('Bearer tk_x');
-    await new Promise(resolve => setTimeout(resolve, 150));
-    expect(closed).toBe(true);
+    await vi.waitFor(() => expect(closed).toBe(true));
   });
 
   it("doesn't save an automatically filled URL in the draft", async () => {
@@ -171,9 +169,10 @@ describe('Send tab', () => {
     const message = $<HTMLTextAreaElement>('#message-input');
     message.value = 'draft text';
     message.dispatchEvent(new Event('input'));
-    await new Promise(resolve => setTimeout(resolve, 300));
-    const { draftState } = await fakeBrowser.storage.local.get('draftState');
-    expect(draftState).toMatchObject({ title: '', message: 'draft text' });
+    await vi.waitFor(async () => {
+      const { draftState } = await fakeBrowser.storage.local.get('draftState');
+      expect(draftState).toMatchObject({ title: '', message: 'draft text' });
+    });
   });
 
   it('sends two attachments as one ZIP when that option is on', async () => {
@@ -185,13 +184,12 @@ describe('Send tab', () => {
     expect($<HTMLInputElement>('#zip-checkbox').checked).toBe(true);
 
     $('#send-btn').click();
-    await new Promise(resolve => setTimeout(resolve, 100));
-    expect(requests).toHaveLength(1);
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.headers.get('Content-Type')).toBe('application/zip');
     expect(requests[0]!.headers.get('X-Filename')).toMatch(/^ntfy-files-\d{8}-\d{6}\.zip$/);
+    // Let the popup's close timer run inside this test
+    await vi.waitFor(() => expect(closed).toBe(true));
     expect(await fakeBrowser.storage.local.get('storedFiles')).toEqual({});
-    await new Promise(resolve => setTimeout(resolve, 150));
-    expect(closed).toBe(true); // let the popup's close timer run inside this test
   });
 
   it('stays open after sending in the extension tab', async () => {
@@ -200,10 +198,10 @@ describe('Send tab', () => {
     expect($('#popout-btn').style.display).toBe('none');
     $<HTMLTextAreaElement>('#message-input').value = 'x';
     $('#send-btn').click();
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await vi.waitFor(() => expect($('#status').textContent).toBe('Notification sent!'));
     expect(requests).toHaveLength(1);
+    await new Promise(resolve => setTimeout(resolve, 150)); // past the popup's 100 ms close delay
     expect(closed).toBe(false);
-    expect($('#status').textContent).toBe('Notification sent!');
   });
 });
 
@@ -222,6 +220,19 @@ describe('settings', () => {
     expect(request).toHaveBeenCalledWith({ origins: ['https://ntfy.example/*'] });
   });
 
+  it('asks for access to both the main and the fallback server', async () => {
+    await fakeBrowser.storage.sync.set({ fallbackUrl: 'https://ntfy.lan:8080' });
+    mockResolved(fakeBrowser.permissions, 'contains', false);
+    await openPopup();
+    $('#settings-btn').click();
+    await flush();
+    expect($<HTMLInputElement>('#fallback-url-input').value).toBe('https://ntfy.lan:8080');
+    const request = mockResolved(fakeBrowser.permissions, 'request', true);
+    $('#server-access-btn').click();
+    await flush();
+    expect(request).toHaveBeenCalledWith({ origins: ['https://ntfy.example/*', 'https://ntfy.lan/*'] });
+  });
+
   it('saves the token to local storage, not sync', async () => {
     await openPopup();
     $('#settings-btn').click();
@@ -229,8 +240,7 @@ describe('settings', () => {
     const token = $<HTMLInputElement>('#token-input');
     token.value = 'tk_new';
     token.dispatchEvent(new Event('input'));
-    await new Promise(resolve => setTimeout(resolve, 1100));
-    expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' });
+    await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' }), { timeout: 3000 });
     expect(await fakeBrowser.storage.sync.get('accessToken')).toEqual({});
   });
 

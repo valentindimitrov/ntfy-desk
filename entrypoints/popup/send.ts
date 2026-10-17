@@ -11,6 +11,7 @@ import {
   readStoredFiles,
   type StoredFile,
 } from '@/utils/stored-files';
+import { withFallback } from '@/utils/servers';
 import { createZip } from '@/utils/zip';
 import { elements, isPageMode, saveSync, state } from './state';
 import { moveItem, setupDragAndDrop, showStatus } from './ui';
@@ -477,17 +478,19 @@ export async function send(): Promise<void> {
   elements.sendBtn.disabled = true;
   renderAttachments();
 
-  const server = { apiUrl: state.apiUrl, accessToken: state.accessToken };
+  // The fallback server is tried when the main one gives no response
+  const servers = { apiUrl: state.apiUrl, fallbackUrl: state.fallbackUrl, accessToken: state.accessToken };
   try {
     if (files.length === 0) {
-      await sendNotification(server, topic, { message, title, priority, tags });
+      await withFallback(servers, server => sendNotification(server, topic, { message, title, priority, tags }));
       await finishSuccessfulSend(0);
       return;
     }
 
     if (files.length > 1 && elements.zipCheckbox.checked) {
       const zip = await createZip(files.map(file => ({ name: file.name, data: decodeDataUrl(file.data) })));
-      await sendAttachment(server, topic, { data: zip, filename: getZipFilename(), contentType: 'application/zip', message, title, priority, tags });
+      const filename = getZipFilename();
+      await withFallback(servers, server => sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }));
       await finishSuccessfulSend(files.length, 'ZIP sent!');
       return;
     }
@@ -497,7 +500,8 @@ export async function send(): Promise<void> {
     let remaining = [...files];
     for (const file of files) {
       try {
-        await sendAttachment(server, topic, { data: decodeDataUrl(file.data) as BodyInit, filename: file.name, message, title, priority, tags });
+        const data = decodeDataUrl(file.data) as BodyInit;
+        await withFallback(servers, server => sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags }));
       } catch (error) {
         failures.push({ file, error: error as Error });
         continue;

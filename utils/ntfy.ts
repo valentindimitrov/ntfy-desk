@@ -5,6 +5,8 @@ import { browser } from 'wxt/browser';
 
 export interface NtfyConfig {
   apiUrl: string;
+  /** Another URL of the same server, used when apiUrl doesn't answer ('' for none) */
+  fallbackUrl: string;
   accessToken: string;
   topics: string[];
   includeUrl: boolean;
@@ -69,11 +71,12 @@ export function parseTopics(value: unknown): string[] {
 /** Server URL and topics come from storage.sync; the access token stays in storage.local, so browser sync doesn't copy it */
 export async function getConfig(): Promise<NtfyConfig> {
   const [synced, local] = await Promise.all([
-    browser.storage.sync.get(['apiUrl', 'topics', 'includeUrl']),
+    browser.storage.sync.get(['apiUrl', 'fallbackUrl', 'topics', 'includeUrl']),
     browser.storage.local.get(['accessToken']),
   ]);
   return {
     apiUrl: typeof synced.apiUrl === 'string' ? synced.apiUrl : '',
+    fallbackUrl: typeof synced.fallbackUrl === 'string' ? synced.fallbackUrl : '',
     accessToken: typeof local.accessToken === 'string' ? local.accessToken : '',
     topics: parseTopics(synced.topics),
     includeUrl: synced.includeUrl === true,

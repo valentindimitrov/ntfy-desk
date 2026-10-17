@@ -16,6 +16,7 @@ export const SYNC_KEYS = ['topics', 'apiUrl', 'theme', 'priority', 'lastTags', '
 
 export interface PopupState {
   apiUrl: string;
+  fallbackUrl: string;
   accessToken: string;
   topics: string[];
   theme: Theme;
@@ -57,6 +58,7 @@ export const elements: Elements = getElements();
 
 export const state: PopupState = {
   apiUrl: '',
+  fallbackUrl: '',
   accessToken: '',
   topics: [],
   theme: 'auto',
@@ -83,6 +85,7 @@ export const state: PopupState = {
 export async function loadSettings(): Promise<void> {
   const [config, items] = await Promise.all([getConfig(), browser.storage.sync.get([...SYNC_KEYS])]);
   state.apiUrl = config.apiUrl;
+  state.fallbackUrl = config.fallbackUrl;
   state.accessToken = config.accessToken;
   state.topics = parseTopics(items.topics);
   state.includeUrl = config.includeUrl;

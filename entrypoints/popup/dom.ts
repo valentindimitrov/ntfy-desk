@@ -60,6 +60,7 @@ export function getElements() {
 
     // Settings
     urlInput: byId<HTMLInputElement>('url-input'),
+    fallbackUrlInput: byId<HTMLInputElement>('fallback-url-input'),
     tokenInput: byId<HTMLInputElement>('token-input'),
     serverAccessBtn: byId<HTMLButtonElement>('server-access-btn'),
     serverAccessHint: byId('server-access-hint'),

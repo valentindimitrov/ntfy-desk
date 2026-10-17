@@ -9,6 +9,8 @@ export interface ReceiverStatus {
   state: ConnectionState;
   /** Host of the server in use */
   server: string;
+  /** The server in use is the fallback URL */
+  usingFallback: boolean;
   /** Topics the credentials can't read: used for sending only */
   unreadableTopics: string[];
   /** The server didn't answer (network error or 5xx) at the last check or poll */
@@ -26,6 +28,7 @@ export const STATUS_KEY = 'receiverStatus';
 export const INITIAL_STATUS: ReceiverStatus = {
   state: 'not-configured',
   server: '',
+  usingFallback: false,
   unreadableTopics: [],
   unreachable: false,
   retryAt: null,
@@ -54,7 +57,7 @@ export function describeStatus(status: ReceiverStatus | null, now = Date.now()):
   }
 
   const lines: StatusLine[] = [];
-  const host = status.server || 'the server';
+  const host = (status.server || 'the server') + (status.usingFallback ? ' (fallback)' : '');
   const retry = status.retryAt && status.retryAt > now ? ` in ${Math.ceil((status.retryAt - now) / 1000)} s` : '';
   switch (status.state) {
     case 'connected':
