@@ -9,6 +9,8 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 - `pnpm build` / `pnpm build:firefox`: `.output/chrome-mv3`, `.output/firefox-mv3`.
 - `pnpm zip` / `pnpm zip:firefox`: the release zips.
 - `pnpm dev`: opens a browser with hot reload. The owner loads `.output/chrome-mv3` unpacked in Vivaldi on the laptop.
+- `pnpm test:e2e`: builds, then runs `e2e/` with Playwright Test: the built extension in Playwright's Chromium against `e2e/ntfy-server.ts`, a real HTTP and WebSocket test server. One test at a time (several Chromiums at once time out). CI runs it too. Not covered: Firefox, and Chrome's host-permission prompt (the test server allows `Authorization` in CORS; the unit tests cover that path).
+- `pnpm browse [--headed]`: builds, then opens the extension's page in `playwright-cli` (mise tool) and prints the extension id. Then drive it with `playwright-cli snapshot`, `click <ref>`, `fill <ref> <text>`, `screenshot`, `close`; output lands in `.playwright-cli/`. Use it to look at UI changes in the real extension rather than a mocked page. `playwright-cli` needs its own Chromium build: `playwright-cli install-browser chromium`.
 
 ## Conventions
 
@@ -17,7 +19,7 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 - Storage: settings in `storage.sync`; the access token and everything else (received messages, read and deleted ids, per-topic sync state, attachments, draft) in `storage.local`. Never put the token in `storage.sync`.
 - Never log a WebSocket URL with `?auth=`, or an error or event object that contains it; `buildWsUrl` returns a `logUrl` for logging.
 - Messages from the server are rendered with `textContent` only (Markdown through `utils/markdown.ts`, which builds nodes); URLs from messages are opened, linked or copied only if `isHttpUrl`; images are previewed only from the ntfy server's own origin.
-- Tests: `tests/*.test.ts`. `tests/helpers/fake-ntfy.ts` is a fake ntfy server (fetch) and WebSocket; popup tests load the real `index.html` in happy-dom.
+- Unit tests: `tests/*.test.ts` (Vitest). `tests/helpers/fake-ntfy.ts` is a fake ntfy server (fetch) and WebSocket; popup tests load the real `index.html` in happy-dom. End-to-end tests: `e2e/*.spec.ts`; the fixtures in `e2e/fixtures.ts` give the service worker (`serviceWorker.evaluate` runs in it), `configure`, `notified` (desktop notifications recorded in the worker) and `openPopup`.
 
 ## Behaviour that is easy to break
 

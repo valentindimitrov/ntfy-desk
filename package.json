@@ -16,22 +16,27 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "browse": "wxt build && node scripts/browse.ts",
     "compile": "tsc --noEmit",
     "lint": "vp lint --deny-warnings",
     "fmt": "vp fmt",
     "fmt:check": "vp fmt --check",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "wxt build && playwright test",
     "check": "vp fmt --check && vp lint --deny-warnings && vitest run",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/ws": "^8.18.2",
     "happy-dom": "^21.0.3",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
     "vite-plus": "1.3.0",
     "vitest": "^5.0.5",
     "web-ext": "^10.5.0",
+    "ws": "^8.22.0",
     "wxt": "^0.21.3"
   },
   "packageManager": "pnpm@12.14.0"

@@ -46,12 +46,14 @@ Browsers can't set headers on a WebSocket, so the credentials go in ntfy's `?aut
 
 ## Development
 
-Built with [WXT](https://wxt.dev) and TypeScript; tests use [Vitest](https://vitest.dev) with WXT's fake browser.
+Built with [WXT](https://wxt.dev) and TypeScript. Unit tests use [Vitest](https://vitest.dev) with WXT's fake browser; end-to-end tests use [Playwright](https://playwright.dev) with the built extension and a test ntfy server; [Vite+](https://viteplus.dev) lints and formats.
 
 ```bash
 pnpm install
 pnpm dev            # Chrome with hot reload (pnpm dev:firefox for Firefox)
-pnpm check          # type check + tests
+pnpm check          # format check, lint with type checking (Vite+), unit tests (Vitest)
+pnpm test:e2e       # build, then end-to-end tests (Playwright, Chromium)
+pnpm browse         # build, then open the extension in playwright-cli
 pnpm build          # .output/chrome-mv3, load it unpacked
 pnpm zip            # .output/ntfy-desk-<version>-chrome.zip (pnpm zip:firefox)
 ```
@@ -63,6 +65,7 @@ Code layout:
 - `entrypoints/filepicker/`: the window for picking files (the popup closes when a file dialog opens).
 - `utils/`: ntfy API (`ntfy.ts`), receiving (`receiver.ts`, `history.ts`), notifications and badge, context menu, ZIP.
 - `tests/`: Vitest tests, including a fake ntfy server that follows ntfy v2.29's `since=` semantics.
+- `e2e/`: Playwright tests and the test ntfy server; `scripts/browse.ts`: `pnpm browse`.
 
 ## Credits
 
