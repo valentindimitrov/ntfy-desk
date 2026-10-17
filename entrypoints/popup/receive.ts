@@ -3,6 +3,7 @@
 import { browser } from 'wxt/browser';
 import { getHistoryState } from '@/utils/history';
 import { isHttpUrl, type NtfyMessage } from '@/utils/ntfy';
+import { ruleFor } from '@/utils/rules';
 import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
 import { elements, isConfigured, loadReceiveState, saveLocal, state } from './state';
 import { showStatus } from './ui';
@@ -38,6 +39,14 @@ function renderTopicSidebar(messages: NtfyMessage[]): void {
       name.className = 'topic-filter-name';
       name.textContent = topic === 'all' ? 'All topics' : topic;
       button.appendChild(name);
+
+      if (topic !== 'all' && ruleFor(state.notifyRules, topic) === 'off') {
+        const muted = document.createElement('span');
+        muted.className = 'topic-muted';
+        muted.textContent = '🔕';
+        muted.title = 'Desktop notifications off';
+        button.appendChild(muted);
+      }
 
       if (state.receiverStatus?.unreadableTopics.includes(topic)) {
         button.classList.add('send-only');

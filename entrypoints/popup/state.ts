@@ -3,6 +3,7 @@
 import { browser } from 'wxt/browser';
 import { getHistoryState, pruneReadState } from '@/utils/history';
 import { getConfig, parseTopics, type NtfyMessage } from '@/utils/ntfy';
+import { getTopicRules, type TopicRules } from '@/utils/rules';
 import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFile } from '@/utils/stored-files';
 import { getElements, type Elements } from './dom';
@@ -22,6 +23,8 @@ export interface PopupState {
   sendAnotherEnabled: boolean;
   sendAsZipEnabled: boolean;
   lastTopic: string | undefined;
+  /** Desktop notification rule per topic */
+  notifyRules: TopicRules;
   /** URL of the page the popup was opened on (in the extension's tab: the web page tab used last) */
   pageUrl: string;
 
@@ -61,6 +64,7 @@ export const state: PopupState = {
   sendAnotherEnabled: false,
   sendAsZipEnabled: false,
   lastTopic: undefined,
+  notifyRules: {},
   pageUrl: '',
   tags: [],
   selectedPriority: 3,
@@ -94,6 +98,7 @@ export async function loadSettings(): Promise<void> {
   if (Array.isArray(items.lastTags)) {
     state.tags = items.lastTags.filter((tag): tag is string => typeof tag === 'string');
   }
+  state.notifyRules = await getTopicRules();
 }
 
 /**

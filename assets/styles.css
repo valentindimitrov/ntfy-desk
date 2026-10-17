@@ -1491,3 +1491,43 @@ body.page-mode .topic-sidebar {
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
+
+/* ========================================
+   Settings: Desktop Notification Rules
+   ======================================== */
+
+.notify-rules {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.notify-rule {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.notify-rule-topic {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notify-rule-select {
+    flex: none;
+    padding: 4px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--bg-input);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+}
+
+.topic-muted {
+    flex: none;
+    font-size: 11px;
+}

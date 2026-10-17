@@ -3,14 +3,14 @@
 
 import { browser } from 'wxt/browser';
 import { handleContextMenuClick, updateContextMenu } from '@/utils/context-menu';
-import { handleNotificationButton, showDesktopNotification, updateUnreadBadge } from '@/utils/notifications';
+import { handleNotificationButton, notifyNewMessage, updateUnreadBadge } from '@/utils/notifications';
 import { createReceiver } from '@/utils/receiver';
 
 const ALARM_NAME = 'ws-keepalive';
 
 export default defineBackground(() => {
   const receiver = createReceiver({
-    onNewMessage: showDesktopNotification,
+    onNewMessage: message => void notifyNewMessage(message),
     onConnected: () => void updateUnreadBadge(),
   });
 

@@ -3,6 +3,7 @@
 import { browser, type Browser } from 'wxt/browser';
 import { countUnread, getHistoryState } from './history';
 import { isHttpUrl, type NtfyMessage } from './ntfy';
+import { getTopicRules, shouldNotify } from './rules';
 
 const PRIORITY_LABELS: Record<number, string> = {
   1: '⇊ Min',
@@ -26,6 +27,13 @@ export function showDesktopNotification(message: NtfyMessage): void {
     options.buttons = [{ title: '🔗 Open Attachment' }];
   }
   void browser.notifications.create(message.id, options);
+}
+
+/** A desktop notification for a new message, if its topic's rule allows it */
+export async function notifyNewMessage(message: NtfyMessage): Promise<void> {
+  if (shouldNotify(message, await getTopicRules())) {
+    showDesktopNotification(message);
+  }
 }
 
 /** "Open Attachment" button: open the attachment of that message, http(s) only */

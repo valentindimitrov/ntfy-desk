@@ -2,6 +2,7 @@
 
 import { browser } from 'wxt/browser';
 import { buildAuthHeaderValue, setAccessToken } from '@/utils/ntfy';
+import { NOTIFY_RULES, NOTIFY_RULES_KEY, RULE_LABELS, isNotifyRule, ruleFor, type TopicRules } from '@/utils/rules';
 import { updateTopicDropdown } from './send';
 import { elements, isConfigured, saveSync, state, type Theme } from './state';
 import { debounce, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
@@ -74,6 +75,7 @@ async function saveSettings(): Promise<void> {
     });
     // The token stays in storage.local, so browser sync doesn't copy it to other browsers
     await setAccessToken(accessToken);
+    await saveNotifyRules();
     state.apiUrl = apiUrl;
     state.accessToken = accessToken;
     state.includeUrl = elements.includeUrlCheckbox.checked;
@@ -88,7 +90,52 @@ async function saveSettings(): Promise<void> {
   }
 }
 
+/** One rule per configured topic; rules of removed topics are dropped */
+function saveNotifyRules(): Promise<void> {
+  const rules: TopicRules = {};
+  for (const topic of state.topics) {
+    const rule = state.notifyRules[topic];
+    if (rule) rules[topic] = rule;
+  }
+  state.notifyRules = rules;
+  return saveSync({ [NOTIFY_RULES_KEY]: rules });
+}
+
+function renderNotifyRules(): void {
+  elements.notifyRulesGroup.style.display = state.topics.length > 0 ? '' : 'none';
+  elements.notifyRules.replaceChildren(
+    ...state.topics.map(topic => {
+      const row = document.createElement('label');
+      row.className = 'notify-rule';
+
+      const name = document.createElement('span');
+      name.className = 'notify-rule-topic';
+      name.textContent = topic;
+
+      const select = document.createElement('select');
+      select.className = 'notify-rule-select';
+      select.setAttribute('aria-label', `Desktop notifications for ${topic}`);
+      for (const rule of NOTIFY_RULES) {
+        const option = document.createElement('option');
+        option.value = rule;
+        option.textContent = RULE_LABELS[rule];
+        select.appendChild(option);
+      }
+      select.value = ruleFor(state.notifyRules, topic);
+      select.addEventListener('change', () => {
+        if (!isNotifyRule(select.value)) return;
+        state.notifyRules = { ...state.notifyRules, [topic]: select.value };
+        saveNotifyRules().catch(() => showSettingsStatus('Failed to save settings', 'error'));
+      });
+
+      row.append(name, select);
+      return row;
+    }),
+  );
+}
+
 function renderTopics(): void {
+  renderNotifyRules();
   elements.topicsContainer.querySelectorAll('.topic-badge').forEach(badge => badge.remove());
 
   state.topics.forEach((topic, index) => {

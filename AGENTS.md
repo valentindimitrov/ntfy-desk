@@ -33,7 +33,7 @@ Update the status here when an item lands. Each item comes with tests.
 |---|---|---|
 | 1 | History: a limit per topic instead of 50 across all topics; prune the read and deleted id lists | Done: 100 per topic; the popup prunes the id lists |
 | 2 | Connection state in the Receive tab: connected, reconnecting, server unreachable, topics without read access, sync errors | Done: `utils/status.ts`, written by the receiver to storage.session |
-| 3 | Per-topic desktop notification rules: all, from a priority up, or off (the topic stays listed) | Planned |
+| 3 | Per-topic desktop notification rules: all, from a priority up, or off (the topic stays listed) | Done: `utils/rules.ts`, set in the settings, 🔕 in the topic list |
 | 4 | Clickable notifications: the message's `click` URL, or the message in the extension's tab; `view` actions as buttons. `http` and `broadcast` actions stay out (they would make the browser send requests the publisher chose). | Planned |
 | 5 | Fallback server URL (e.g. LAN first, the public URL when it doesn't answer) for receiving and sending | Planned |
 | 6 | Receive tab: search, image attachment previews (attachments on the ntfy server only), Markdown messages rendered safely (no `innerHTML`) | Planned |

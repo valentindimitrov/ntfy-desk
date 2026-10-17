@@ -67,6 +67,8 @@ export function getElements() {
     topicsContainer: byId('topics-container'),
     newTopicInput: byId<HTMLInputElement>('new-topic-input'),
     topicInputHint: byId('topic-input-hint'),
+    notifyRulesGroup: byId('notify-rules-group'),
+    notifyRules: byId('notify-rules'),
 
     // Receive tab
     notificationsList: byId('notifications-list'),

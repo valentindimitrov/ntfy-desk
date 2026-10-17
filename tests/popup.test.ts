@@ -202,4 +202,36 @@ describe('settings', () => {
     expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' });
     expect(await fakeBrowser.storage.sync.get('accessToken')).toEqual({});
   });
+
+  it('sets a desktop notification rule per topic, and drops the rule of a removed topic', async () => {
+    await openPopup();
+    $('#settings-btn').click();
+    await flush();
+    const selects = [...document.querySelectorAll<HTMLSelectElement>('.notify-rule-select')];
+    expect(selects.map(select => select.getAttribute('aria-label'))).toEqual([
+      'Desktop notifications for alerts',
+      'Desktop notifications for coolify',
+      'Desktop notifications for inbox',
+    ]);
+    expect(selects.every(select => select.value === 'all')).toBe(true);
+
+    selects[1]!.value = 'off';
+    selects[1]!.dispatchEvent(new Event('change'));
+    selects[0]!.value = 'high';
+    selects[0]!.dispatchEvent(new Event('change'));
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({ notifyRules: { alerts: 'high', coolify: 'off' } });
+
+    // Remove "alerts" (the first topic badge)
+    $('.topic-remove').click();
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({ notifyRules: { coolify: 'off' } });
+  });
+
+  it('marks topics with notifications off in the Receive tab', async () => {
+    await fakeBrowser.storage.sync.set({ notifyRules: { coolify: 'off' } });
+    await openPopup('?tab=receive');
+    const coolify = [...document.querySelectorAll('.topic-filter-btn')].find(b => b.textContent?.startsWith('coolify'))!;
+    expect(coolify.querySelector('.topic-muted')?.textContent).toBe('🔕');
+  });
 });
