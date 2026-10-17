@@ -8,7 +8,7 @@ import type { NtfyMessage } from './ntfy';
 /** Received messages kept per topic, so a busy topic doesn't push the others out */
 export const MAX_HISTORY_PER_TOPIC = 100;
 /** Safety cap of a topic's seen ids, if its polls keep failing and live messages keep coming */
-export const MAX_SEEN_PER_TOPIC = 5000;
+const MAX_SEEN_PER_TOPIC = 5000;
 /**
  * Deleted ids kept, newest last. They only matter while a deleted message can still come back from a
  * poll (a topic's first, 24 h sync), so old ones can go.
@@ -43,7 +43,7 @@ const SYNC_KEY = 'topicSync';
 
 let storageQueue: Promise<unknown> = Promise.resolve();
 /** Run storage updates one at a time */
-export function serialized<T>(task: () => Promise<T>): Promise<T> {
+function serialized<T>(task: () => Promise<T>): Promise<T> {
   const run = storageQueue.then(task);
   storageQueue = run.catch(() => {});
   return run;

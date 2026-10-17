@@ -21,6 +21,7 @@
     "lint": "vp lint --deny-warnings",
     "fmt": "vp fmt",
     "fmt:check": "vp fmt --check",
+    "lint:firefox": "wxt build -b firefox && web-ext lint -s .output/firefox-mv3",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "wxt build && playwright test",

@@ -162,7 +162,7 @@ export async function setAccessToken(accessToken: string): Promise<void> {
   await browser.storage.local.set({ accessToken: accessToken || '' });
 }
 
-export function base64Encode(value: string): string {
+function base64Encode(value: string): string {
   const bytes = new TextEncoder().encode(value);
   let binary = '';
   for (const byte of bytes) {
@@ -198,7 +198,7 @@ export function hasAuthentication(server: NtfyServer): boolean {
   return buildAuthHeaderValue(server) !== '';
 }
 
-export function buildAuthHeaders(server: NtfyServer): Headers {
+function buildAuthHeaders(server: NtfyServer): Headers {
   const headers = new Headers();
   const auth = buildAuthHeaderValue(server);
   if (auth) {
@@ -251,7 +251,7 @@ function setPublishHeaders(headers: Headers, { title, priority, tags }: PublishO
 }
 
 /** Time limits, so a server that accepts a request but never answers can't stall a sync or a send */
-export const TIMEOUTS = { check: 10_000, poll: 20_000, publish: 30_000, upload: 120_000, image: 30_000 };
+const TIMEOUTS = { check: 10_000, poll: 20_000, publish: 30_000, upload: 120_000, image: 30_000 };
 
 /** The server gave no response: a network error (fetch rejects with a TypeError) or a time limit */
 export function isNoResponse(error: unknown): boolean {

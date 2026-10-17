@@ -17,7 +17,7 @@ function emptyMessage(text: string): HTMLElement {
   return div;
 }
 
-export function formatTime(unixTime: number, now = new Date()): string {
+function formatTime(unixTime: number, now = new Date()): string {
   const date = new Date(unixTime * 1000);
   const minutes = Math.floor((now.getTime() - date.getTime()) / 60000);
   if (minutes < 1) return 'Just now';
@@ -101,7 +101,7 @@ function applyPendingFocus(): void {
 }
 
 /** Whether a message contains every word of the search */
-export function matchesSearch(message: NtfyMessage, query: string): boolean {
+function matchesSearch(message: NtfyMessage, query: string): boolean {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
   const text = [message.title, message.message, message.topic, ...(message.tags ?? []), message.attachment?.name].join(' ').toLowerCase();
@@ -113,7 +113,7 @@ export function matchesSearch(message: NtfyMessage, query: string): boolean {
  * (/file/<name>, no query) and before they expire. Other URLs on the server's origin could be API
  * calls (ntfy publishes on GET /<topic>/publish?message=...), which a preview would request.
  */
-export function previewableImage(message: NtfyMessage, serverUrls: string[], now = Date.now()): string | null {
+function previewableImage(message: NtfyMessage, serverUrls: string[], now = Date.now()): string | null {
   const attachment = message.attachment;
   if (!attachment?.type?.startsWith('image/') || !isHttpUrl(attachment.url)) return null;
   if (attachment.expires && attachment.expires * 1000 < now) return null;
@@ -363,7 +363,7 @@ async function deleteAll(): Promise<void> {
 }
 
 /** Connection state line(s) above the list */
-export function renderConnectionStatus(): void {
+function renderConnectionStatus(): void {
   elements.connectionStatus.replaceChildren(
     ...describeStatus(state.receiverStatus).map(({ text, level }) => {
       const line = document.createElement('div');

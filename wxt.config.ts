@@ -8,6 +8,7 @@ export default defineConfig({
     name: 'ntfy Desk',
     description:
       'Send and receive ntfy notifications: desktop notifications, a message list per topic, file attachments, priority and tags',
+    // unlimitedStorage: picked attachments wait in storage.local as data URLs (utils/stored-files.ts)
     permissions: ['activeTab', 'storage', 'unlimitedStorage', 'contextMenus', 'scripting', 'notifications', 'alarms'],
     // tabs: only for "Use tab URL" in the extension's own tab
     optional_permissions: ['tabs'],

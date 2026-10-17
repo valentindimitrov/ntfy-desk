@@ -22,6 +22,8 @@ jobs:
       - run: pnpm check
       - run: pnpm zip
       - run: pnpm zip:firefox
+      # Mozilla's add-on checks on the Firefox build
+      - run: pnpm exec web-ext lint -s .output/firefox-mv3
       - uses: actions/upload-artifact@v7
         with:
           name: ntfy-desk

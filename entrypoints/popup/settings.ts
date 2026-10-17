@@ -20,7 +20,7 @@ function updateThemeChips(): void {
 
 // ntfy answers CORS preflights with Access-Control-Allow-Headers: *, which doesn't cover
 // Authorization, so authenticated requests need a host permission for the server.
-export function serverOriginPattern(apiUrl: string): string | null {
+function serverOriginPattern(apiUrl: string): string | null {
   try {
     const url = new URL(apiUrl);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {

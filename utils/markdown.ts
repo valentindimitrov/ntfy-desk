@@ -8,7 +8,7 @@ import { isHttpUrl } from './ntfy';
 // Inline markup, first match wins: code, bold, italic, link
 const INLINE = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|\[([^\]\n]+)\]\(([^)\s]+)\)/g;
 
-export function renderInline(text: string, doc: Document = document): DocumentFragment {
+function renderInline(text: string, doc: Document = document): DocumentFragment {
   const fragment = doc.createDocumentFragment();
   let last = 0;
   for (const match of text.matchAll(INLINE)) {

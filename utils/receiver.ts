@@ -24,7 +24,7 @@ export const WS_KEEPALIVE_INTERVAL = 20000;
 // How long the read-access check of the topics is reused
 const READABLE_TOPICS_TTL = 60 * 60 * 1000;
 // Window fetched silently the first time a topic is synced
-export const INITIAL_SYNC_SINCE = '24h';
+const INITIAL_SYNC_SINCE = '24h';
 
 export interface ReceiverEvents {
   /** A message new to the history (not during a topic's first, silent sync) */
@@ -186,7 +186,7 @@ export function createReceiver(events: ReceiverEvents) {
         try {
           const message = JSON.parse(String(event.data)) as NtfyMessage;
           if (message.event === 'message') {
-            console.log('Received notification:', message.id, message.title);
+            console.log('Received notification:', message.id);
             await handleMessage(message, true);
           }
         } catch (error) {

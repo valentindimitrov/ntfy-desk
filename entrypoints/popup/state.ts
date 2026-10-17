@@ -11,7 +11,7 @@ export type Theme = 'light' | 'dark' | 'auto';
 export type Tab = 'send' | 'receive';
 
 /** Settings in storage.sync, except the access token (storage.local) */
-export const SYNC_KEYS = [
+const SYNC_KEYS = [
   'topics',
   'apiUrl',
   'theme',
