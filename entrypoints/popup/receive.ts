@@ -240,6 +240,19 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   return item;
 }
 
+/** A message, or a placeholder if it can't be rendered, so one bad message doesn't hide the others */
+function renderMessageSafely(message: NtfyMessage): HTMLElement {
+  try {
+    return renderMessage(message);
+  } catch (error) {
+    console.error('Error rendering message:', message.id, error);
+    const item = document.createElement('div');
+    item.className = 'notification-item';
+    item.textContent = 'This message could not be shown';
+    return item;
+  }
+}
+
 /** The received messages of all topics, like the unread badge counts them, filtered by the topic list */
 export async function loadNotifications(): Promise<void> {
   if (!isConfigured()) {
@@ -270,7 +283,7 @@ export async function loadNotifications(): Promise<void> {
       return;
     }
     shown.sort((a, b) => b.time - a.time);
-    elements.notificationsList.replaceChildren(...shown.map(renderMessage));
+    elements.notificationsList.replaceChildren(...shown.map(renderMessageSafely));
     applyPendingFocus();
   } catch (error) {
     console.error('Error loading notifications:', error);

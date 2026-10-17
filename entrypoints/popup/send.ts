@@ -1,7 +1,7 @@
 // Send tab: topic, title (optionally the tab's URL), message, attachments, priority and tags.
 
 import { browser } from 'wxt/browser';
-import { isHttpUrl, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
+import { getConfig, isHttpUrl, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
 import {
   STORED_FILES_KEY,
   decodeDataUrl,
@@ -496,7 +496,8 @@ async function sendNow(): Promise<void> {
   renderAttachments();
 
   // The fallback server is tried when the main one gives no response
-  const servers = { apiUrl: state.apiUrl, fallbackUrl: state.fallbackUrl, accessToken: state.accessToken, credentials: state.credentials };
+  // getConfig: the token and password only for servers approved on this device
+  const servers = await getConfig();
   try {
     if (files.length === 0) {
       await withFallback(servers, (server) => sendNotification(server, topic, { message, title, priority, tags }));

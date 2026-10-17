@@ -77,6 +77,7 @@ describe('configuration', () => {
       fallbackUrl: '',
       accessToken: 'tk_local',
       credentials: null,
+      heldBackFrom: [],
       topics: ['a', 'b', 'c'],
       includeUrl: true,
     });
@@ -84,7 +85,15 @@ describe('configuration', () => {
   });
 
   it('defaults to nothing configured', async () => {
-    expect(await getConfig()).toEqual({ apiUrl: '', fallbackUrl: '', accessToken: '', credentials: null, topics: [], includeUrl: false });
+    expect(await getConfig()).toEqual({
+      apiUrl: '',
+      fallbackUrl: '',
+      accessToken: '',
+      credentials: null,
+      heldBackFrom: [],
+      topics: [],
+      includeUrl: false,
+    });
     expect(parseTopics(undefined)).toEqual([]);
   });
 });

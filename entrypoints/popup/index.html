@@ -247,6 +247,14 @@
             />
           </div>
           <p class="form-hint">Instead of a token. Kept on this device only, not synced</p>
+          <p class="form-warning" id="insecure-warning" style="display: none">
+            ⚠️ This server URL uses http://: the token or password goes over the network unencrypted, readable by anyone on the way. Use
+            https:// where you can.
+          </p>
+          <div class="form-warning" id="held-back-box" style="display: none">
+            <p id="held-back-text"></p>
+            <button class="chip" id="held-back-btn">Use them with this server</button>
+          </div>
           <button class="chip" id="server-access-btn" style="display: none">🔓 Allow access to this server</button>
           <p class="form-hint" id="server-access-hint" style="display: none">Needed to send and receive with authentication</p>
         </div>

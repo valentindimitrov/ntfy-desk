@@ -3,10 +3,12 @@
 // delete actions (sent as messages) all go through one queue, so no update overwrites another.
 
 import { browser } from 'wxt/browser';
-import type { NtfyMessage } from './ntfy';
+import { parseMessage, type NtfyMessage } from './ntfy';
 
 /** Received messages kept per topic, so a busy topic doesn't push the others out */
 export const MAX_HISTORY_PER_TOPIC = 100;
+/** Size of all kept messages together, at most (JSON characters); the oldest go first */
+export const MAX_HISTORY_SIZE = 8 * 1024 * 1024;
 /** Safety cap of a topic's seen ids, if its polls keep failing and live messages keep coming */
 const MAX_SEEN_PER_TOPIC = 5000;
 /**
@@ -72,25 +74,31 @@ const storedStates = (states: TopicSyncStates) => ({ [SYNC_KEY]: [...states.valu
 
 export async function getHistoryState(): Promise<HistoryState> {
   const result = await browser.storage.local.get(['receivedNotifications', 'readMessageIds', 'deletedMessageIds']);
+  const stored: unknown = result.receivedNotifications;
   return {
-    receivedNotifications: (result.receivedNotifications as NtfyMessage[] | undefined) ?? [],
+    // Checked again on reading: messages stored by an earlier version weren't validated
+    receivedNotifications: Array.isArray(stored) ? stored.map(parseMessage).filter((m): m is NtfyMessage => m !== null) : [],
     readMessageIds: (result.readMessageIds as string[] | undefined) ?? [],
     deletedMessageIds: (result.deletedMessageIds as string[] | undefined) ?? [],
   };
 }
 
 /**
- * The newest MAX_HISTORY_PER_TOPIC messages of each topic by server time, newest first. Ordering by
- * time (not by arrival) keeps a late older message from pushing out a newer one.
+ * The newest MAX_HISTORY_PER_TOPIC messages of each topic by server time, newest first, up to
+ * MAX_HISTORY_SIZE in all. Ordering by time (not by arrival) keeps a late older message from pushing
+ * out a newer one.
  */
 export function trimHistory(messages: NtfyMessage[]): NtfyMessage[] {
   const counts = new Map<string, number>();
+  let size = 0;
   return [...messages]
     .sort((a, b) => b.time - a.time)
     .filter((message) => {
       const count = (counts.get(message.topic) ?? 0) + 1;
       counts.set(message.topic, count);
-      return count <= MAX_HISTORY_PER_TOPIC;
+      if (count > MAX_HISTORY_PER_TOPIC) return false;
+      size += JSON.stringify(message).length;
+      return size <= MAX_HISTORY_SIZE;
     });
 }
 

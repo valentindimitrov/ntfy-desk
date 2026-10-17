@@ -11,6 +11,7 @@ import {
   getConfig,
   getNotifications,
   isNoResponse,
+  parseMessageJson,
   type NtfyConfig,
   type NtfyMessage,
 } from './ntfy';
@@ -25,6 +26,13 @@ export const WS_KEEPALIVE_INTERVAL = 20000;
 const READABLE_TOPICS_TTL = 60 * 60 * 1000;
 // Window fetched silently the first time a topic is synced
 const INITIAL_SYNC_SINCE = '24h';
+/** Newest messages of a topic handled per poll (more than the history keeps, MAX_HISTORY_PER_TOPIC) */
+export const MAX_POLL_MESSAGES = 1000;
+/**
+ * Live messages waiting to be stored, at most. More are dropped: the next poll fetches them, since only
+ * polls move a topic's watermark. So a server flooding the socket can't queue unbounded work.
+ */
+export const MAX_PENDING_LIVE = 200;
 
 export interface ReceiverEvents {
   /** A message new to the history (not during a topic's first, silent sync) */
@@ -68,6 +76,7 @@ export function createReceiver(events: ReceiverEvents) {
    * attempt started before a settings change can't subscribe with the old settings.
    */
   let connectGeneration = 0;
+  let pendingLive = 0;
 
   /** The receiver is the only writer of the status, so it keeps the current one in memory */
   function setStatus(patch: Partial<ReceiverStatus>): void {
@@ -183,14 +192,22 @@ export function createReceiver(events: ReceiverEvents) {
       };
 
       socket.onmessage = async (event: MessageEvent) => {
+        // Valid messages of the subscribed topics only: the server can't fill storage with other topics
+        const message = typeof event.data === 'string' ? parseMessageJson(event.data) : null;
+        if (!message || message.event !== 'message' || !config.topics.includes(message.topic)) {
+          return;
+        }
+        if (pendingLive >= MAX_PENDING_LIVE) {
+          return;
+        }
+        pendingLive++;
         try {
-          const message = JSON.parse(String(event.data)) as NtfyMessage;
-          if (message.event === 'message') {
-            console.log('Received notification:', message.id);
-            await handleMessage(message, true);
-          }
+          console.log('Received notification:', message.id);
+          await handleMessage(message, true);
         } catch (error) {
           console.error('Error processing WebSocket message:', error);
+        } finally {
+          pendingLive--;
         }
       };
 
@@ -234,7 +251,7 @@ export function createReceiver(events: ReceiverEvents) {
     const server = await pickServer(config);
     if (superseded()) return;
     activeApiUrl = server.apiUrl;
-    setStatus({ usingFallback: server.isFallback });
+    setStatus({ usingFallback: server.isFallback, authHeldBack: config.heldBackFrom.length > 0 });
     const onServer = { ...config, apiUrl: server.apiUrl };
 
     const topics = await getReadableTopics(onServer);
@@ -285,8 +302,8 @@ export function createReceiver(events: ReceiverEvents) {
       const notify = state?.synced === true;
 
       try {
-        const messages = await getNotifications(config, topic, since);
-        messages.sort((a, b) => a.time - b.time);
+        // Oldest first, and only the newest MAX_POLL_MESSAGES
+        const messages = (await getNotifications(config, topic, since)).sort((a, b) => a.time - b.time).slice(-MAX_POLL_MESSAGES);
         for (const message of messages) {
           await handleMessage(message, notify);
         }

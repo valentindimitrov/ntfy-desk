@@ -211,6 +211,30 @@ describe('Receive tab', () => {
     expect(withImage[0]!.querySelector('img')!.getAttribute('src')).toBe('https://ntfy.example/file/abc.png');
   });
 
+  it('shows the other messages when a stored message is malformed (security review #3)', async () => {
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [{ ...message('bad', 'alerts', 1), actions: {} }, message('good', 'alerts', 2)],
+    });
+    await openPopup('?tab=receive');
+    const titles = [...document.querySelectorAll('.notification-item')].map((item) => item.textContent);
+    expect(titles.some((text) => text?.includes('body of bad'))).toBe(true);
+    expect(titles.some((text) => text?.includes('body of good'))).toBe(true);
+  });
+
+  it('shows a placeholder for a message that fails to render, and the others as usual', async () => {
+    await fakeBrowser.storage.local.set({ receivedNotifications: [message('old', 'alerts', 3 * 24 * 60), message('new', 'alerts', 2)] });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Only the 3-day-old message formats its time as a date
+    vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(() => {
+      throw new RangeError('broken');
+    });
+    await openPopup('?tab=receive');
+    const items = [...document.querySelectorAll('.notification-item')].map((item) => item.textContent);
+    expect(items).toHaveLength(2);
+    expect(items.some((text) => text?.includes('body of new'))).toBe(true);
+    expect(items).toContain('This message could not be shown');
+  });
+
   it('keeps the heading in place when the list is empty', async () => {
     await fakeBrowser.storage.local.set({ receiveTopicFilter: 'inbox' });
     await openPopup('?tab=receive');
@@ -380,6 +404,52 @@ describe('settings', () => {
     $('#open-url-btn').click();
     await flush();
     expect(create.mock.calls).toEqual([[{ url: 'https://ntfy.example/inbox' }]]);
+  });
+
+  it('holds back the token from a server changed through sync, until confirmed (security review #1)', async () => {
+    await import('@/utils/ntfy').then((ntfy) => ntfy.getConfig()); // approves https://ntfy.example
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://evil.example' });
+    await openPopup();
+    $('#settings-btn').click();
+    await flush();
+    expect($('#held-back-box').style.display).toBe('');
+    expect($('#held-back-text').textContent).toContain('https://evil.example');
+
+    // Saving another setting doesn't approve the changed server
+    $<HTMLButtonElement>('.chip[data-theme="dark"]').click();
+    await flush();
+    expect(await fakeBrowser.storage.local.get('authOrigins')).toEqual({ authOrigins: ['https://ntfy.example'] });
+
+    $('#held-back-btn').click();
+    await flush();
+    expect(await fakeBrowser.storage.local.get('authOrigins')).toEqual({ authOrigins: ['https://evil.example'] });
+    expect($('#held-back-box').style.display).toBe('none');
+  });
+
+  it('sends without the token while it is held back', async () => {
+    await import('@/utils/ntfy').then((ntfy) => ntfy.getConfig());
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://evil.example' });
+    await openPopup();
+    $<HTMLTextAreaElement>('#message-input').value = 'hi';
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests.some((r) => r.url === 'https://evil.example/inbox')).toBe(true));
+    expect(requests.find((r) => r.url === 'https://evil.example/inbox')?.headers.has('Authorization')).toBe(false);
+  });
+
+  it('warns when credentials would go over http:// (security review #5)', async () => {
+    await openPopup();
+    $('#settings-btn').click();
+    await flush();
+    const url = $<HTMLInputElement>('#url-input');
+    expect($('#insecure-warning').style.display).toBe('none');
+    url.value = 'http://192.168.2.38:8080';
+    url.dispatchEvent(new Event('input'));
+    expect($('#insecure-warning').style.display).toBe('');
+
+    const token = $<HTMLInputElement>('#token-input');
+    token.value = '';
+    token.dispatchEvent(new Event('input'));
+    expect($('#insecure-warning').style.display).toBe('none');
   });
 
   it('saves the token to local storage, not sync', async () => {

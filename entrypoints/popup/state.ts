@@ -1,7 +1,7 @@
 // State shared by the popup's modules.
 
 import { browser } from 'wxt/browser';
-import { getConfig, parseTopics, type Credentials, type NtfyMessage } from '@/utils/ntfy';
+import { getConfig, getStoredAuth, parseTopics, type Credentials, type NtfyMessage } from '@/utils/ntfy';
 import { getTopicRules, type TopicRules } from '@/utils/rules';
 import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFile } from '@/utils/stored-files';
@@ -26,8 +26,11 @@ const SYNC_KEYS = [
 export interface PopupState {
   apiUrl: string;
   fallbackUrl: string;
+  /** The token and the username and password as stored (the settings form); requests use getConfig */
   accessToken: string;
   credentials: Credentials | null;
+  /** Server origins the stored token and password aren't approved for (see getConfig) */
+  heldBackFrom: string[];
   topics: string[];
   theme: Theme;
   includeUrl: boolean;
@@ -71,6 +74,7 @@ export const state: PopupState = {
   fallbackUrl: '',
   accessToken: '',
   credentials: null,
+  heldBackFrom: [],
   topics: [],
   theme: 'auto',
   includeUrl: false,
@@ -94,11 +98,14 @@ export const state: PopupState = {
 };
 
 export async function loadSettings(): Promise<void> {
+  // getConfig first: it moves credentials out of synced URLs, which getStoredAuth then finds
   const [config, items] = await Promise.all([getConfig(), browser.storage.sync.get([...SYNC_KEYS])]);
+  const stored = await getStoredAuth();
   state.apiUrl = config.apiUrl;
   state.fallbackUrl = config.fallbackUrl;
-  state.accessToken = config.accessToken;
-  state.credentials = config.credentials;
+  state.accessToken = stored.accessToken;
+  state.credentials = stored.credentials;
+  state.heldBackFrom = config.heldBackFrom;
   state.topics = parseTopics(items.topics);
   state.includeUrl = config.includeUrl;
   state.theme = items.theme === 'light' || items.theme === 'dark' ? items.theme : 'auto';

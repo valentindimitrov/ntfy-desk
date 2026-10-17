@@ -1657,3 +1657,18 @@ button.notification-title {
   display: flex;
   gap: 12px;
 }
+
+/* Settings: a warning about the server and the credentials */
+.form-warning {
+  font-size: 12px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background-color: rgba(255, 152, 0, 0.15);
+  color: var(--text-primary);
+}
+
+.form-warning .chip {
+  margin-top: 6px;
+}

@@ -21,6 +21,8 @@ export interface ReceiverStatus {
   syncErrors: [topic: string, error: string][];
   /** End of the last poll of all topics (ms since the epoch) */
   lastSyncAt: number | null;
+  /** The token or password isn't sent: the server changed outside this browser's settings */
+  authHeldBack: boolean;
 }
 
 export const STATUS_KEY = 'receiverStatus';
@@ -34,6 +36,7 @@ export const INITIAL_STATUS: ReceiverStatus = {
   retryAt: null,
   syncErrors: [],
   lastSyncAt: null,
+  authHeldBack: false,
 };
 
 export async function getReceiverStatus(): Promise<ReceiverStatus | null> {
@@ -76,6 +79,10 @@ export function describeStatus(status: ReceiverStatus | null, now = Date.now()):
     case 'no-readable-topics':
       lines.push({ text: 'No topic can be read with these credentials', level: 'error' });
       break;
+  }
+
+  if (status.authHeldBack) {
+    lines.push({ text: 'Token and password not sent: the server address changed. Confirm it in the settings', level: 'error' });
   }
 
   const failed = Array.isArray(status.syncErrors) ? status.syncErrors : [];

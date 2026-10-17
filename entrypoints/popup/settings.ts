@@ -1,7 +1,16 @@
 // Settings view: server URL, access token, topics, include-URL option and theme. Changes save as you type.
 
 import { browser } from 'wxt/browser';
-import { hasAuthentication, setAccessToken, setCredentials, splitCredentials, type Credentials } from '@/utils/ntfy';
+import {
+  getConfig,
+  hasAuthentication,
+  serverOrigins,
+  setAccessToken,
+  setAuthOrigins,
+  setCredentials,
+  splitCredentials,
+  type Credentials,
+} from '@/utils/ntfy';
 import { NOTIFY_RULES, NOTIFY_RULES_KEY, RULE_LABELS, isNotifyRule, ruleFor, storedTopicRules, type TopicRules } from '@/utils/rules';
 import { updateTopicDropdown } from './send';
 import { elements, isConfigured, saveSync, state, type Theme } from './state';
@@ -62,13 +71,44 @@ export async function updateServerAccessUI(
   state.serverAccessMissing = missing;
   elements.serverAccessBtn.style.display = missing ? '' : 'none';
   elements.serverAccessHint.style.display = missing ? '' : 'none';
-  elements.settingsBtn.classList.toggle('highlight', !isConfigured() || missing);
+  elements.settingsBtn.classList.toggle('highlight', !isConfigured() || missing || state.heldBackFrom.length > 0);
+}
+
+const typedAuth = () => Boolean(elements.tokenInput.value || elements.usernameInput.value || elements.passwordInput.value);
+
+/** Warn when credentials would go to a server over plain http:// */
+function updateInsecureWarning(): void {
+  const insecure = [elements.urlInput.value, elements.fallbackUrlInput.value].some((url) => /^\s*http:\/\//i.test(url));
+  elements.insecureWarning.style.display = insecure && typedAuth() ? '' : 'none';
+}
+
+/** The stored token and password aren't sent to a server that changed outside these settings */
+function updateHeldBackUI(): void {
+  const held = state.heldBackFrom;
+  elements.heldBackBox.style.display = held.length > 0 ? '' : 'none';
+  elements.heldBackText.textContent =
+    held.length > 0
+      ? `The server address changed outside these settings (e.g. through browser sync) to ${held.join(', ')}. Your token and password aren't sent there until you confirm.`
+      : '';
+  elements.settingsBtn.classList.toggle('highlight', !isConfigured() || state.serverAccessMissing || held.length > 0);
+}
+
+/** The user confirms the current servers for the token and password */
+async function approveServers(): Promise<void> {
+  try {
+    await setAuthOrigins(serverOrigins(state.apiUrl, state.fallbackUrl));
+    state.heldBackFrom = (await getConfig()).heldBackFrom;
+    updateHeldBackUI();
+    showSettingsStatus('Token and password are used with this server', 'success');
+  } catch {
+    showSettingsStatus('Failed to save settings', 'error');
+  }
 }
 
 function requestServerAccess(): void {
   const apiUrl = splitCredentials(elements.urlInput.value.trim()).url;
   const fallbackUrl = splitCredentials(elements.fallbackUrlInput.value.trim()).url;
-  const authenticated = Boolean(elements.tokenInput.value || elements.usernameInput.value || elements.passwordInput.value);
+  const authenticated = typedAuth();
   const patterns = authenticatedPatterns(apiUrl, fallbackUrl, authenticated);
   if (patterns.length === 0) return;
 
@@ -113,17 +153,26 @@ async function saveSettings(): Promise<void> {
     // The token and the credentials stay in storage.local, so browser sync doesn't copy them
     await setAccessToken(accessToken);
     await setCredentials(credentials);
+    // Server URLs saved here are approved for them; a server changed elsewhere (held back) stays
+    // unapproved until confirmed, also when another setting is saved meanwhile
+    const urlsEdited = apiUrl !== state.apiUrl || fallbackUrl !== state.fallbackUrl;
+    if (state.heldBackFrom.length === 0 || urlsEdited) {
+      await setAuthOrigins(serverOrigins(apiUrl, fallbackUrl));
+    }
     await saveNotifyRules();
     state.apiUrl = apiUrl;
     state.fallbackUrl = fallbackUrl;
     state.accessToken = accessToken;
     state.credentials = credentials;
     state.includeUrl = elements.includeUrlCheckbox.checked;
+    state.heldBackFrom = (await getConfig()).heldBackFrom;
 
     // Not a full refresh: that would disturb typing
     updateTopicDropdown();
     renderTopics();
     updateThemeChips();
+    updateHeldBackUI();
+    updateInsecureWarning();
     void updateServerAccessUI();
   } catch {
     showSettingsStatus('Failed to save settings', 'error');
@@ -232,6 +281,8 @@ export function populateSettings(): void {
   elements.includeUrlCheckbox.checked = state.includeUrl;
   renderTopics();
   updateThemeChips();
+  updateHeldBackUI();
+  updateInsecureWarning();
   void updateServerAccessUI();
 }
 
@@ -244,6 +295,10 @@ export function setupSettings(): void {
   elements.passwordInput.addEventListener('input', debouncedSave);
   elements.includeUrlCheckbox.addEventListener('change', () => void saveSettings());
   elements.serverAccessBtn.addEventListener('click', requestServerAccess);
+  elements.heldBackBtn.addEventListener('click', () => void approveServers());
+  for (const input of [elements.urlInput, elements.fallbackUrlInput, elements.tokenInput, elements.usernameInput, elements.passwordInput]) {
+    input.addEventListener('input', updateInsecureWarning);
+  }
 
   elements.newTopicInput.addEventListener('keydown', handleTopicKeydown);
   elements.newTopicInput.addEventListener('input', updateTopicInputHint);

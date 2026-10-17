@@ -47,7 +47,7 @@ function switchTab(tab: Tab): void {
 function updateUI(): void {
   const configured = isConfigured();
   elements.mainView.classList.toggle('disabled', !configured);
-  elements.settingsBtn.classList.toggle('highlight', !configured || state.serverAccessMissing);
+  elements.settingsBtn.classList.toggle('highlight', !configured || state.serverAccessMissing || state.heldBackFrom.length > 0);
   elements.openUrlBtn.disabled = !state.apiUrl;
 
   if (!configured) {
