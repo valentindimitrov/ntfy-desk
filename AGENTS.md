@@ -48,3 +48,9 @@ Open items; remove a row when it lands (the design goes to `ARCHITECTURE.md` if 
 |---|---|---|
 | 7 | Run-test the Firefox build in Firefox | Open: `web-ext lint` passes; `web-ext run` can't attach while another Firefox instance is running. Close Firefox, then `pnpm dev:firefox` |
 | 8 | Releases: set up the release pipeline once testing (#7) is complete | TODO: no releases yet; don't tag or publish one. `ci.yml` already has a `release` job (on a `v*` tag, publishes the zips), untried |
+
+## Skills
+
+User-only skills (they don't load by themselves); `review-agent-context` keeps this list. Read a skill's `SKILL.md` when its line applies.
+
+- Not needed here: `web-perf` (a browser extension; Core Web Vitals don't apply).
