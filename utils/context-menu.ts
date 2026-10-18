@@ -51,7 +51,7 @@ export async function updateContextMenu(): Promise<void> {
   }
 }
 
-/** "Include current tab's URL": the page URL, used as the message title */
+/** "Fill in the current tab": the page URL, used as the message title */
 function pageUrlTitle(config: NtfyConfig, tab?: Browser.tabs.Tab): string {
   return config.includeUrl && tab?.url ? tab.url.replace(/\/$/, '') : '';
 }

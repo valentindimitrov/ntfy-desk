@@ -39,16 +39,18 @@ export interface PopupState {
   lastTopic: string | undefined;
   /** Desktop notification rule per topic */
   notifyRules: TopicRules;
-  /** URL of the page the popup was opened on (in the extension's tab: the web page tab used last) */
-  pageUrl: string;
+  /** The page the popup was opened on (in the extension's tab: the web page tab used last) */
+  page: PageInfo;
 
   // Send tab
   tags: string[];
   selectedPriority: number;
   attachments: StoredFile[];
   isSending: boolean;
-  /** The tab URL last put in the Title field automatically */
+  /** The tab title last put in the Title field automatically */
   autoTitle: string;
+  /** The tab URL last put in the Message field automatically */
+  autoMessage: string;
 
   // Receive tab
   activeTab: Tab;
@@ -61,6 +63,12 @@ export interface PopupState {
   receiverStatus: ReceiverStatus | null;
 
   serverAccessMissing: boolean;
+}
+
+/** Title and URL of a browser tab */
+export interface PageInfo {
+  url: string;
+  title: string;
 }
 
 /** Opened with the header button in a browser tab instead of the toolbar popup */
@@ -82,12 +90,13 @@ export const state: PopupState = {
   sendAsZipEnabled: false,
   lastTopic: undefined,
   notifyRules: new Map(),
-  pageUrl: '',
+  page: { url: '', title: '' },
   tags: [],
   selectedPriority: 3,
   attachments: [],
   isSending: false,
   autoTitle: '',
+  autoMessage: '',
   activeTab: 'send',
   receiveFilter: 'all',
   readMessageIds: [],

@@ -154,7 +154,7 @@ The receiver writes its state to `storage.session` (`utils/status.ts`): connecti
 The popup's Send tab publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 
 - The popup closes when a file dialog opens, so files are picked in a separate window (`entrypoints/filepicker/`) and wait in `storage.local` as data URLs until sent. The draft is saved as you type. Both are dropped when a new browser session starts.
-- With "Include current tab's URL", the page URL goes in the title. In the extension's own tab, "Use tab URL" asks once for the optional `tabs` permission to find the page used last.
+- With "Fill in the current tab" (`includeUrl`), the page's title goes in the Title field and its URL in the Message field; a field the user typed in is left alone, and filled values aren't saved in the draft. Context menu sends put the page URL in the title. In the extension's own tab, "Use tab" asks once for the optional `tabs` permission to find the page used last.
 - The right-click menu sends the page, the selection, a link or an image (`utils/context-menu.ts`). An image is fetched and sent as an attachment, which asks for access to that image's site.
 - Sending retries on the fallback URL when the main server gives no response (network error or timeout); an HTTP error is not retried, because the server answered.
 
@@ -177,7 +177,7 @@ The extension handles two kinds of untrusted input: the **server** (or anyone wh
 
 - Every message is validated before it is stored, and again when the history is read (`parseMessage`): types are checked, unknown fields dropped, invalid messages discarded.
 - Size limits: 32 KB per message line, 4 MB per poll response, the newest 1000 messages per poll, 100 per topic and 8 MB stored in all. Only messages of subscribed or polled topics are stored.
-- Messages are rendered with `textContent` only; Markdown through `utils/markdown.ts`, which builds DOM nodes. Each message renders on its own, so one that fails shows a placeholder instead of breaking the list.
+- Messages are rendered with `textContent` only; Markdown through `utils/markdown.ts`, which builds DOM nodes. Bare URLs become links (`linkify`) only if they are http(s). Each message renders on its own, so one that fails shows a placeholder instead of breaking the list.
 - URLs from messages are opened, linked or copied only if they are `http(s)`. Image previews load only the server's own attachment route (`/file/<name>`), because other same-origin URLs can be API calls.
 
 **Permissions**: `storage`, `unlimitedStorage` (attachments as data URLs), `notifications`, `alarms`, `contextMenus`, `activeTab`, `scripting` (the text of a link sent from the context menu, read from the page). `tabs` and host access are optional and requested when a feature needs them. The default MV3 content security policy applies (no remote or inline scripts).

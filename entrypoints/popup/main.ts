@@ -5,10 +5,10 @@ import { browser } from 'wxt/browser';
 import { openExtensionTab } from '@/utils/extension-tab';
 import { focusMessage, loadNotifications, setupReceive } from './receive';
 import {
-  applyUrlTitle,
+  applyPagePrefill,
   cleanUpAfterBrowserRestart,
   clearTopicDropdown,
-  getPageUrl,
+  getPage,
   loadAttachments,
   renderTags,
   restoreDraft,
@@ -79,7 +79,7 @@ function showMainView(): void {
   elements.openUrlBtn.style.display = '';
   elements.headerText.textContent = appName;
   updateUI();
-  applyUrlTitle();
+  applyPagePrefill();
 }
 
 /** Open this page in a browser tab (any size), or switch to that tab if it is already open */
@@ -113,7 +113,7 @@ function setupKeyboardShortcut(): void {
 
 async function init(): Promise<void> {
   await loadSettings();
-  state.pageUrl = await getPageUrl();
+  state.page = await getPage();
   await loadReceiveState();
   await cleanUpAfterBrowserRestart();
   await restoreDraft();
@@ -145,12 +145,12 @@ async function init(): Promise<void> {
     // Coming back to this tab: the user may have moved on to another page
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible') {
-        state.pageUrl = await getPageUrl();
-        applyUrlTitle();
+        state.page = await getPage();
+        applyPagePrefill();
       }
     });
   }
-  applyUrlTitle();
+  applyPagePrefill();
 
   // Opened by a click on a desktop notification: show that message
   const messageId = pageParams.get('message');

@@ -1,6 +1,6 @@
 // Send tab: topic, title (optionally the tab's URL), message, attachments, priority and tags.
 
-import { browser } from 'wxt/browser';
+import { browser, type Browser } from 'wxt/browser';
 import { getConfig, isHttpUrl, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
 import {
   STORED_FILES_KEY,
@@ -13,7 +13,7 @@ import {
 } from '@/utils/stored-files';
 import { withFallback } from '@/utils/servers';
 import { createZip } from '@/utils/zip';
-import { elements, isPageMode, saveSync, state } from './state';
+import { elements, isPageMode, saveSync, state, type PageInfo } from './state';
 import { moveItem, setupDragAndDrop, showStatus } from './ui';
 
 // ==================
@@ -143,14 +143,18 @@ function updateTagInputHint(): void {
 }
 
 // ==================
-// Tab URL as title
+// Tab title and URL
 // ==================
 
-/** Reading another tab's URL needs the optional "tabs" permission (asked for by the "Use tab URL" button) */
-async function getLastBrowsingTabUrl(): Promise<string> {
+const NO_PAGE: PageInfo = { url: '', title: '' };
+
+const pageOf = (tab: Browser.tabs.Tab | undefined): PageInfo => ({ url: tab?.url ?? '', title: tab?.title?.trim() ?? '' });
+
+/** Reading another tab needs the optional "tabs" permission (asked for by the "Use tab" button) */
+async function getLastBrowsingTab(): Promise<PageInfo> {
   try {
     if (!(await browser.permissions.contains({ permissions: ['tabs'] }))) {
-      return '';
+      return NO_PAGE;
     }
     const own = await browser.tabs.getCurrent();
     const tabs = await browser.tabs.query({ windowType: 'normal' });
@@ -160,55 +164,63 @@ async function getLastBrowsingTabUrl(): Promise<string> {
     if (pages.some((tab) => tab.lastAccessed === undefined)) {
       const window = await browser.windows.getLastFocused({ windowTypes: ['normal'] });
       const active = pages.find((tab) => tab.windowId === window.id && tab.active) ?? pages.find((tab) => tab.active);
-      return active?.url ?? pages[0]?.url ?? '';
+      return pageOf(active ?? pages[0]);
     }
     pages.sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
-    return pages[0]?.url ?? '';
+    return pageOf(pages[0]);
   } catch {
-    return '';
+    return NO_PAGE;
   }
 }
 
-export async function getPageUrl(): Promise<string> {
+export async function getPage(): Promise<PageInfo> {
   if (isPageMode) {
     // The active tab is this page itself: use the web page tab the user was on last
-    return getLastBrowsingTabUrl();
+    return getLastBrowsingTab();
   }
+  // The title and URL of the active tab: the activeTab permission allows them while the popup is open
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  return tab?.url ?? '';
+  return pageOf(tab);
 }
 
 const withoutTrailingSlash = (url: string) => url.replace(/\/$/, '');
 
-/**
- * "Include current tab's URL" puts the URL in the Title field, where it can still be edited.
- * A title the user typed is left alone.
- */
-export function applyUrlTitle(): void {
-  const current = elements.titleInput.value.trim();
-  if (current && current !== state.autoTitle) {
-    return;
+/** Put a field's automatic value in, unless the user typed something else there */
+function fill(input: HTMLInputElement | HTMLTextAreaElement, previous: string, value: string): string {
+  const current = input.value.trim();
+  if (!current || current === previous) {
+    input.value = value;
+    return value;
   }
-  const url = state.includeUrl && isHttpUrl(state.pageUrl) ? withoutTrailingSlash(state.pageUrl) : '';
-  elements.titleInput.value = url;
-  state.autoTitle = url;
+  return previous;
 }
 
-function useTabUrl(): void {
+/**
+ * "Fill in the current tab": the tab's title goes in the Title field and its URL in the Message field,
+ * both still editable. What the user typed in either field is left alone.
+ */
+export function applyPagePrefill(force = false): void {
+  const isWebPage = (state.includeUrl || force) && isHttpUrl(state.page.url);
+  const title = isWebPage ? state.page.title : '';
+  const url = isWebPage ? withoutTrailingSlash(state.page.url) : '';
+  state.autoTitle = fill(elements.titleInput, state.autoTitle, title);
+  state.autoMessage = fill(elements.messageInput, state.autoMessage, url);
+}
+
+function useTab(): void {
   // Called directly from the click: permissions.request needs a user gesture
   void browser.permissions.request({ permissions: ['tabs'] }).then(async (granted) => {
     if (!granted) {
-      showStatus('Allow reading tabs to use the tab URL', 'warning');
+      showStatus('Allow reading tabs to use the tab', 'warning');
       return;
     }
-    const url = await getLastBrowsingTabUrl();
-    if (!url) {
+    const page = await getLastBrowsingTab();
+    if (!page.url) {
       showStatus('No web page tab found', 'warning');
       return;
     }
-    state.pageUrl = url;
-    elements.titleInput.value = withoutTrailingSlash(url);
-    state.autoTitle = elements.titleInput.value;
+    state.page = page;
+    applyPagePrefill(true);
   });
 }
 
@@ -228,9 +240,9 @@ let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function saveDraft(): Promise<void> {
   const draft: Draft = {
-    // An automatically filled tab URL isn't part of the draft: the next popup fills in its own tab's
+    // An automatically filled tab title or URL isn't part of the draft: the next popup fills in its own tab's
     title: elements.titleInput.value === state.autoTitle ? '' : elements.titleInput.value,
-    message: elements.messageInput.value,
+    message: elements.messageInput.value === state.autoMessage ? '' : elements.messageInput.value,
     topic: elements.topicSelect.value,
     tags: state.tags,
     priority: state.selectedPriority,
@@ -432,7 +444,8 @@ async function finishSuccessfulSend(attachmentCount: number, successMessage?: st
   elements.messageInput.value = '';
   elements.titleInput.value = '';
   state.autoTitle = '';
-  applyUrlTitle();
+  state.autoMessage = '';
+  applyPagePrefill();
 
   if (attachmentCount > 0) {
     elements.fileInput.value = '';
@@ -465,7 +478,7 @@ export async function send(): Promise<void> {
 
 async function sendNow(): Promise<void> {
   const topic = elements.topicSelect.value;
-  // With "Include current tab's URL", the URL is in the title (applyUrlTitle)
+  // With "Fill in the current tab", the tab's title and URL are in these fields (applyPagePrefill)
   const message = elements.messageInput.value.trim();
   const title = elements.titleInput.value.trim();
   const tags = state.tags.join(',');
@@ -562,7 +575,7 @@ export function setupSend(): void {
 
   elements.sendBtn.addEventListener('click', () => void send());
   elements.openUrlBtn.addEventListener('click', openNtfyUrl);
-  elements.tabUrlBtn.addEventListener('click', useTabUrl);
+  elements.tabUrlBtn.addEventListener('click', useTab);
 
   elements.sendAnotherCheckbox.addEventListener('change', () => {
     state.sendAnotherEnabled = elements.sendAnotherCheckbox.checked;

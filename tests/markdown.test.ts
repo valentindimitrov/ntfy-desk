@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { markdownToText, renderMarkdown } from '@/utils/markdown';
+import { linkify, markdownToText, renderMarkdown } from '@/utils/markdown';
 
 function html(markdown: string): string {
   const div = document.createElement('div');
@@ -24,6 +24,12 @@ describe('renderMarkdown', () => {
     expect(html('[file](file:///etc/passwd)')).toBe('<p>file</p>');
   });
 
+  it('links bare http(s) URLs, outside code', () => {
+    expect(html('see https://a.example/x and `https://b.example`')).toBe(
+      '<p>see <a href="https://a.example/x" target="_blank" rel="noopener noreferrer">https://a.example/x</a> and <code>https://b.example</code></p>',
+    );
+  });
+
   it('never turns text into HTML', () => {
     const rendered = html('<img src=x onerror=alert(1)> **<script>alert(1)</script>**');
     expect(rendered).not.toContain('<img');
@@ -37,5 +43,31 @@ describe('markdownToText', () => {
     expect(markdownToText('# Alert\n**Disk** at *91%*, see [logs](https://x.example)\n- `sda`')).toBe(
       'Alert\nDisk at 91%, see logs\n• sda',
     );
+  });
+});
+
+describe('linkify', () => {
+  const links = (text: string) => {
+    const div = document.createElement('div');
+    div.append(linkify(text));
+    return { hrefs: [...div.querySelectorAll('a')].map((a) => a.getAttribute('href')), text: div.textContent };
+  };
+
+  it('links http(s) URLs and keeps the rest as text', () => {
+    expect(links('Done: https://ci.example/run/7.')).toEqual({
+      hrefs: ['https://ci.example/run/7'],
+      text: 'Done: https://ci.example/run/7.',
+    });
+    expect(links('(see http://a.example/b), then https://w.example/Foo_(bar)').hrefs).toEqual([
+      'http://a.example/b',
+      'https://w.example/Foo_(bar)',
+    ]);
+  });
+
+  it('never links other schemes or builds HTML', () => {
+    expect(links('javascript:alert(1) file:///etc/passwd <b>https://x.example"onclick=1</b>')).toEqual({
+      hrefs: ['https://x.example'],
+      text: 'javascript:alert(1) file:///etc/passwd <b>https://x.example"onclick=1</b>',
+    });
   });
 });

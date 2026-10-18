@@ -11,10 +11,10 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Notification rules per topic**: all, from a priority up, or off; the messages are still listed.
 - **Clickable notifications**: a click opens the message's link, or the message in the extension's tab; `view` actions become buttons.
 - **Connection state**: the Receive tab shows whether it's connected, reconnecting or can't reach the server, topics you can only send to, and failed fetches.
-- **Received messages**: the Receive tab lists the messages of all topics, with a topic list on the left (unread counts per topic), search, mark as read and delete (kept locally). Markdown messages are rendered, and image attachments hosted on your server are previewed.
+- **Received messages**: the Receive tab lists the messages of all topics, with a topic list on the left (unread counts per topic), search, mark as read and delete (kept locally). Links in messages open in a new tab, Markdown messages are rendered, and image attachments hosted on your server are previewed.
 - **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
-- **Tab URL as title**: with "Include current tab's URL", the page's URL is put in the Title field.
+- **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.
 - **Open in a tab**: the extension also opens as a page in its own browser tab, for a larger view.
 - **Keyboard**: Right Ctrl + Enter sends.
 - **Dark mode**, and no tracking.
@@ -37,7 +37,7 @@ In the settings (gear icon):
    They are used only with the server addresses saved in this browser's settings. If the server URL changes elsewhere (browser sync from another browser), the settings say so, and nothing is sent to the new address until you confirm it. With an `http://` address the settings warn you: the token or password would go over the network unencrypted.
 4. **Allow access to this server**: appears when a token or credentials are set. ntfy's CORS headers don't allow the `Authorization` header, so the extension needs permission for the server's site (both sites, with a fallback URL) to send authenticated requests.
 5. **Topics**: the topics to send to and receive from. The extension receives from the topics your credentials can read; a topic you can only send to is used for sending only.
-6. **Include current tab's URL**: puts the page URL in the message title. In the extension's own tab, **Use tab URL** fills in the page you were on last (it asks once for permission to read tabs).
+6. **Fill in the current tab**: puts the page's title in the Title field and its URL in the Message field (from the context menu, the page URL becomes the title). In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
 
 ### Receiving and the browser
 

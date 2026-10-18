@@ -1,10 +1,10 @@
 // Receive tab: topic list with unread counts, connection status, search, and the received messages
-// (Markdown, image previews, the click URL on the title) with read and delete actions.
+// (Markdown, links, image previews, the click URL on the title, view actions) with read and delete actions.
 
 import { browser } from 'wxt/browser';
 import { getHistoryState } from '@/utils/history';
 import { isHttpUrl, type NtfyMessage } from '@/utils/ntfy';
-import { renderMarkdown } from '@/utils/markdown';
+import { linkify, renderMarkdown } from '@/utils/markdown';
 import { sendToBackground } from '@/utils/messages';
 import { ruleFor } from '@/utils/rules';
 import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
@@ -167,7 +167,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
     body.classList.add('markdown');
     body.append(renderMarkdown(message.message || ''));
   } else {
-    body.textContent = message.message || '';
+    body.append(linkify(message.message || ''));
   }
 
   const imageUrl = previewableImage(message, [state.apiUrl, state.fallbackUrl]);

@@ -108,8 +108,13 @@
           <div class="form-group">
             <div class="form-label-row">
               <label class="form-label" for="title-input">Title</label>
-              <button class="link-btn" id="tab-url-btn" style="display: none" title="Use the URL of the web page tab you were on last">
-                🔗 Use tab URL
+              <button
+                class="link-btn"
+                id="tab-url-btn"
+                style="display: none"
+                title="Use the title and URL of the web page tab you were on last"
+              >
+                🔗 Use tab
               </button>
             </div>
             <input type="text" class="form-input" id="title-input" />
@@ -276,9 +281,9 @@
         <div class="form-group">
           <div class="checkbox-group">
             <input type="checkbox" id="include-url-checkbox" />
-            <label for="include-url-checkbox">Include current tab's URL</label>
+            <label for="include-url-checkbox">Fill in the current tab</label>
           </div>
-          <p class="form-hint">Put the active tab's URL in the title</p>
+          <p class="form-hint">Send tab: the tab's title as the title, its URL as the message. Context menu: the page's URL as the title</p>
         </div>
 
         <div class="form-group">

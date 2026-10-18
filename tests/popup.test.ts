@@ -51,7 +51,7 @@ beforeEach(async () => {
     return { success: true };
   }) as never);
   mockResolved(fakeBrowser.permissions, 'contains', true);
-  mockResolved(fakeBrowser.tabs, 'query', [{ url: 'https://news.example/story/' }]);
+  mockResolved(fakeBrowser.tabs, 'query', [{ url: 'https://news.example/story/', title: ' The story ' }]);
   vi.spyOn(window, 'close').mockImplementation(() => {
     closed = true;
   });
@@ -178,6 +178,7 @@ describe('Receive tab', () => {
       receivedNotifications: [
         message('md', 'alerts', 1, { message: '**Disk** at 91%, [logs](https://logs.example)', content_type: 'text/markdown' }),
         message('plain', 'alerts', 2, { message: '**not bold** <b>x</b>' }),
+        message('url', 'alerts', 3, { message: 'Build failed: https://ci.example/run/7. javascript:alert(1)' }),
       ],
     });
     await openPopup('?tab=receive');
@@ -186,6 +187,9 @@ describe('Receive tab', () => {
     expect(bodies[0]!.querySelector('a')?.getAttribute('href')).toBe('https://logs.example');
     expect(bodies[1]!.children).toHaveLength(0);
     expect(bodies[1]!.textContent).toBe('**not bold** <b>x</b>');
+    // Newest first: the plain message with a URL is the first one
+    const link = bodies.find((body) => body.textContent?.startsWith('Build failed'))!.querySelectorAll('a');
+    expect([...link].map((a) => [a.getAttribute('href'), a.target])).toEqual([['https://ci.example/run/7', '_blank']]);
   });
 
   it('previews image attachments hosted on the server only, while they last', async () => {
@@ -244,32 +248,46 @@ describe('Receive tab', () => {
 });
 
 describe('Send tab', () => {
-  it('puts the tab URL in the title and sends to the selected topic', async () => {
+  it("puts the tab's title in the title and its URL in the message, and sends to the selected topic", async () => {
     await fakeBrowser.storage.sync.set({ includeUrl: true });
     await openPopup();
-    expect($<HTMLInputElement>('#title-input').value).toBe('https://news.example/story');
+    expect($<HTMLInputElement>('#title-input').value).toBe('The story');
+    expect($<HTMLTextAreaElement>('#message-input').value).toBe('https://news.example/story');
     expect($<HTMLSelectElement>('#topic-select').value).toBe('inbox');
 
-    $<HTMLTextAreaElement>('#message-input').value = 'look at this';
     $('#send-btn').click();
     await vi.waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.url).toBe('https://ntfy.example/inbox');
-    expect(requests[0]!.body).toBe('look at this');
-    expect(requests[0]!.headers.get('X-Title')).toBe('https://news.example/story');
+    expect(requests[0]!.body).toBe('https://news.example/story');
+    expect(requests[0]!.headers.get('X-Title')).toBe('The story');
     expect(requests[0]!.headers.get('Authorization')).toBe('Bearer tk_x');
     await vi.waitFor(() => expect(closed).toBe(true));
   });
 
-  it("doesn't save an automatically filled URL in the draft", async () => {
+  it("doesn't save an automatically filled title or URL in the draft", async () => {
     await fakeBrowser.storage.sync.set({ includeUrl: true });
     await openPopup();
-    const message = $<HTMLTextAreaElement>('#message-input');
-    message.value = 'draft text';
-    message.dispatchEvent(new Event('input'));
+    const title = $<HTMLInputElement>('#title-input');
+    title.value = 'my title';
+    title.dispatchEvent(new Event('input'));
     await vi.waitFor(async () => {
       const { draftState } = await fakeBrowser.storage.local.get('draftState');
-      expect(draftState).toMatchObject({ title: '', message: 'draft text' });
+      expect(draftState).toMatchObject({ title: 'my title', message: '' });
     });
+  });
+
+  it('leaves the title and message empty without "Fill in the current tab"', async () => {
+    await openPopup();
+    expect($<HTMLInputElement>('#title-input').value).toBe('');
+    expect($<HTMLTextAreaElement>('#message-input').value).toBe('');
+  });
+
+  it('keeps a message restored from the draft instead of the tab URL', async () => {
+    await fakeBrowser.storage.sync.set({ includeUrl: true });
+    await fakeBrowser.storage.local.set({ draftState: { title: '', message: 'typed before' } });
+    await openPopup();
+    expect($<HTMLInputElement>('#title-input').value).toBe('The story');
+    expect($<HTMLTextAreaElement>('#message-input').value).toBe('typed before');
   });
 
   it('sends two attachments as one ZIP when that option is on', async () => {
@@ -318,11 +336,12 @@ describe('Send tab', () => {
     mockResolved(fakeBrowser.tabs, 'query', [
       { id: 1, windowId: 1, active: true, url: 'https://other-window.example/' },
       { id: 2, windowId: 2, active: false, url: 'https://background-tab.example/' },
-      { id: 3, windowId: 2, active: true, url: 'https://the-page.example/article/' },
+      { id: 3, windowId: 2, active: true, url: 'https://the-page.example/article/', title: 'The article' },
       { id: 9, windowId: 2, active: false, url: 'chrome-extension://id/popup.html' },
     ]);
     $('#tab-url-btn').click();
-    await vi.waitFor(() => expect($<HTMLInputElement>('#title-input').value).toBe('https://the-page.example/article'));
+    await vi.waitFor(() => expect($<HTMLTextAreaElement>('#message-input').value).toBe('https://the-page.example/article'));
+    expect($<HTMLInputElement>('#title-input').value).toBe('The article');
   });
 
   it('stays open after sending in the extension tab', async () => {

@@ -1,9 +1,37 @@
 // A small Markdown renderer for ntfy's Markdown messages (content_type text/markdown). It builds DOM
 // nodes with textContent only (never innerHTML), and links only to http(s) URLs. Supported: paragraphs,
 // line breaks, # headings, - and 1. lists, ``` code blocks, `code`, **bold**, *italic* / _italic_ and
-// [links](https://...). Anything else stays text.
+// [links](https://...); bare http(s) URLs become links too (linkify). Anything else stays text.
 
 import { isHttpUrl } from './ntfy';
+
+// A bare URL: up to whitespace or a character that can't be part of one written in text
+const BARE_URL = /\bhttps?:\/\/[^\s<>"'`]+/gi;
+
+/** Plain text with its http(s) URLs as links (trailing punctuation such as a full stop stays text) */
+export function linkify(text: string, doc: Document = document): DocumentFragment {
+  const fragment = doc.createDocumentFragment();
+  let last = 0;
+  for (const match of text.matchAll(BARE_URL)) {
+    let url = match[0];
+    // "(see https://x.example/a)." ends at the a; a URL with its own ( keeps its )
+    while (/[.,;:!?)\]}]$/.test(url) && !(url.endsWith(')') && url.includes('('))) {
+      url = url.slice(0, -1);
+    }
+    const index = match.index ?? 0;
+    if (!isHttpUrl(url)) continue;
+    if (index > last) fragment.append(text.slice(last, index));
+    const link = doc.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = url;
+    fragment.append(link);
+    last = index + url.length;
+  }
+  if (last < text.length) fragment.append(text.slice(last));
+  return fragment;
+}
 
 // Inline markup, first match wins: code, bold, italic, link
 const INLINE = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|\[([^\]\n]+)\]\(([^)\s]+)\)/g;
@@ -14,7 +42,7 @@ function renderInline(text: string, doc: Document = document): DocumentFragment 
   for (const match of text.matchAll(INLINE)) {
     const index = match.index ?? 0;
     if (index > last) {
-      fragment.append(text.slice(last, index));
+      fragment.append(linkify(text.slice(last, index), doc));
     }
     const [, code, bold, bold2, italic, italic2, linkText, linkUrl] = match;
     if (code !== undefined) {
@@ -43,7 +71,7 @@ function renderInline(text: string, doc: Document = document): DocumentFragment 
     last = index + match[0].length;
   }
   if (last < text.length) {
-    fragment.append(text.slice(last));
+    fragment.append(linkify(text.slice(last), doc));
   }
   return fragment;
 }

@@ -1648,7 +1648,7 @@ button.notification-title {
   padding: 0;
 }
 
-.notification-message.markdown a {
+.notification-message a {
   color: var(--primary-light);
 }
 
