@@ -155,6 +155,11 @@ const isObject = (value: unknown): value is Fields => typeof value === 'object' 
 const optionalString = (value: unknown) => (typeof value === 'string' ? value : undefined);
 const optionalNumber = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
 const isId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_LENGTH;
+export const isNtfyPathPart = (value: string): boolean =>
+  value.length > 0 && value.length <= MAX_ID_LENGTH && !/[^-A-Za-z0-9_]/.test(value);
+
+/** Default sequences use the message ID. */
+export const sequenceOf = (message: NtfyMessage): string => message.sequence_id ?? message.id;
 
 function parseAction(value: unknown): NtfyAction | null {
   if (!isObject(value) || typeof value.action !== 'string' || typeof value.label !== 'string') {
@@ -203,7 +208,7 @@ export function parseMessage(value: unknown): NtfyMessage | null {
   const priority = optionalNumber(value.priority);
   const attachment = parseAttachment(value.attachment);
   const sequenceId = optionalString(value.sequence_id);
-  const validSequenceId = sequenceId && /^[-_A-Za-z0-9]{1,64}$/.test(sequenceId) ? sequenceId : undefined;
+  const validSequenceId = sequenceId && isNtfyPathPart(sequenceId) ? sequenceId : undefined;
   if (value.event === 'message_delete' && !validSequenceId) return null;
   return withoutUndefined<NtfyMessage>({
     id: value.id,
@@ -467,6 +472,17 @@ export function sendNotification(server: NtfyServer, topic: string, options: Pub
   return post(buildTopicUrl(server.apiUrl, topic), headers, options.message || '', TIMEOUTS.publish);
 }
 
+/** Request a sequence deletion. Only the server can determine whether the caller has write access. */
+export async function deleteNotification(server: NtfyServer, topic: string, sequence: string, signal: AbortSignal): Promise<Response> {
+  if (!isNtfyPathPart(topic) || !isNtfyPathPart(sequence)) throw new Error('Invalid ntfy topic or sequence ID');
+  return fetch(`${buildTopicUrl(server.apiUrl, topic)}/${sequence}`, {
+    method: 'DELETE',
+    headers: buildAuthHeaders(server),
+    redirect: 'error',
+    signal,
+  });
+}
+
 export function sendAttachment(server: NtfyServer, topic: string, options: AttachmentOptions): Promise<Response> {
   const headers = buildAuthHeaders(server);
   headers.set('X-Filename', encodeHeaderValue(options.filename));
@@ -551,18 +567,19 @@ export async function getNotifications(
   server: NtfyServer,
   topic: string,
   since: string | number = 'all',
-  includeDeletions = false,
-): Promise<NtfyMessage[]> {
+  { includeDeletions = false, signal = AbortSignal.timeout(TIMEOUTS.poll) }: { includeDeletions?: boolean; signal?: AbortSignal } = {},
+): Promise<{ events: NtfyMessage[]; serverOrigin: string }> {
   if (!server.apiUrl) {
     throw new Error('API URL is not configured');
   }
 
   const headers = buildAuthHeaders(server);
-  const response = await fetch(`${buildTopicUrl(server.apiUrl, topic)}/json?poll=1&since=${since}`, {
+  const url = `${buildTopicUrl(server.apiUrl, topic)}/json?poll=1&since=${since}`;
+  const response = await fetch(url, {
     method: 'GET',
     headers,
     redirect: redirectPolicy(headers),
-    signal: AbortSignal.timeout(TIMEOUTS.poll),
+    signal,
   });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -570,7 +587,7 @@ export async function getNotifications(
 
   const text = await readLimited(response, MAX_POLL_BYTES);
   // NDJSON; keep valid notifications and, when requested, deletions of this topic only.
-  return text
+  const events = text
     .split('\n')
     .filter((line) => line.trim())
     .map(parseMessageJson)
@@ -580,4 +597,5 @@ export async function getNotifications(
         message.topic === topic &&
         (message.event === 'message' || (includeDeletions && message.event === 'message_delete')),
     );
+  return { events, serverOrigin: new URL(response.url || url).origin };
 }

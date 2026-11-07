@@ -188,7 +188,7 @@ describe('requests', () => {
     ].map((line) => JSON.stringify(line));
     const calls = stubFetch([...lines, 'not json', ''].join('\n'));
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const messages = await getNotifications(server, 'a', 10);
+    const { events: messages } = await getNotifications(server, 'a', 10);
     expect(calls[0]!.url).toBe('https://ntfy.example/a/json?poll=1&since=10');
     expect(messages.map((m) => m.id)).toEqual(['m1']);
   });

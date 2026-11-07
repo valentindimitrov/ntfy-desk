@@ -29,6 +29,42 @@ test.describe('receiving', () => {
     await expect.poll(() => serviceWorker.evaluate(() => chrome.action.getBadgeText({}))).toBe('1');
   });
 
+  test('deletes opted-in sequences on the server and reports denied deletes in Receive', async ({
+    ntfy,
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
+    ntfy.readOnly.add('readonly');
+    await configure({ topics: 'alerts,backups,readonly' });
+    await serviceWorker.evaluate(() => chrome.storage.sync.set({ syncDeletionTopics: ['alerts', 'readonly'] }));
+    await expect.poll(() => ntfy.subscriptions).toEqual([['alerts', 'backups', 'readonly']]);
+
+    const popup = await openPopup('?tab=receive');
+    ntfy.publish('alerts', { title: 'One sequence', sequence_id: 'custom-sequence' });
+    await expect(popup.locator('.notification-title')).toHaveText(['One sequence']);
+    await popup.locator('.delete-btn').click();
+    const serverDeletions = () =>
+      ntfy.messages.filter((event) => event.event === 'message_delete').map((event) => [event.topic, event.sequence_id]);
+    await expect.poll(serverDeletions).toEqual([['alerts', 'custom-sequence']]);
+
+    const other = ntfy.publish('alerts', { title: 'Another alert' });
+    ntfy.publish('backups', { title: 'Local only' });
+    ntfy.publish('readonly', { title: 'Denied' });
+    await expect(popup.locator('.notification-title')).toHaveCount(3);
+    popup.once('dialog', (dialog) => dialog.accept());
+    await popup.locator('#delete-all-btn').click();
+
+    await expect(popup.locator('.notification-title')).toHaveCount(0);
+    const status = popup.locator('#receive-action-status');
+    await expect(status).toHaveText('Deleted here. The server denied deletion.');
+    await expect(status).toBeVisible();
+    expect(serverDeletions()).toEqual([
+      ['alerts', 'custom-sequence'],
+      ['alerts', other.id],
+    ]);
+  });
+
   test('a published message becomes one desktop notification, a listed message and an unread count', async ({
     ntfy,
     configure,

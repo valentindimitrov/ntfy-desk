@@ -63,7 +63,7 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
     const task = handlePopupRequest(request, () => receiver.sync());
     if (!task) return undefined;
-    task.then(() => sendResponse({ success: true })).catch(() => sendResponse({ success: false }));
+    task.then((deletion) => sendResponse({ success: true, deletion })).catch(() => sendResponse({ success: false }));
     return true;
   });
 });

@@ -6,10 +6,11 @@ import { getHistoryState } from '@/utils/history';
 import { isHttpUrl, type NtfyMessage } from '@/utils/ntfy';
 import { linkify, renderMarkdown } from '@/utils/markdown';
 import { sendToBackground } from '@/utils/messages';
+import type { DeletionSyncResult } from '@/utils/delete';
 import { ruleFor } from '@/utils/rules';
 import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
 import { elements, isConfigured, loadReceiveState, saveLocal, state } from './state';
-import { showStatus } from './ui';
+import { showReceiveStatus } from './ui';
 
 function emptyMessage(text: string): HTMLElement {
   const div = document.createElement('div');
@@ -232,7 +233,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   const deleteButton = document.createElement('button');
   deleteButton.className = 'notification-action-btn delete-btn';
   deleteButton.textContent = '×';
-  deleteButton.title = 'Delete Notification';
+  deleteButton.title = state.syncDeletionTopics.has(message.topic) ? 'Delete here and on the server (if allowed)' : 'Delete Notification';
   deleteButton.addEventListener('click', () => void deleteMessage(message.id, item));
   actions.appendChild(deleteButton);
 
@@ -317,13 +318,23 @@ async function deleteMessage(id: string, item: HTMLElement): Promise<void> {
     state.deletedMessageIds = [...new Set([...state.deletedMessageIds, id])];
     state.readMessageIds = state.readMessageIds.filter((other) => other !== id);
     item.remove();
-    await sendToBackground({ action: 'delete', ids: [id] });
+    showDeletionResult(await sendToBackground({ action: 'delete', ids: [id] }));
     if (elements.notificationsList.children.length === 0) {
       elements.notificationsList.replaceChildren(emptyMessage('No recent notifications'));
     }
   } catch (error) {
     console.error('Error deleting notification locally:', error);
-    showStatus('Failed to delete notification', 'error');
+    showReceiveStatus('Failed to delete notification', 'error');
+  }
+}
+
+function showDeletionResult(result: DeletionSyncResult | undefined, success?: string): void {
+  if (result?.failed) {
+    showReceiveStatus('Deleted here. Some server deletions could not be confirmed.', 'warning');
+  } else if (result?.denied) {
+    showReceiveStatus('Deleted here. The server denied deletion.', 'warning');
+  } else if (success) {
+    showReceiveStatus(success, 'success');
   }
 }
 
@@ -333,14 +344,14 @@ async function copyLink(url: string, button: HTMLElement): Promise<void> {
     const originalTitle = button.title;
     button.title = 'Copied!';
     button.style.color = 'var(--primary-light)';
-    showStatus('Attachment link copied!', 'success');
+    showReceiveStatus('Attachment link copied!', 'success');
     setTimeout(() => {
       button.title = originalTitle;
       button.style.color = '';
     }, 2000);
   } catch (error) {
     console.error('Failed to copy link:', error);
-    showStatus('Failed to copy link', 'error');
+    showReceiveStatus('Failed to copy link', 'error');
   }
 }
 
@@ -350,17 +361,20 @@ async function markAllRead(): Promise<void> {
   state.readMessageIds.push(...unread.map((m) => m.id));
   try {
     await sendToBackground({ action: 'setRead', ids: unread.map((m) => m.id), read: true });
-    showStatus('All marked as read', 'success');
+    showReceiveStatus('All marked as read', 'success');
   } catch (error) {
     console.error('Error saving readMessageIds:', error);
-    showStatus('Failed to mark all as read', 'error');
+    showReceiveStatus('Failed to mark all as read', 'error');
   }
 }
 
 async function deleteAll(): Promise<void> {
   if (state.currentNotifications.length === 0) return;
   const scope = state.receiveFilter === 'all' ? '' : ` in topic "${state.receiveFilter}"`;
-  if (!confirm(`Are you sure you want to delete all notifications${scope}?`)) {
+  const serverNotice = state.currentNotifications.some((message) => state.syncDeletionTopics.has(message.topic))
+    ? ' This also deletes on the server for topics with deletion sync enabled, when allowed.'
+    : '';
+  if (!confirm(`Are you sure you want to delete all notifications${scope}?${serverNotice}`)) {
     return;
   }
 
@@ -368,11 +382,10 @@ async function deleteAll(): Promise<void> {
   state.deletedMessageIds = [...new Set([...state.deletedMessageIds, ...ids])];
   state.readMessageIds = state.readMessageIds.filter((id) => !ids.includes(id));
   try {
-    await sendToBackground({ action: 'delete', ids });
-    showStatus('All notifications deleted', 'success');
+    showDeletionResult(await sendToBackground({ action: 'delete', ids }), 'All notifications deleted');
   } catch (error) {
     console.error('Error performing bulk delete:', error);
-    showStatus('Failed to delete all', 'error');
+    showReceiveStatus('Failed to delete all', 'error');
   }
 }
 

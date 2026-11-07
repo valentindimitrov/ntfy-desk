@@ -156,7 +156,7 @@ describe('server deletions', () => {
     await receiver.sync();
     await receiver.sync();
 
-    expect((await getHistoryState()).receivedNotifications).toEqual([revived]);
+    expect((await getHistoryState()).receivedNotifications).toEqual([{ ...revived, serverOrigin: 'https://ntfy.example' }]);
     expect(notified).toEqual([revived]);
   });
 

@@ -43,6 +43,8 @@ export interface NtfyTestServer {
   token: string;
   /** Topics the token can't read: their subscription (and any subscription including them) gets 403 */
   unreadable: Set<string>;
+  /** Topics the token can't delete from */
+  readOnly: Set<string>;
   messages: (ServerMessage | ServerDeletion)[];
   /** Messages published by the extension */
   published: PublishedRequest[];
@@ -50,7 +52,7 @@ export interface NtfyTestServer {
   subscriptions: string[][];
   /** Publish as another client would: stored, and sent to open subscriptions */
   publish(topic: string, fields?: Partial<ServerMessage>): ServerMessage;
-  deleteNotification(topic: string, sequenceId: string): void;
+  deleteNotification(topic: string, sequenceId: string): ServerDeletion;
   /** End every open subscription (the extension reconnects) */
   dropConnections(): void;
   /** Refuse new subscriptions until set back to true */
@@ -99,6 +101,7 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
     url: '',
     token,
     unreadable: new Set(),
+    readOnly: new Set(),
     messages: [],
     published: [],
     subscriptions: [],
@@ -115,7 +118,15 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
       return message;
     },
     deleteNotification(topic, sequenceId) {
-      deliver({ id: `msg${++nextId}`, time: Math.floor(Date.now() / 1000), event: 'message_delete', topic, sequence_id: sequenceId });
+      const event: ServerDeletion = {
+        id: `msg${++nextId}`,
+        time: Math.floor(Date.now() / 1000),
+        event: 'message_delete',
+        topic,
+        sequence_id: sequenceId,
+      };
+      deliver(event);
+      return event;
     },
     dropConnections() {
       for (const stream of streams.keys()) stream.destroy();
@@ -148,6 +159,16 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
     const topics = topicPart.split(',').filter(Boolean);
     if (!authorized(req)) {
       send(res, 401, '{"code":40101,"http":401,"error":"unauthorized"}');
+      return;
+    }
+
+    if (req.method === 'DELETE' && topics.length === 1 && action) {
+      const topic = topics[0]!;
+      if (server.readOnly.has(topic)) {
+        send(res, 403, '{"code":40301,"http":403,"error":"forbidden"}');
+      } else {
+        send(res, 200, JSON.stringify(server.deleteNotification(topic, action)));
+      }
       return;
     }
 

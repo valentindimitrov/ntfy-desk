@@ -193,13 +193,13 @@ export function createReceiver(events: ReceiverEvents) {
   }
 
   /** A line of the stream: accept messages and deletions of the subscribed topics only. */
-  async function handleLine(line: string, topics: string[]): Promise<void> {
+  async function handleLine(line: string, topics: string[], serverOrigin: string): Promise<void> {
     const message = parseMessageJson(line);
     if (!message || (message.event !== 'message' && message.event !== 'message_delete') || !topics.includes(message.topic)) {
       return;
     }
     try {
-      if (await recordMessage(message)) events.onNewMessage(message);
+      if (await recordMessage(message, serverOrigin)) events.onNewMessage(message);
     } catch (error) {
       console.error('Error processing a live message:', error);
     }
@@ -228,6 +228,7 @@ export function createReceiver(events: ReceiverEvents) {
           throw new Error(`HTTP ${response.status}`);
         }
         if (!isCurrent()) return;
+        const serverOrigin = new URL(response.url || config.apiUrl).origin;
 
         opened = true;
         reconnectDelay = INITIAL_RECONNECT_DELAY;
@@ -240,7 +241,7 @@ export function createReceiver(events: ReceiverEvents) {
         await readLines(
           response.body,
           async (line) => {
-            if (isCurrent()) await handleLine(line, config.topics);
+            if (isCurrent()) await handleLine(line, config.topics, serverOrigin);
           },
           () => resetIdleTimer(current),
         );
@@ -325,8 +326,8 @@ export function createReceiver(events: ReceiverEvents) {
       const since = states.get(topic)?.since ?? INITIAL_SYNC_SINCE;
 
       try {
-        const replay = await getNotifications(config, topic, since, true);
-        const messages = await recordPoll(topic, replay);
+        const { events: replay, serverOrigin } = await getNotifications(config, topic, since, { includeDeletions: true });
+        const messages = await recordPoll(topic, replay, serverOrigin);
         for (const message of messages) events.onNewMessage(message);
       } catch (error) {
         const message = (error as Error).message;

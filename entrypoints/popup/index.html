@@ -202,6 +202,7 @@
               </div>
             </div>
             <div class="connection-status" id="connection-status" aria-live="polite"></div>
+            <div class="status" id="receive-action-status" role="status"></div>
             <input
               type="search"
               class="notifications-search"
@@ -282,7 +283,7 @@
           <div class="form-label">Message sync</div>
           <div class="topic-settings" id="sync-modes"></div>
           <p class="form-hint">
-            Sync server deletions removes messages here when ntfy sends a deletion event. Deleting here only affects this device.
+            Sync server deletions applies both ways. Deleting here also deletes on the server when your credentials allow it.
           </p>
         </div>
 

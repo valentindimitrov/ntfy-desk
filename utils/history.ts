@@ -3,7 +3,7 @@
 // delete actions (sent as messages) all go through one queue, so no update overwrites another.
 
 import { browser } from 'wxt/browser';
-import { parseMessage, type NtfyMessage } from './ntfy';
+import { parseMessage, sequenceOf, type NtfyMessage } from './ntfy';
 import { getSyncDeletionTopics } from './sync-modes';
 
 /** Received messages kept per topic, so a busy topic doesn't push the others out */
@@ -43,9 +43,14 @@ export interface TopicSyncState {
 export type TopicSyncStates = Map<string, TopicSyncState>;
 
 export interface HistoryState {
-  receivedNotifications: NtfyMessage[];
+  receivedNotifications: StoredMessage[];
   readMessageIds: string[];
   deletedMessageIds: string[];
+}
+
+export interface StoredMessage extends NtfyMessage {
+  /** The origin that delivered the message, assigned by the receiver. Older history has no origin. */
+  serverOrigin?: string;
 }
 
 const SYNC_KEY = 'topicSync';
@@ -80,12 +85,20 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
 
 const storedStates = (states: TopicSyncStates) => ({ [SYNC_KEY]: [...states.values()] });
 
+function parseStoredMessage(value: unknown): StoredMessage | null {
+  const message = parseMessage(value);
+  if (message && value && typeof value === 'object' && 'serverOrigin' in value && typeof value.serverOrigin === 'string') {
+    return { ...message, serverOrigin: value.serverOrigin };
+  }
+  return message;
+}
+
 export async function getHistoryState(): Promise<HistoryState> {
   const result = await browser.storage.local.get(['receivedNotifications', 'readMessageIds', 'deletedMessageIds']);
   const stored: unknown = result.receivedNotifications;
   return {
     // Checked again on reading: messages stored by an earlier version weren't validated
-    receivedNotifications: Array.isArray(stored) ? stored.map(parseMessage).filter((m): m is NtfyMessage => m !== null) : [],
+    receivedNotifications: Array.isArray(stored) ? stored.map(parseStoredMessage).filter((m): m is StoredMessage => m !== null) : [],
     readMessageIds: (result.readMessageIds as string[] | undefined) ?? [],
     deletedMessageIds: (result.deletedMessageIds as string[] | undefined) ?? [],
   };
@@ -96,7 +109,7 @@ export async function getHistoryState(): Promise<HistoryState> {
  * MAX_HISTORY_SIZE in all. Ordering by time (not by arrival) keeps a late older message from pushing
  * out a newer one.
  */
-export function trimHistory(messages: NtfyMessage[]): NtfyMessage[] {
+export function trimHistory(messages: StoredMessage[]): StoredMessage[] {
   const counts = new Map<string, number>();
   let size = 0;
   return [...messages]
@@ -142,10 +155,8 @@ function pruneSeen(state: TopicSyncState): void {
   state.seen = kept.slice(-MAX_SEEN_PER_TOPIC);
 }
 
-const sequenceOf = (message: NtfyMessage) => message.sequence_id ?? message.id;
-
 /** Apply one live event or a whole poll and return new messages eligible for a notification. */
-function recordEvents(topic: string, events: NtfyMessage[], poll: boolean): Promise<NtfyMessage[]> {
+function recordEvents(topic: string, events: NtfyMessage[], poll: boolean, serverOrigin?: string): Promise<NtfyMessage[]> {
   return serialized(async () => {
     const [states, history, syncDeletionTopics] = await Promise.all([getTopicSyncStates(), getHistoryState(), getSyncDeletionTopics()]);
     const syncDeletions = syncDeletionTopics.has(topic);
@@ -174,11 +185,17 @@ function recordEvents(topic: string, events: NtfyMessage[], poll: boolean): Prom
         deletion &&
         (event.time < deletion.time || (poll && event.time === deletion.time && (deletionIndex === undefined || deletionIndex > index)));
 
-      // Earlier versions did not save sequence IDs. Recover them from a replay before deduplication.
+      // Earlier versions did not save sequence IDs or the source origin. Recover them on replay.
       const stored = messages.get(event.id);
-      if (event.event === 'message' && stored?.topic === topic && !stored.sequence_id && event.sequence_id) {
+      if (
+        event.event === 'message' &&
+        stored?.topic === topic &&
+        stored.time === event.time &&
+        (!stored.serverOrigin || stored.serverOrigin === serverOrigin) &&
+        ((!stored.sequence_id && event.sequence_id) || (!stored.serverOrigin && serverOrigin))
+      ) {
         if (deletedByServer) messages.delete(event.id);
-        else messages.set(event.id, { ...stored, sequence_id: event.sequence_id });
+        else messages.set(event.id, { ...stored, sequence_id: stored.sequence_id ?? event.sequence_id, serverOrigin });
         changed = true;
       }
 
@@ -206,7 +223,7 @@ function recordEvents(topic: string, events: NtfyMessage[], poll: boolean): Prom
         }
       } else {
         if (deletedByServer || messages.has(event.id) || localDeletes.has(event.id)) continue;
-        messages.set(event.id, event);
+        messages.set(event.id, serverOrigin ? { ...event, serverOrigin } : event);
         added.push(event);
         changed = true;
       }
@@ -239,13 +256,13 @@ function recordEvents(topic: string, events: NtfyMessage[], poll: boolean): Prom
 }
 
 /** Resolves to true if a live notification was new to the history. */
-export async function recordMessage(message: NtfyMessage): Promise<boolean> {
-  return (await recordEvents(message.topic, [message], false)).length > 0;
+export async function recordMessage(message: NtfyMessage, serverOrigin?: string): Promise<boolean> {
+  return (await recordEvents(message.topic, [message], false, serverOrigin)).length > 0;
 }
 
 /** A completed poll advances the watermark and applies replayed messages and deletions together. */
-export function recordPoll(topic: string, events: NtfyMessage[]): Promise<NtfyMessage[]> {
-  return recordEvents(topic, events, true);
+export function recordPoll(topic: string, events: NtfyMessage[], serverOrigin: string): Promise<NtfyMessage[]> {
+  return recordEvents(topic, events, true, serverOrigin);
 }
 
 /** Forget removed topics, so adding one back starts with a silent sync again */
@@ -270,11 +287,15 @@ export function setRead(ids: string[], read: boolean): Promise<void> {
 }
 
 /** Delete actions from the popup: hide messages (kept as deleted ids so polls don't bring them back) */
-export function deleteMessages(ids: string[]): Promise<void> {
+export function deleteMessages(ids: string[]): Promise<StoredMessage[]> {
   return serialized(async () => {
     const history = await getHistoryState();
+    const requested = new Set(ids);
+    const alreadyDeleted = new Set(history.deletedMessageIds);
+    const messages = history.receivedNotifications.filter((message) => requested.has(message.id) && !alreadyDeleted.has(message.id));
     const deletedMessageIds = [...new Set([...history.deletedMessageIds, ...ids])];
     const readMessageIds = history.readMessageIds.filter((id) => !ids.includes(id));
     await browser.storage.local.set(pruneReadState({ ...history, deletedMessageIds, readMessageIds }));
+    return messages;
   });
 }

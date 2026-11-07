@@ -141,7 +141,7 @@ describe('#4 a hostile server cannot fill storage', () => {
       'fetch',
       vi.fn(async () => new Response(body)),
     );
-    expect((await getNotifications({ apiUrl: 'https://ntfy.example', accessToken: '' }, 'a', 0)).map((m) => m.id)).toEqual(['a1']);
+    expect((await getNotifications({ apiUrl: 'https://ntfy.example', accessToken: '' }, 'a', 0)).events.map((m) => m.id)).toEqual(['a1']);
 
     vi.stubGlobal(
       'fetch',

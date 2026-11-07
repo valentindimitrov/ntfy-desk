@@ -14,6 +14,10 @@ export function showStatus(message: string, type: StatusType): void {
   show(elements.status, message, type);
 }
 
+export function showReceiveStatus(message: string, type: StatusType): void {
+  show(elements.receiveActionStatus, message, type);
+}
+
 export function showSettingsStatus(message: string, type: StatusType): void {
   show(elements.settingsStatus, message, type);
 }

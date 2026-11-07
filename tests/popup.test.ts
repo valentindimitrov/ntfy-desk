@@ -47,8 +47,8 @@ beforeEach(async () => {
   vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ name: 'ntfy Desk', version: '0', manifest_version: 3 });
   // The background's handling of the popup's requests (read and delete actions)
   vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((async (request: unknown) => {
-    await handlePopupRequest(request, async () => {});
-    return { success: true };
+    const deletion = await handlePopupRequest(request, async () => {});
+    return { success: true, deletion };
   }) as never);
   mockResolved(fakeBrowser.permissions, 'contains', true);
   mockResolved(fakeBrowser.tabs, 'query', [{ url: 'https://news.example/story/', title: ' The story ' }]);
