@@ -1,3 +1,4 @@
+import type { Browser } from 'wxt/browser';
 import { expect, test } from './fixtures';
 
 test.describe('receiving', () => {
@@ -187,6 +188,36 @@ test.describe('sending', () => {
     await expect(inbox).toBeVisible();
     await disclosure.click();
     await expect(message).toHaveValue('Keep this draft');
+  });
+
+  test('the native toolbar popup keeps its width with long topic names', async ({ configure, ntfy, openPopup, serviceWorker }) => {
+    const topic = 'w'.repeat(64);
+    await configure({ topics: topic });
+    ntfy.publish(topic, { title: 'Container update needed' });
+    const tab = await openPopup('?mode=page');
+    await expect(tab.locator('.notification-title')).toHaveText('Container update needed');
+
+    // Opening popup.html in a tab gives it a fixed viewport and bypasses native popup sizing.
+    await serviceWorker.evaluate(() => chrome.action.openPopup());
+    const measurePopup = () =>
+      tab.evaluate(() => {
+        const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
+        if (!popup) return null;
+        const heading = popup.document.querySelector('.notification-header');
+        return {
+          width: popup.innerWidth,
+          documentFits: popup.document.documentElement.scrollWidth === popup.innerWidth,
+          headingFits: heading && heading.scrollWidth === heading.clientWidth,
+          composerOpen: popup.document.querySelector<HTMLDetailsElement>('#send-section')?.open,
+        };
+      });
+    const fitted = { width: 390, documentFits: true, headingFits: true };
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: false });
+    await tab.evaluate(() => {
+      const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
+      popup?.document.querySelector<HTMLElement>('#send-section summary')?.click();
+    });
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true });
   });
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
