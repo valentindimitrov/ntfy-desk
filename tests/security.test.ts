@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { MAX_HISTORY_SIZE, getHistoryState, recordMessage, trimHistory } from '@/utils/history';
+import { MAX_HISTORY_SIZE, MAX_POLL_EVENTS, getHistoryState, recordMessage, trimHistory } from '@/utils/history';
 import {
   AUTH_ORIGINS_KEY,
   MAX_MESSAGE_JSON,
@@ -16,7 +16,7 @@ import {
   splitCredentials,
   type NtfyMessage,
 } from '@/utils/ntfy';
-import { MAX_POLL_MESSAGES, createReceiver } from '@/utils/receiver';
+import { createReceiver } from '@/utils/receiver';
 import { describeStatus, INITIAL_STATUS } from '@/utils/status';
 import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
@@ -150,16 +150,16 @@ describe('#4 a hostile server cannot fill storage', () => {
     await expect(getNotifications({ apiUrl: 'https://ntfy.example', accessToken: '' }, 'a', 0)).rejects.toThrow('Response too large');
   });
 
-  it('handles the newest MAX_POLL_MESSAGES of a poll only', async () => {
+  it('handles the newest MAX_POLL_EVENTS of a poll only', async () => {
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: 'a' });
-    for (let i = 0; i < MAX_POLL_MESSAGES + 5; i++) server.publish('a', 10000 + i);
+    for (let i = 0; i < MAX_POLL_EVENTS + 5; i++) server.publish('a', 10000 + i);
     const notified: string[] = [];
     const receiver = createReceiver({ onNewMessage: (m) => notified.push(m.id) });
     await receiver.sync(); // first, silent sync
     await fakeBrowser.storage.local.set({ topicSync: [{ topic: 'a', since: 1, seen: [], synced: true }] });
     await fakeBrowser.storage.local.remove(['receivedNotifications']);
     await receiver.sync();
-    expect(notified).toHaveLength(MAX_POLL_MESSAGES);
+    expect(notified).toHaveLength(MAX_POLL_EVENTS);
     expect(notified).not.toContain('m1');
   });
 

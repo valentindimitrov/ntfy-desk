@@ -76,6 +76,8 @@ export function getElements() {
     topicInputHint: byId('topic-input-hint'),
     notifyRulesGroup: byId('notify-rules-group'),
     notifyRules: byId('notify-rules'),
+    syncModesGroup: byId('sync-modes-group'),
+    syncModes: byId('sync-modes'),
 
     // Receive tab
     notificationsList: byId('notifications-list'),

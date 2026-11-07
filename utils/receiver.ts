@@ -2,7 +2,7 @@
 // missed while the stream was down or the browser closed.
 
 import { browser } from 'wxt/browser';
-import { completePoll, getTopicSyncStates, pruneTopicSyncStates, recordMessage } from './history';
+import { getTopicSyncStates, pruneTopicSyncStates, recordMessage, recordPoll } from './history';
 import { pickServer } from './servers';
 import { INITIAL_STATUS, writeReceiverStatus, type ReceiverStatus } from './status';
 import {
@@ -29,8 +29,6 @@ export const STREAM_IDLE_TIMEOUT = 150_000;
 const READABLE_TOPICS_TTL = 60 * 60 * 1000;
 // Window fetched silently the first time a topic is synced
 const INITIAL_SYNC_SINCE = '24h';
-/** Newest messages of a topic handled per poll (more than the history keeps, MAX_HISTORY_PER_TOPIC) */
-export const MAX_POLL_MESSAGES = 1000;
 
 export interface ReceiverEvents {
   /** A message new to the history (not during a topic's first, silent sync) */
@@ -194,22 +192,14 @@ export function createReceiver(events: ReceiverEvents) {
     }, reconnectDelay);
   }
 
-  async function handleMessage(message: NtfyMessage, notify: boolean): Promise<void> {
-    const isNew = await recordMessage(message);
-    if (isNew && notify) {
-      events.onNewMessage(message);
-    }
-  }
-
-  /** A line of the stream: valid messages of the subscribed topics only, so the server can't fill storage with others */
+  /** A line of the stream: accept messages and deletions of the subscribed topics only. */
   async function handleLine(line: string, topics: string[]): Promise<void> {
     const message = parseMessageJson(line);
-    if (!message || message.event !== 'message' || !topics.includes(message.topic)) {
+    if (!message || (message.event !== 'message' && message.event !== 'message_delete') || !topics.includes(message.topic)) {
       return;
     }
     try {
-      console.log('Received notification:', message.id);
-      await handleMessage(message, true);
+      if (await recordMessage(message)) events.onNewMessage(message);
     } catch (error) {
       console.error('Error processing a live message:', error);
     }
@@ -249,7 +239,9 @@ export function createReceiver(events: ReceiverEvents) {
 
         await readLines(
           response.body,
-          (line) => handleLine(line, config.topics),
+          async (line) => {
+            if (isCurrent()) await handleLine(line, config.topics);
+          },
           () => resetIdleTimer(current),
         );
         console.log('The server ended the subscription. Reconnecting...');
@@ -330,18 +322,12 @@ export function createReceiver(events: ReceiverEvents) {
     let unreachable = false;
 
     for (const topic of topics) {
-      const state = states.get(topic);
-      const since = state?.since ?? INITIAL_SYNC_SINCE;
-      // A topic's first poll loads its recent history without desktop notifications
-      const notify = state?.synced === true;
+      const since = states.get(topic)?.since ?? INITIAL_SYNC_SINCE;
 
       try {
-        // Oldest first, and only the newest MAX_POLL_MESSAGES
-        const messages = (await getNotifications(config, topic, since)).sort((a, b) => a.time - b.time).slice(-MAX_POLL_MESSAGES);
-        for (const message of messages) {
-          await handleMessage(message, notify);
-        }
-        await completePoll(topic, messages.at(-1)?.time ?? null);
+        const replay = await getNotifications(config, topic, since, true);
+        const messages = await recordPoll(topic, replay);
+        for (const message of messages) events.onNewMessage(message);
       } catch (error) {
         const message = (error as Error).message;
         console.error(`Failed to sync missed messages for topic ${topic}:`, message);

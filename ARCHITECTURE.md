@@ -58,7 +58,7 @@ The **background service worker** owns receiving: the subscription, the catch-up
 
 | Area | Keys | Why there |
 |---|---|---|
-| `storage.sync` | `apiUrl`, `fallbackUrl`, `topics`, `includeUrl`, `notifyRules`, `theme`, `priority`, `lastTags`, `lastTopic`, `sendAnotherEnabled`, `sendAsZipEnabled` | Settings follow the user to their other browsers. Never credentials. |
+| `storage.sync` | `apiUrl`, `fallbackUrl`, `topics`, `includeUrl`, `notifyRules`, `syncDeletionTopics`, `theme`, `priority`, `lastTags`, `lastTopic`, `sendAnotherEnabled`, `sendAsZipEnabled` | Settings follow the user to their other browsers. Never credentials. |
 | `storage.local` | `accessToken`, `serverCredentials`, `authOrigins` | Credentials stay on this device. |
 | `storage.local` | `receivedNotifications`, `readMessageIds`, `deletedMessageIds`, `topicSync` | Received messages and the sync state, per device. |
 | `storage.local` | `storedFiles`, `draftState`, `receiveTopicFilter` | Attachments and the draft waiting for the next send; UI state. |
@@ -112,7 +112,7 @@ A `connect()` that an `await` made stale (the settings changed meanwhile) stops 
 The subscription is ntfy's JSON stream: `GET /<topic1>,<topic2>/json`, answered with `200` and then one JSON object per line: an `open` event, `message` events, and a `keepalive` event every 45 seconds by default. It is an ordinary `fetch` with the `Authorization` header (`openMessageStream`), read line by line (`readLines`):
 
 - Each chunk is read only after the lines before it were stored, so a server sending faster than the extension can store is slowed down by TCP rather than queued in memory.
-- Each line goes through `parseMessageJson`; only `message` events of the subscribed topics are recorded.
+- Each line goes through `parseMessageJson`. Subscribed topics record `message` events, and topics with deletion sync enabled also apply `message_delete` events.
 - A line longer than `MAX_MESSAGE_JSON` is dropped.
 
 The stream ends in one of four ways, each followed by a reconnect with backoff (5 s doubling to 60 s): the server closes it, the network fails, the server refuses it (an HTTP error; a refusal before it opened also discards the cached read-access check), or nothing arrives for `STREAM_IDLE_TIMEOUT` (150 s). The last one matters because a connection that dies silently produces no event on a stream.
@@ -127,15 +127,18 @@ Live messages alone would miss everything published while the browser was closed
 
 Each topic has a sync state in `topicSync`:
 
-- `since`: a **watermark**, the newest message time a completed poll covered. The next poll asks for `since=<watermark>` (inclusive). Only a completed poll moves it, never a live message: a live message newer than messages missed while disconnected must not let the next poll skip them.
-- `seen`: the id and time of every message recorded at or after the watermark, so messages a poll returns again aren't recorded twice.
+- `since` holds the newest event time a completed poll covered. The next poll asks for `since=<watermark>` (inclusive). Live events leave the watermark in place so the next poll can catch up on earlier events.
+- `seen` tracks the id and time of events at or after the watermark to deduplicate the inclusive replay.
+- `serverDeletions` tracks up to 1000 recent deletion events by sequence ID, so overlapping live delivery and polls can't reinsert an older version.
 - `synced`: whether the topic's first poll finished. The first poll loads the last 24 hours **silently** (no desktop notifications), so adding a topic doesn't flood the desktop.
 
 Polls use time watermarks per topic, never one global `since=<message id>`: ids are global across topics, and an expired id makes ntfy replay its whole cache.
 
+Deletion sync is opt-in per topic. A `message_delete` event names a `sequence_id`. It removes matching messages in that topic up to the event's timestamp, using message IDs for notifications without sequence IDs. Polls can recover custom sequence IDs for older saved messages that the server replays. A poll applies events in time order, preserving the server's order within a second. This allows a republish after a deletion to revive a sequence and suppresses desktop alerts for messages already deleted in the same poll. Cache expiry leaves local history intact. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
+
 ### History and the single writer
 
-The background is the only writer of the received messages, the read and deleted ids and the sync state. The stream, the polls and the popup's actions all go through one queue (`serialized` in `utils/history.ts`), and `recordMessage` writes the sync state and the history in one storage write, so a failed write can't mark a message seen without storing it.
+The background is the only writer of the received messages, the read and deleted ids and the sync state. The stream, the polls and the popup's actions all go through one queue (`serialized` in `utils/history.ts`). A live event or a completed poll writes its sync state and history together, so a failed write can't mark a message seen without storing it.
 
 The popup never writes these lists itself; it sends `setRead` and `delete` requests (`utils/messages.ts`). With the popup and the extension tab open at once, their actions are applied one after another instead of overwriting each other.
 
@@ -176,7 +179,7 @@ The extension handles two kinds of untrusted input: the **server** (or anyone wh
 **Server content**
 
 - Every message is validated before it is stored, and again when the history is read (`parseMessage`): types are checked, unknown fields dropped, invalid messages discarded.
-- Size limits: 32 KB per message line, 4 MB per poll response, the newest 1000 messages per poll, 100 per topic and 8 MB stored in all. Only messages of subscribed or polled topics are stored.
+- Size limits: 32 KB per event line, 4 MB per poll response, the newest 1000 eligible events per poll, 100 messages per topic and 8 MB stored in all. Only messages of subscribed or polled topics are stored.
 - Messages are rendered with `textContent` only; Markdown through `utils/markdown.ts`, which builds DOM nodes. Bare URLs become links (`linkify`) only if they are http(s). Each message renders on its own, so one that fails shows a placeholder instead of breaking the list.
 - URLs from messages are opened, linked or copied only if they are `http(s)`. Image previews load only the server's own attachment route (`/file/<name>`), because other same-origin URLs can be API calls.
 

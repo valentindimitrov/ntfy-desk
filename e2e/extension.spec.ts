@@ -1,6 +1,34 @@
 import { expect, test } from './fixtures';
 
 test.describe('receiving', () => {
+  test('syncs server deletions only for topics opted in through settings', async ({ ntfy, configure, openPopup, serviceWorker }) => {
+    await configure({ topics: 'alerts,backups' });
+    await expect.poll(() => ntfy.subscriptions).toEqual([['alerts', 'backups']]);
+
+    const popup = await openPopup('?tab=receive');
+    await popup.locator('#settings-btn').click();
+    const alertsMode = popup.getByLabel('Message sync for alerts');
+    const backupsMode = popup.getByLabel('Message sync for backups');
+    await expect(alertsMode).toHaveValue('keep');
+    await expect(backupsMode).toHaveValue('keep');
+    await alertsMode.selectOption('sync');
+    await expect
+      .poll(() => serviceWorker.evaluate(() => chrome.storage.sync.get('syncDeletionTopics')))
+      .toEqual({ syncDeletionTopics: ['alerts'] });
+    await popup.locator('#back-btn').click();
+
+    const sequence_id = 'deploy';
+    ntfy.publish('alerts', { title: 'Synced', sequence_id });
+    ntfy.publish('backups', { title: 'Kept', sequence_id });
+    await expect(popup.locator('.notification-title')).toHaveCount(2);
+    await expect.poll(() => serviceWorker.evaluate(() => chrome.action.getBadgeText({}))).toBe('2');
+
+    ntfy.deleteNotification('backups', sequence_id);
+    ntfy.deleteNotification('alerts', sequence_id);
+    await expect(popup.locator('.notification-title')).toHaveText(['Kept']);
+    await expect.poll(() => serviceWorker.evaluate(() => chrome.action.getBadgeText({}))).toBe('1');
+  });
+
   test('a published message becomes one desktop notification, a listed message and an unread count', async ({
     ntfy,
     configure,

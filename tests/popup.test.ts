@@ -488,7 +488,7 @@ describe('settings', () => {
     await openPopup();
     $('#settings-btn').click();
     await flush();
-    const selects = [...document.querySelectorAll<HTMLSelectElement>('.notify-rule-select')];
+    const selects = [...document.querySelectorAll<HTMLSelectElement>('#notify-rules select')];
     expect(selects.map((select) => select.getAttribute('aria-label'))).toEqual([
       'Desktop notifications for alerts',
       'Desktop notifications for coolify',
@@ -512,6 +512,27 @@ describe('settings', () => {
     $('.topic-remove').click();
     await flush();
     expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({ notifyRules: [['coolify', 'off']] });
+  });
+
+  it('loads and saves message sync modes per topic', async () => {
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['coolify'] });
+    await openPopup();
+    $('#settings-btn').click();
+    const selects = [...document.querySelectorAll<HTMLSelectElement>('#sync-modes select')];
+    expect(selects.map((select) => [select.getAttribute('aria-label'), select.value])).toEqual([
+      ['Message sync for alerts', 'keep'],
+      ['Message sync for coolify', 'sync'],
+      ['Message sync for inbox', 'keep'],
+    ]);
+
+    selects[0]!.value = 'sync';
+    selects[0]!.dispatchEvent(new Event('change'));
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('syncDeletionTopics')).toEqual({ syncDeletionTopics: ['alerts', 'coolify'] });
+
+    $('.topic-remove').click();
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('syncDeletionTopics')).toEqual({ syncDeletionTopics: ['coolify'] });
   });
 
   it('marks topics with notifications off in the Receive tab', async () => {

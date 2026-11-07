@@ -15,12 +15,21 @@ export interface ServerMessage {
   time: number;
   event: 'message';
   topic: string;
+  sequence_id?: string;
   title?: string;
   message?: string;
   priority?: number;
   tags?: string[];
   click?: string;
   content_type?: string;
+}
+
+interface ServerDeletion {
+  id: string;
+  time: number;
+  event: 'message_delete';
+  topic: string;
+  sequence_id: string;
 }
 
 export interface PublishedRequest {
@@ -34,13 +43,14 @@ export interface NtfyTestServer {
   token: string;
   /** Topics the token can't read: their subscription (and any subscription including them) gets 403 */
   unreadable: Set<string>;
-  messages: ServerMessage[];
+  messages: (ServerMessage | ServerDeletion)[];
   /** Messages published by the extension */
   published: PublishedRequest[];
   /** Topic lists of the subscriptions (JSON streams) accepted so far */
   subscriptions: string[][];
   /** Publish as another client would: stored, and sent to open subscriptions */
   publish(topic: string, fields?: Partial<ServerMessage>): ServerMessage;
+  deleteNotification(topic: string, sequenceId: string): void;
   /** End every open subscription (the extension reconnects) */
   dropConnections(): void;
   /** Refuse new subscriptions until set back to true */
@@ -78,6 +88,12 @@ function decodeHeader(value: string | string[] | undefined): string | undefined 
 export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer> {
   let nextId = 0;
   const streams = new Map<ServerResponse, string[]>();
+  const deliver = (event: ServerMessage | ServerDeletion) => {
+    server.messages.push(event);
+    for (const [stream, topics] of streams) {
+      if (topics.includes(event.topic)) stream.write(`${JSON.stringify(event)}\n`);
+    }
+  };
 
   const server: NtfyTestServer = {
     url: '',
@@ -95,11 +111,11 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
         topic,
         ...fields,
       };
-      server.messages.push(message);
-      for (const [stream, topics] of streams) {
-        if (topics.includes(topic)) stream.write(`${JSON.stringify(message)}\n`);
-      }
+      deliver(message);
       return message;
+    },
+    deleteNotification(topic, sequenceId) {
+      deliver({ id: `msg${++nextId}`, time: Math.floor(Date.now() / 1000), event: 'message_delete', topic, sequence_id: sequenceId });
     },
     dropConnections() {
       for (const stream of streams.keys()) stream.destroy();

@@ -13,6 +13,7 @@ import {
   type Credentials,
 } from '@/utils/ntfy';
 import { NOTIFY_RULES, NOTIFY_RULES_KEY, RULE_LABELS, isNotifyRule, ruleFor, storedTopicRules, type TopicRules } from '@/utils/rules';
+import { SYNC_DELETION_TOPICS_KEY } from '@/utils/sync-modes';
 import { updateTopicDropdown } from './send';
 import { elements, isConfigured, saveSync, state, type Theme } from './state';
 import { debounce, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
@@ -191,31 +192,42 @@ function saveNotifyRules(): Promise<void> {
   return saveSync({ [NOTIFY_RULES_KEY]: storedTopicRules(rules) });
 }
 
-function renderNotifyRules(): void {
-  elements.notifyRulesGroup.style.display = state.topics.length > 0 ? '' : 'none';
-  elements.notifyRules.replaceChildren(
+function saveSyncModes(): Promise<void> {
+  const topics = state.topics.filter((topic) => state.syncDeletionTopics.has(topic));
+  state.syncDeletionTopics = new Set(topics);
+  return saveSync({ [SYNC_DELETION_TOPICS_KEY]: topics });
+}
+
+function renderTopicSelects(
+  group: HTMLElement,
+  container: HTMLElement,
+  label: string,
+  options: [value: string, label: string][],
+  valueFor: (topic: string) => string,
+  onChange: (topic: string, value: string) => Promise<void>,
+): void {
+  group.style.display = state.topics.length > 0 ? '' : 'none';
+  container.replaceChildren(
     ...state.topics.map((topic) => {
       const row = document.createElement('label');
-      row.className = 'notify-rule';
+      row.className = 'topic-setting';
 
       const name = document.createElement('span');
-      name.className = 'notify-rule-topic';
+      name.className = 'topic-setting-name';
       name.textContent = topic;
 
       const select = document.createElement('select');
-      select.className = 'notify-rule-select';
-      select.setAttribute('aria-label', `Desktop notifications for ${topic}`);
-      for (const rule of NOTIFY_RULES) {
+      select.className = 'topic-setting-select';
+      select.setAttribute('aria-label', `${label} for ${topic}`);
+      for (const [value, text] of options) {
         const option = document.createElement('option');
-        option.value = rule;
-        option.textContent = RULE_LABELS[rule];
+        option.value = value;
+        option.textContent = text;
         select.appendChild(option);
       }
-      select.value = ruleFor(state.notifyRules, topic);
+      select.value = valueFor(topic);
       select.addEventListener('change', () => {
-        if (!isNotifyRule(select.value)) return;
-        state.notifyRules = new Map(state.notifyRules).set(topic, select.value);
-        saveNotifyRules().catch(() => showSettingsStatus('Failed to save settings', 'error'));
+        onChange(topic, select.value).catch(() => showSettingsStatus('Failed to save settings', 'error'));
       });
 
       row.append(name, select);
@@ -225,7 +237,33 @@ function renderNotifyRules(): void {
 }
 
 function renderTopics(): void {
-  renderNotifyRules();
+  renderTopicSelects(
+    elements.notifyRulesGroup,
+    elements.notifyRules,
+    'Desktop notifications',
+    NOTIFY_RULES.map((rule) => [rule, RULE_LABELS[rule]]),
+    (topic) => ruleFor(state.notifyRules, topic),
+    async (topic, value) => {
+      if (!isNotifyRule(value)) return;
+      state.notifyRules.set(topic, value);
+      await saveNotifyRules();
+    },
+  );
+  renderTopicSelects(
+    elements.syncModesGroup,
+    elements.syncModes,
+    'Message sync',
+    [
+      ['keep', 'Keep received messages'],
+      ['sync', 'Sync server deletions'],
+    ],
+    (topic) => (state.syncDeletionTopics.has(topic) ? 'sync' : 'keep'),
+    (topic, value) => {
+      if (value === 'sync') state.syncDeletionTopics.add(topic);
+      else state.syncDeletionTopics.delete(topic);
+      return saveSyncModes();
+    },
+  );
   elements.topicsContainer.querySelectorAll('.topic-badge').forEach((badge) => badge.remove());
 
   state.topics.forEach((topic, index) => {
@@ -247,6 +285,16 @@ function renderTopics(): void {
   });
 }
 
+function removeTopic(index: number): void {
+  const [topic] = state.topics.splice(index, 1);
+  if (topic === undefined) return;
+  if (state.syncDeletionTopics.delete(topic)) {
+    saveSyncModes().catch(() => showSettingsStatus('Failed to save settings', 'error'));
+  }
+  renderTopics();
+  void saveSettings();
+}
+
 function handleTopicKeydown(event: KeyboardEvent): void {
   if (event.key === 'Enter') {
     event.preventDefault();
@@ -262,9 +310,7 @@ function handleTopicKeydown(event: KeyboardEvent): void {
     }
   } else if (event.key === 'Backspace' && !elements.newTopicInput.value && state.topics.length > 0) {
     // Empty input: Backspace removes the last topic
-    state.topics.pop();
-    renderTopics();
-    void saveSettings();
+    removeTopic(state.topics.length - 1);
   }
 }
 
@@ -306,9 +352,7 @@ export function setupSettings(): void {
   elements.topicsContainer.addEventListener('click', (event) => {
     const target = event.target as HTMLElement;
     if (target.classList.contains('topic-remove')) {
-      state.topics.splice(Number(target.dataset.index), 1);
-      renderTopics();
-      void saveSettings();
+      removeTopic(Number(target.dataset.index));
     }
     // A click on the container focuses the input
     if (target === elements.topicsContainer) {

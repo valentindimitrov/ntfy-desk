@@ -5,6 +5,7 @@ import { getConfig, getStoredAuth, parseTopics, type Credentials, type NtfyMessa
 import { getTopicRules, type TopicRules } from '@/utils/rules';
 import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFile } from '@/utils/stored-files';
+import { getSyncDeletionTopics } from '@/utils/sync-modes';
 import { getElements, type Elements } from './dom';
 
 export type Theme = 'light' | 'dark' | 'auto';
@@ -39,6 +40,7 @@ export interface PopupState {
   lastTopic: string | undefined;
   /** Desktop notification rule per topic */
   notifyRules: TopicRules;
+  syncDeletionTopics: Set<string>;
   /** The page the popup was opened on (in the extension's tab: the web page tab used last) */
   page: PageInfo;
 
@@ -90,6 +92,7 @@ export const state: PopupState = {
   sendAsZipEnabled: false,
   lastTopic: undefined,
   notifyRules: new Map(),
+  syncDeletionTopics: new Set(),
   page: { url: '', title: '' },
   tags: [],
   selectedPriority: 3,
@@ -129,7 +132,7 @@ export async function loadSettings(): Promise<void> {
   if (Array.isArray(items.lastTags)) {
     state.tags = items.lastTags.filter((tag): tag is string => typeof tag === 'string');
   }
-  state.notifyRules = await getTopicRules();
+  [state.notifyRules, state.syncDeletionTopics] = await Promise.all([getTopicRules(), getSyncDeletionTopics()]);
 }
 
 export async function loadReceiveState(): Promise<void> {

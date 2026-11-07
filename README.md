@@ -37,7 +37,8 @@ In the settings (gear icon):
    They are used only with the server addresses saved in this browser's settings. If the server URL changes elsewhere (browser sync from another browser), the settings say so, and nothing is sent to the new address until you confirm it. With an `http://` address the settings warn you: the token or password would go over the network unencrypted.
 4. **Allow access to this server**: appears when a token or credentials are set. ntfy's CORS headers don't allow the `Authorization` header, so the extension needs permission for the server's site (both sites, with a fallback URL) to send authenticated requests.
 5. **Topics**: the topics to send to and receive from. The extension receives from the topics your credentials can read; a topic you can only send to is used for sending only.
-6. **Fill in the current tab**: puts the page's title in the Title field and its URL in the Message field (from the context menu, the page URL becomes the title). In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
+6. **Message sync** lets you choose how each topic handles history. **Keep received messages** is the default. **Sync server deletions** removes matching messages when ntfy sends a deletion event, either live or during catch-up. Catch-up can only see events still available in the server's cache and within the poll window. Messages aging out of the server cache remain in ntfy Desk. Deleting a message in ntfy Desk only affects this device. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
+7. **Fill in the current tab**: puts the page's title in the Title field and its URL in the Message field (from the context menu, the page URL becomes the title). In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
 
 ### Receiving and the browser
 

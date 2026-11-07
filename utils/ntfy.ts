@@ -125,6 +125,8 @@ export interface NtfyMessage {
   time: number;
   event: string;
   topic: string;
+  /** ntfy uses this to identify a notification across updates and deletion events. */
+  sequence_id?: string;
   title?: string;
   message?: string;
   priority?: number;
@@ -200,11 +202,15 @@ export function parseMessage(value: unknown): NtfyMessage | null {
   }
   const priority = optionalNumber(value.priority);
   const attachment = parseAttachment(value.attachment);
+  const sequenceId = optionalString(value.sequence_id);
+  const validSequenceId = sequenceId && /^[-_A-Za-z0-9]{1,64}$/.test(sequenceId) ? sequenceId : undefined;
+  if (value.event === 'message_delete' && !validSequenceId) return null;
   return withoutUndefined<NtfyMessage>({
     id: value.id,
     time,
     event: value.event,
     topic: value.topic,
+    sequence_id: validSequenceId,
     title: optionalString(value.title),
     message: optionalString(value.message),
     priority: priority !== undefined && Number.isInteger(priority) && priority >= 1 && priority <= 5 ? priority : undefined,
@@ -541,7 +547,12 @@ export function openMessageStream(server: NtfyServer, topics: string[], signal: 
 }
 
 /** Cached messages of a topic: since is a message id, a unix time, a duration such as '24h', or 'all' */
-export async function getNotifications(server: NtfyServer, topic: string, since: string | number = 'all'): Promise<NtfyMessage[]> {
+export async function getNotifications(
+  server: NtfyServer,
+  topic: string,
+  since: string | number = 'all',
+  includeDeletions = false,
+): Promise<NtfyMessage[]> {
   if (!server.apiUrl) {
     throw new Error('API URL is not configured');
   }
@@ -558,10 +569,15 @@ export async function getNotifications(server: NtfyServer, topic: string, since:
   }
 
   const text = await readLimited(response, MAX_POLL_BYTES);
-  // NDJSON; keep valid message events of this topic only (not open or keepalive)
+  // NDJSON; keep valid notifications and, when requested, deletions of this topic only.
   return text
     .split('\n')
     .filter((line) => line.trim())
     .map(parseMessageJson)
-    .filter((message): message is NtfyMessage => message !== null && message.event === 'message' && message.topic === topic);
+    .filter(
+      (message): message is NtfyMessage =>
+        message !== null &&
+        message.topic === topic &&
+        (message.event === 'message' || (includeDeletions && message.event === 'message_delete')),
+    );
 }

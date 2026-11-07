@@ -1498,16 +1498,16 @@ body.page-mode .topic-sidebar {
 }
 
 /* ========================================
-   Settings: Desktop Notification Rules
+   Settings: Per-topic options
    ======================================== */
 
-.notify-rules {
+.topic-settings {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.notify-rule {
+.topic-setting {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1515,13 +1515,13 @@ body.page-mode .topic-sidebar {
   font-size: 14px;
 }
 
-.notify-rule-topic {
+.topic-setting-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.notify-rule-select {
+.topic-setting-select {
   flex: none;
   padding: 4px 6px;
   border: 1px solid var(--border-color);

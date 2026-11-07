@@ -4,6 +4,7 @@
 
 import { browser } from 'wxt/browser';
 import { parseMessage, type NtfyMessage } from './ntfy';
+import { getSyncDeletionTopics } from './sync-modes';
 
 /** Received messages kept per topic, so a busy topic doesn't push the others out */
 export const MAX_HISTORY_PER_TOPIC = 100;
@@ -11,6 +12,10 @@ export const MAX_HISTORY_PER_TOPIC = 100;
 export const MAX_HISTORY_SIZE = 8 * 1024 * 1024;
 /** Safety cap of a topic's seen ids, if its polls keep failing and live messages keep coming */
 const MAX_SEEN_PER_TOPIC = 5000;
+/** Newest events handled per poll (more than the history keeps) */
+export const MAX_POLL_EVENTS = 1000;
+/** Older deletions may still race with live delivery after a poll has moved the watermark. */
+const MAX_SERVER_DELETIONS_PER_TOPIC = 1000;
 /**
  * Deleted ids kept, newest last. They only matter while a deleted message can still come back from a
  * poll (a topic's first, 24 h sync), so old ones can go.
@@ -28,6 +33,8 @@ export interface TopicSyncState {
   since: number | null;
   /** Id and time of every message recorded at or after `since`, to skip those a poll returns again */
   seen: [id: string, time: number][];
+  /** Latest server deletion per sequence, bounded so an overlapping replay cannot restore it */
+  serverDeletions?: [sequenceId: string, time: number, eventId: string][];
   /** The first poll (silent: it loads recent history without notifications) completed */
   synced: boolean;
 }
@@ -63,6 +70,7 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
           since: state.since ?? null,
           seen: Array.isArray(state.seen) ? state.seen : [],
           synced: state.synced === true,
+          serverDeletions: Array.isArray(state.serverDeletions) ? state.serverDeletions : [],
         });
       }
     }
@@ -134,46 +142,110 @@ function pruneSeen(state: TopicSyncState): void {
   state.seen = kept.slice(-MAX_SEEN_PER_TOPIC);
 }
 
-/**
- * Record a message from the live stream or a poll. Resolves to true if it is new to the history (not seen
- * before and not deleted), which is when a desktop notification is due. The sync state and the
- * history are written together, so a failed write can't mark a message seen without storing it.
- */
-export function recordMessage(message: NtfyMessage): Promise<boolean> {
-  return serialized(async () => {
-    const [states, history] = await Promise.all([getTopicSyncStates(), getHistoryState()]);
-    const state = states.get(message.topic) ?? newState(message.topic);
-    if (state.seen.some(([id]) => id === message.id)) {
-      return false;
-    }
-    state.seen.push([message.id, message.time]);
-    pruneSeen(state);
-    states.set(message.topic, state);
+const sequenceOf = (message: NtfyMessage) => message.sequence_id ?? message.id;
 
-    const isNew = !history.deletedMessageIds.includes(message.id) && !history.receivedNotifications.some((n) => n.id === message.id);
-    const receivedNotifications = isNew ? trimHistory([message, ...history.receivedNotifications]) : history.receivedNotifications;
-    const pruned = pruneReadState({ ...history, receivedNotifications });
-    await browser.storage.local.set({ ...storedStates(states), receivedNotifications, ...pruned });
-    return isNew;
+/** Apply one live event or a whole poll and return new messages eligible for a notification. */
+function recordEvents(topic: string, events: NtfyMessage[], poll: boolean): Promise<NtfyMessage[]> {
+  return serialized(async () => {
+    const [states, history, syncDeletionTopics] = await Promise.all([getTopicSyncStates(), getHistoryState(), getSyncDeletionTopics()]);
+    const syncDeletions = syncDeletionTopics.has(topic);
+    const state = states.get(topic) ?? newState(topic);
+    const accepted = events.filter(
+      (event) => event.event === 'message' || (syncDeletions && event.sequence_id && event.event === 'message_delete'),
+    );
+    const ordered = poll ? accepted.sort((a, b) => a.time - b.time).slice(-MAX_POLL_EVENTS) : accepted;
+    const seen = new Set(state.seen.map(([id]) => id));
+    const localDeletes = new Set(history.deletedMessageIds);
+    // Oldest first so that reversing the map before trimming preserves newest-first ties.
+    const messages = new Map([...history.receivedNotifications].reverse().map((message) => [message.id, message]));
+    const deletions = new Map((state.serverDeletions ?? []).map(([sequence, time, id]) => [sequence, { time, id }]));
+    const pollOrder = new Map(poll && syncDeletions ? ordered.map((event, index) => [event.id, index]) : []);
+    const added: NtfyMessage[] = [];
+    let changed = false;
+    let recorded = false;
+
+    for (const [index, event] of ordered.entries()) {
+      const sequence = sequenceOf(event);
+      const deletion = deletions.get(sequence);
+      const deletionIndex = deletion && pollOrder.get(deletion.id);
+      // For events in the same second, only a message following the deletion revives the sequence.
+      const deletedByServer =
+        syncDeletions &&
+        deletion &&
+        (event.time < deletion.time || (poll && event.time === deletion.time && (deletionIndex === undefined || deletionIndex > index)));
+
+      // Earlier versions did not save sequence IDs. Recover them from a replay before deduplication.
+      const stored = messages.get(event.id);
+      if (event.event === 'message' && stored?.topic === topic && !stored.sequence_id && event.sequence_id) {
+        if (deletedByServer) messages.delete(event.id);
+        else messages.set(event.id, { ...stored, sequence_id: event.sequence_id });
+        changed = true;
+      }
+
+      if (seen.has(event.id)) continue;
+      seen.add(event.id);
+      state.seen.push([event.id, event.time]);
+      recorded = true;
+
+      if (event.event === 'message_delete') {
+        if (
+          deletion &&
+          (event.id === deletion.id || event.time < deletion.time || (event.time === deletion.time && (deletionIndex ?? -1) > index))
+        ) {
+          continue;
+        }
+        deletions.delete(sequence);
+        deletions.set(sequence, { time: event.time, id: event.id });
+        for (const message of messages.values()) {
+          if (message.topic !== topic || sequenceOf(message) !== sequence || message.time > event.time) continue;
+          // For equal timestamps, a message later in this replay revives the sequence. It may
+          // already be in history if the stream delivered it while the poll was in flight.
+          if (message.time === event.time && (pollOrder.get(message.id) ?? -1) > index) continue;
+          messages.delete(message.id);
+          changed = true;
+        }
+      } else {
+        if (deletedByServer || messages.has(event.id) || localDeletes.has(event.id)) continue;
+        messages.set(event.id, event);
+        added.push(event);
+        changed = true;
+      }
+    }
+
+    if (!poll && !recorded && !changed) return [];
+    const notify = !poll || state.synced;
+    if (poll) {
+      state.synced = true;
+      const newestTime = ordered.at(-1)?.time;
+      if (newestTime !== undefined && (state.since === null || newestTime > state.since)) state.since = newestTime;
+    }
+    pruneSeen(state);
+    state.serverDeletions = [...deletions].slice(-MAX_SERVER_DELETIONS_PER_TOPIC).map(([sequence, { time, id }]) => [sequence, time, id]);
+    states.set(topic, state);
+
+    // Persist history and the watermark together, so a failed write never loses a notification.
+    if (changed) {
+      const receivedNotifications = trimHistory([...messages.values()].reverse());
+      await browser.storage.local.set({
+        ...storedStates(states),
+        receivedNotifications,
+        ...pruneReadState({ ...history, receivedNotifications }),
+      });
+    } else {
+      await browser.storage.local.set(storedStates(states));
+    }
+    return notify ? added.filter((message) => messages.has(message.id)) : [];
   });
 }
 
-/**
- * A topic's poll completed: mark the topic synced and move its watermark to the newest message the
- * poll returned (messages recorded meanwhile from the stream are newer or seen, so nothing is skipped).
- */
-export function completePoll(topic: string, newestTime: number | null): Promise<void> {
-  return serialized(async () => {
-    const states = await getTopicSyncStates();
-    const state = states.get(topic) ?? newState(topic);
-    state.synced = true;
-    if (newestTime !== null && (state.since === null || newestTime > state.since)) {
-      state.since = newestTime;
-    }
-    pruneSeen(state);
-    states.set(topic, state);
-    await browser.storage.local.set(storedStates(states));
-  });
+/** Resolves to true if a live notification was new to the history. */
+export async function recordMessage(message: NtfyMessage): Promise<boolean> {
+  return (await recordEvents(message.topic, [message], false)).length > 0;
+}
+
+/** A completed poll advances the watermark and applies replayed messages and deletions together. */
+export function recordPoll(topic: string, events: NtfyMessage[]): Promise<NtfyMessage[]> {
+  return recordEvents(topic, events, true);
 }
 
 /** Forget removed topics, so adding one back starts with a silent sync again */

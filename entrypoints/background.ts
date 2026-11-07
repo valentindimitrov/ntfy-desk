@@ -7,6 +7,7 @@ import { handleNotificationButton, handleNotificationClick, notifyNewMessage, up
 import { handlePopupRequest } from '@/utils/messages';
 import { AUTH_ORIGINS_KEY, CREDENTIALS_KEY } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
+import { SYNC_DELETION_TOPICS_KEY } from '@/utils/sync-modes';
 
 const ALARM_NAME = 'receiver';
 /** The alarm's name while receiving used a WebSocket; cleared on update */
@@ -36,6 +37,7 @@ export default defineBackground(() => {
       void updateContextMenu();
       void receiver.connect();
     }
+    if (area === 'sync' && changes[SYNC_DELETION_TOPICS_KEY]) void receiver.sync();
     if (area === 'local') {
       if (changes.accessToken || changes[CREDENTIALS_KEY] || changes[AUTH_ORIGINS_KEY]) {
         void receiver.connect();

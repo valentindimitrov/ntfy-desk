@@ -113,6 +113,87 @@ describe('sync and live messages', () => {
   });
 });
 
+describe('server deletions', () => {
+  it('follows live deletions only for the matching topic when opted in', async () => {
+    await configure('alerts,backups');
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    const receiver = newReceiver();
+    const sequence_id = 'shared';
+    const old = server.publish('alerts', 9999, { sequence_id });
+    const kept = server.publish('backups', 9999, { sequence_id });
+    await receiver.sync();
+    await fakeBrowser.storage.local.set({ readMessageIds: [old.id, kept.id] });
+    await receiver.connect();
+    const stream = lastStream();
+    stream.accept();
+
+    await stream.deliver(server.publish('backups', 10001, { event: 'message_delete', sequence_id }));
+    await stream.deliver({ id: 'invalid', topic: 'alerts', time: 10001, event: 'message_delete' });
+    await stream.deliver({ id: 'foreign', topic: 'foreign', time: 10001, event: 'message_delete', sequence_id });
+    expect((await getHistoryState()).receivedNotifications.map((message) => message.id)).toEqual([kept.id, old.id]);
+
+    await stream.deliver(server.publish('alerts', 10002, { event: 'message_delete', sequence_id }));
+    await receiver.sync();
+    const history = await getHistoryState();
+    expect(history.receivedNotifications.map((message) => message.id)).toEqual([kept.id]);
+    expect(history.readMessageIds).toEqual([kept.id]);
+    expect(notified).toEqual([]);
+    receiver.close();
+  });
+
+  it('catches up on deletions, skips deleted notifications, and allows a same-second revival', async () => {
+    await configure('alerts');
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    const receiver = newReceiver();
+    const existing = server.publish('alerts', 9999);
+    await receiver.sync();
+
+    const sequence_id = 'deploy';
+    server.publish('alerts', 10000, { event: 'message_delete', sequence_id: existing.id });
+    server.publish('alerts', 10001, { sequence_id });
+    server.publish('alerts', 10001, { event: 'message_delete', sequence_id });
+    const revived = server.publish('alerts', 10001, { sequence_id });
+    await receiver.sync();
+    await receiver.sync();
+
+    expect((await getHistoryState()).receivedNotifications).toEqual([revived]);
+    expect(notified).toEqual([revived]);
+  });
+
+  it('recovers the sequence ID for an older saved message when the server replays it', async () => {
+    await configure('alerts');
+    const receiver = newReceiver();
+    const existing = server.publish('alerts', 9999);
+    await receiver.sync();
+
+    existing.sequence_id = 'deploy'; // the copy already stored by an earlier version has no sequence ID
+    server.publish('alerts', 10001, { event: 'message_delete', sequence_id: 'deploy' });
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    await receiver.sync();
+
+    expect((await getHistoryState()).receivedNotifications).toEqual([]);
+    expect(notified).toEqual([]);
+  });
+
+  it('keeps a live deletion when a stale replay returns an unseen message from the same second', async () => {
+    await configure('alerts');
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    const receiver = newReceiver();
+    await receiver.connect();
+    const stream = lastStream();
+    stream.accept();
+    await receiver.sync();
+
+    const sequence_id = 'deploy';
+    server.publish('alerts', 10001, { sequence_id });
+    await stream.deliver({ id: 'not-cached-yet', time: 10001, event: 'message_delete', topic: 'alerts', sequence_id });
+    await receiver.sync();
+    expect((await getHistoryState()).receivedNotifications).toEqual([]);
+    expect(notified).toEqual([]);
+    receiver.close();
+  });
+});
+
 describe('topics the credentials can only send to', () => {
   // ntfy rejects a multi-topic subscription with 403 if any topic isn't readable
   it('leaves them out of the subscription and the polls', async () => {
