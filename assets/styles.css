@@ -51,6 +51,7 @@
 
 /* Dark theme - matching NTFY.sh web UI */
 body[data-theme='dark'] {
+  color-scheme: dark;
   --bg-main: #1b2124;
   --bg-card: #252e32;
   --bg-input: #252b2a;
@@ -65,6 +66,7 @@ body[data-theme='dark'] {
 /* Auto theme (system preference) */
 @media (prefers-color-scheme: dark) {
   body[data-theme='auto'] {
+    color-scheme: dark;
     --bg-main: #1b2124;
     --bg-card: #252e32;
     --bg-input: #252b2a;
@@ -318,7 +320,12 @@ body {
 }
 
 .form-select {
-  display: none;
+  background-color: var(--bg-input);
+}
+
+.form-select:disabled {
+  background-color: transparent;
+  color: var(--text-primary);
 }
 
 .form-hint {
@@ -328,92 +335,6 @@ body {
   padding-bottom: 6px;
   font-style: italic;
   opacity: 0.8;
-}
-
-/* ========================================
-   Custom Dropdown
-   ======================================== */
-
-.custom-dropdown {
-  position: relative;
-  width: 100%;
-}
-
-.custom-dropdown-selected {
-  cursor: pointer;
-  padding: 4px 28px 10px 0;
-  border: none;
-  border-bottom: 2px solid var(--border-color);
-  margin-bottom: -1px;
-  background-color: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-primary);
-  font-size: 15px;
-}
-
-.custom-dropdown-selected:hover {
-  border-bottom-color: var(--border-focus);
-}
-
-.custom-dropdown.open .custom-dropdown-selected {
-  border-bottom-color: var(--border-focus);
-}
-
-.custom-dropdown-arrow {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  transition: transform 0.2s;
-}
-
-.custom-dropdown.open .custom-dropdown-arrow {
-  transform: translateY(-50%) rotate(180deg);
-}
-
-.custom-dropdown-arrow svg {
-  width: 12px;
-  height: 12px;
-  fill: var(--text-secondary);
-}
-
-.custom-dropdown-options {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-top: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 100;
-  max-height: 200px;
-  overflow-y: auto;
-  display: none;
-}
-
-.custom-dropdown.open .custom-dropdown-options {
-  display: block;
-}
-
-.custom-dropdown-option {
-  padding: 10px 12px;
-  cursor: pointer;
-  font-size: 14px;
-  color: var(--text-primary);
-  transition: background-color 0.15s;
-}
-
-.custom-dropdown-option:hover {
-  background-color: rgba(51, 133, 116, 0.1);
-}
-
-.custom-dropdown-option.selected {
-  background-color: rgba(51, 133, 116, 0.15);
-  color: var(--primary);
 }
 
 /* ========================================
@@ -1034,10 +955,13 @@ body.filepicker-page {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 10px;
 }
 
-.notifications-section .section-title {
+.notifications-section .section-title,
+.send-heading {
   margin: 0;
   line-height: 1.3;
   font-size: 16px;
@@ -1219,54 +1143,57 @@ body.filepicker-page {
 }
 
 /* ========================================
-   Tab Bar & Tab Buttons
+   Inbox and send form
    ======================================== */
 
-.tab-bar {
-  display: flex;
-  width: 100%;
+.send-section {
+  min-width: 0;
   border-bottom: 1px solid var(--border-color);
-  background-color: var(--bg-main);
 }
 
-.tab-btn {
-  flex: 1;
-  background: none;
-  border: none;
-  padding: 10px 0;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: center;
-  border-bottom: 2px solid transparent;
-}
-
-.tab-btn:hover {
-  color: var(--text-primary);
-  background-color: rgba(0, 0, 0, 0.02);
-}
-body[data-theme='dark'] .tab-btn:hover {
-  background-color: rgba(255, 255, 255, 0.02);
-}
-
-.tab-btn.active {
-  color: var(--primary-light);
+.send-section > summary {
+  padding: 12px 16px;
   font-weight: 600;
-  border-bottom-color: var(--primary-light);
+  cursor: pointer;
 }
 
-/* ========================================
-   Tab Content
-   ======================================== */
+.send-section > summary:hover {
+  background-color: var(--bg-input);
+}
 
-.tab-content {
+.send-heading {
+  display: none;
+  margin-bottom: 12px;
+}
+
+.page-mode .send-section {
+  border-bottom: 0;
+}
+
+.page-mode .send-section > summary {
   display: none;
 }
 
-.tab-content.active {
+.page-mode .send-heading {
   display: block;
+}
+
+@media (min-width: 760px) {
+  .page-mode #main-view.active {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 34%);
+    align-items: start;
+  }
+
+  .page-mode .send-section {
+    border-inline-start: 1px solid var(--border-color);
+  }
+}
+
+@media (max-width: 759px) {
+  .page-mode .send-section {
+    border-top: 1px solid var(--border-color);
+  }
 }
 
 /* ========================================
@@ -1311,13 +1238,13 @@ body[data-theme='dark'] .tab-btn:hover {
 }
 
 /* ========================================
-   Receive Tab: Topic List
+   Inbox: Topic List
    ======================================== */
 
 .receive-layout {
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: flex-start;
 }
 
 .receive-layout .notifications-section {
@@ -1326,14 +1253,11 @@ body[data-theme='dark'] .tab-btn:hover {
 }
 
 .topic-sidebar {
-  flex: 0 0 170px;
   display: flex;
-  flex-direction: column;
   gap: 2px;
-  padding-right: 8px;
-  border-right: 1px solid var(--border-color);
-  max-height: 420px;
-  overflow-y: auto;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .topic-filter-btn {
@@ -1341,7 +1265,8 @@ body[data-theme='dark'] .tab-btn:hover {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  width: 100%;
+  flex: none;
+  max-width: 100%;
   padding: 6px 8px;
   border: none;
   border-radius: 6px;
@@ -1382,31 +1307,28 @@ body[data-theme='dark'] .tab-btn:hover {
   text-align: center;
 }
 
-/* Opened in a tab: the lists use the tab's height */
-body.page-mode .notifications-list,
-body.page-mode .topic-sidebar {
-  max-height: calc(100vh - 170px);
+.page-mode .notifications-list {
+  max-height: max(250px, calc(100vh - 170px));
 }
 
-/* Narrow tab: topics in a row above the messages */
-@media (max-width: 479px) {
-  body.page-mode .receive-layout {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  body.page-mode .topic-sidebar {
-    flex: none;
+@media (min-width: 960px) {
+  .page-mode .receive-layout {
     flex-direction: row;
-    overflow-x: auto;
-    padding: 0 0 6px;
-    border-right: none;
-    border-bottom: 1px solid var(--border-color);
+    align-items: flex-start;
   }
 
-  body.page-mode .topic-filter-btn {
-    width: auto;
-    flex: none;
+  .page-mode .topic-sidebar {
+    flex: 0 0 144px;
+    flex-direction: column;
+    overflow-y: auto;
+    max-height: max(250px, calc(100vh - 170px));
+    padding: 0 8px 0 0;
+    border-inline-end: 1px solid var(--border-color);
+    border-bottom: 0;
+  }
+
+  .page-mode .topic-filter-btn {
+    width: 100%;
   }
 }
 

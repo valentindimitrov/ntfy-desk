@@ -9,7 +9,6 @@ import { getSyncDeletionTopics } from '@/utils/sync-modes';
 import { getElements, type Elements } from './dom';
 
 export type Theme = 'light' | 'dark' | 'auto';
-export type Tab = 'send' | 'receive';
 
 /** Settings in storage.sync, except the access token (storage.local) */
 const SYNC_KEYS = [
@@ -44,7 +43,7 @@ export interface PopupState {
   /** The page the popup was opened on (in the extension's tab: the web page tab used last) */
   page: PageInfo;
 
-  // Send tab
+  // Send
   tags: string[];
   selectedPriority: number;
   attachments: StoredFile[];
@@ -54,12 +53,11 @@ export interface PopupState {
   /** The tab URL last put in the Message field automatically */
   autoMessage: string;
 
-  // Receive tab
-  activeTab: Tab;
-  receiveFilter: string; // a topic, or 'all'
+  // Inbox
+  receiveFilter: string | null; // null means All topics
   readMessageIds: string[];
   deletedMessageIds: string[];
-  /** Messages shown on the Receive tab, for Mark all read and Delete all */
+  /** Messages shown in the inbox, for Mark all read and Delete all */
   currentNotifications: NtfyMessage[];
   /** The background's connection state */
   receiverStatus: ReceiverStatus | null;
@@ -100,8 +98,7 @@ export const state: PopupState = {
   isSending: false,
   autoTitle: '',
   autoMessage: '',
-  activeTab: 'send',
-  receiveFilter: 'all',
+  receiveFilter: null,
   readMessageIds: [],
   deletedMessageIds: [],
   currentNotifications: [],
@@ -135,11 +132,22 @@ export async function loadSettings(): Promise<void> {
   [state.notifyRules, state.syncDeletionTopics] = await Promise.all([getTopicRules(), getSyncDeletionTopics()]);
 }
 
-export async function loadReceiveState(): Promise<void> {
-  const result = await browser.storage.local.get(['readMessageIds', 'deletedMessageIds', 'receiveTopicFilter']);
-  state.readMessageIds = (result.readMessageIds as string[] | undefined) ?? [];
-  state.deletedMessageIds = (result.deletedMessageIds as string[] | undefined) ?? [];
-  state.receiveFilter = typeof result.receiveTopicFilter === 'string' ? result.receiveTopicFilter : 'all';
+export async function loadReceiveFilter(): Promise<void> {
+  const { receiveTopicFilter: stored } = await browser.storage.local.get('receiveTopicFilter');
+  // Previous versions stored a plain string and used "all" for All topics.
+  if (typeof stored === 'string' && stored !== 'all') state.receiveFilter = stored;
+  else if (stored && typeof stored === 'object' && 'topic' in stored && typeof stored.topic === 'string')
+    state.receiveFilter = stored.topic;
+}
+
+export function inboxTopic(): string | null {
+  const topic = state.receiveFilter;
+  return topic !== null && state.topics.includes(topic) ? topic : null;
+}
+
+export function saveReceiveFilter(topic: string | null): Promise<void> {
+  state.receiveFilter = topic;
+  return saveLocal({ receiveTopicFilter: topic === null ? null : { topic } });
 }
 
 export function saveSync(items: Record<string, unknown>): Promise<void> {

@@ -10,8 +10,9 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Receive**: live messages over ntfy's JSON stream, as desktop notifications, with an unread count on the icon. Messages published while the browser was closed are fetched when it starts. High and urgent priority notifications stay until dismissed.
 - **Notification rules per topic**: all, from a priority up, or off; the messages are still listed.
 - **Clickable notifications**: a click opens the message's link, or the message in the extension's tab; `view` actions become buttons.
-- **Connection state**: the Receive tab shows whether it's connected, reconnecting or can't reach the server, topics you can only send to, and failed fetches.
-- **Received messages**: the Receive tab lists the messages of all topics, with unread counts, search, mark as read and per-topic deletion sync. Links in messages open in a new tab, Markdown messages are rendered, and image attachments hosted on your server are previewed.
+- **Connection state**: the inbox shows whether it's connected, reconnecting or can't reach the server, topics you can only send to, and failed fetches.
+- **Received messages**: the inbox lists the messages of all topics, with unread counts, search, mark as read and per-topic deletion sync. Links in messages open in a new tab, Markdown messages are rendered, and image attachments hosted on your server are previewed.
+- **Send and receive on one page**. Expand **Send notification** above the inbox in the toolbar popup. **Open in a tab** places the inbox beside the Send form. A specific inbox topic sets the send destination. Choose **All topics** to pick a different destination.
 - **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
 - **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.

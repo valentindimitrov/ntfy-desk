@@ -2,26 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=350" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ntfy Desk</title>
     <style>
       /* Popup-specific layout */
       body {
-        width: 350px;
-      }
-
-      /* Wider on the Receive tab, for the topic list */
-      body.receive-active {
-        width: 600px;
-      }
-
-      body.receive-active:not(.page-mode) .notifications-list {
-        max-height: 400px;
+        width: 390px;
+        max-width: 100vw;
       }
 
       /* Opened in a browser tab: follow the tab's width, up to a readable maximum */
-      body.page-mode,
-      body.page-mode.receive-active {
+      body.page-mode {
         width: auto;
         max-width: 1100px;
         margin: 0 auto;
@@ -75,33 +66,16 @@
     </div>
 
     <!-- Main View -->
-    <!-- Main View -->
     <div class="view active" id="main-view">
-      <!-- Tab Bar -->
-      <div class="tab-bar">
-        <button class="tab-btn active" data-tab="send">Send</button>
-        <button class="tab-btn" data-tab="receive">Receive</button>
-      </div>
-
-      <!-- Tab Contents -->
-      <!-- Send Tab -->
-      <div class="tab-content active" id="tab-content-send">
+      <details class="send-section" id="send-section">
+        <summary>Send notification</summary>
         <div class="main-content" id="main-content">
+          <h2 class="section-title send-heading">Send notification</h2>
           <!-- Topic Selection -->
           <div class="form-group">
-            <label class="form-label">Topic</label>
-            <div class="custom-dropdown" id="topic-dropdown">
-              <div class="custom-dropdown-selected" id="topic-dropdown-selected">
-                <span id="topic-dropdown-text">Select topic...</span>
-              </div>
-              <div class="custom-dropdown-arrow">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">
-                  <path d="M2 4l4 4 4-4" />
-                </svg>
-              </div>
-              <div class="custom-dropdown-options" id="topic-dropdown-options"></div>
-            </div>
+            <label class="form-label" for="topic-select">Send to</label>
             <select class="form-select" id="topic-select"></select>
+            <p class="form-hint" id="send-topic-hint" hidden>Follows the inbox topic. Choose All topics to change it.</p>
           </div>
 
           <!-- Title (Optional) -->
@@ -185,17 +159,16 @@
           <!-- Status Message -->
           <div class="status" id="status"></div>
         </div>
-      </div>
+      </details>
 
-      <!-- Receive Tab -->
-      <div class="tab-content" id="tab-content-receive">
+      <section id="inbox" aria-labelledby="inbox-heading">
         <div class="main-content receive-layout">
           <!-- Topic list: All topics, then each configured topic -->
           <nav class="topic-sidebar" id="topic-sidebar" aria-label="Topics"></nav>
           <!-- Notifications Section -->
           <div class="notifications-section" id="notifications-section">
             <div class="section-header">
-              <span class="section-title">Notifications</span>
+              <h2 class="section-title" id="inbox-heading">Inbox</h2>
               <div class="notifications-control-bar" id="notifications-control-bar" style="visibility: hidden">
                 <button class="control-btn" id="mark-all-read-btn" title="Mark all read">✓ Mark all read</button>
                 <button class="control-btn" id="delete-all-btn" title="Delete all">🗑 Delete all</button>
@@ -215,7 +188,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
 
     <!-- Settings View -->

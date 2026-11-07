@@ -39,7 +39,7 @@ The **background service worker** owns receiving: the subscription, the catch-up
 | Path | Role |
 |---|---|
 | `entrypoints/background.ts` | Registers every listener at startup (MV3 requires it): storage changes, the one-minute alarm, the context menu, notification clicks, messages from the popup. Starts the receiver. |
-| `entrypoints/popup/` | The popup page: `send.ts` (Send tab), `receive.ts` (Receive tab), `settings.ts` (settings view), `state.ts` (shared state), `dom.ts`, `ui.ts`. With `?mode=page` it is the extension's own tab. |
+| `entrypoints/popup/` | The popup page contains the Send form (`send.ts`), inbox (`receive.ts`), and settings view (`settings.ts`). `state.ts`, `dom.ts`, and `ui.ts` support both layouts. With `?mode=page` it opens in the extension's own tab. |
 | `entrypoints/filepicker/` | A small window for picking files: the popup closes as soon as a file dialog opens, so files are picked here and stored for the popup. |
 | `utils/ntfy.ts` | The ntfy API: configuration (`getConfig`), authentication headers, publishing, polls, the subscription stream, message validation (`parseMessage`). |
 | `utils/receiver.ts` | Receiving: the subscription stream, the per-topic polls, reconnects, the service worker keepalive, the connection status. |
@@ -47,7 +47,7 @@ The **background service worker** owns receiving: the subscription, the catch-up
 | `utils/servers.ts` | Main and fallback server: health check, picking one, retrying a send on the fallback. |
 | `utils/notifications.ts` | Desktop notifications (with `view` action buttons), notification clicks, the unread badge. |
 | `utils/rules.ts` | Per-topic notification rules: all, from a priority up, or off. |
-| `utils/status.ts` | The receiver's connection state for the Receive tab. |
+| `utils/status.ts` | The receiver's connection state for the inbox. |
 | `utils/messages.ts` | Requests from the popup to the background, validated. |
 | `utils/context-menu.ts` | Right-click menu: send the page, selection, link or image to a topic. |
 | `utils/markdown.ts` | A small Markdown renderer that builds DOM nodes (no `innerHTML`). |
@@ -61,7 +61,7 @@ The **background service worker** owns receiving: the subscription, the catch-up
 | `storage.sync` | `apiUrl`, `fallbackUrl`, `topics`, `includeUrl`, `notifyRules`, `syncDeletionTopics`, `theme`, `priority`, `lastTags`, `lastTopic`, `sendAnotherEnabled`, `sendAsZipEnabled` | Settings follow the user to their other browsers. Never credentials. |
 | `storage.local` | `accessToken`, `serverCredentials`, `authOrigins` | Credentials stay on this device. |
 | `storage.local` | `receivedNotifications`, `readMessageIds`, `deletedMessageIds`, `topicSync` | Received messages and the sync state, per device. |
-| `storage.local` | `storedFiles`, `draftState`, `receiveTopicFilter` | Attachments and the draft waiting for the next send; UI state. |
+| `storage.local` | `storedFiles`, `draftState`, `receiveTopicFilter` | Attachments, draft and last inbox filter. `receiveTopicFilter` stores `{ topic }` for a specific topic or `null` for All topics. Legacy string values still load. |
 | `storage.session` | `receiverStatus`, `sessionActive` | Gone after a browser restart: no stale connection state; a new session drops the old draft and attachments. |
 
 `getConfig()` in `utils/ntfy.ts` is the one place that assembles the configuration for requests. It:
@@ -102,7 +102,7 @@ sequenceDiagram
 
 1. Reads `getConfig()`. Without a server or topics it stops and shows nothing.
 2. Picks the server (`pickServer`): the main URL if `/v1/health` answers or there's no fallback, else the fallback if it answers. Checking every minute lets it switch back when the main server returns.
-3. Checks read access per topic (`GET /<topic>/auth`). ntfy rejects a multi-topic subscription with 403 if any topic isn't readable, and a topic the token can only publish to is a normal setup, so the receiver subscribes to (and polls) the readable topics only. The Receive tab marks the others "send only". The result is cached for an hour, or until a subscription is refused.
+3. Checks read access per topic (`GET /<topic>/auth`). ntfy rejects a multi-topic subscription with 403 if any topic isn't readable, and a topic the token can only publish to is a normal setup, so the receiver subscribes to (and polls) the readable topics only. The inbox marks the others "send only". The result is cached for an hour, or until a subscription is refused.
 4. Subscribes, unless the current subscription already has the same server, topics and authentication.
 
 A `connect()` that an `await` made stale (the settings changed meanwhile) stops instead of subscribing with old settings (`connectGeneration`).
@@ -140,7 +140,7 @@ Deletion sync is opt-in per topic. A `message_delete` event names a `sequence_id
 
 The background is the only writer of the received messages, the read and deleted ids and the sync state. The stream, the polls and the popup's actions all go through one queue (`serialized` in `utils/history.ts`). A live event or a completed poll writes its sync state and history together, so a failed write can't mark a message seen without storing it.
 
-The popup sends `setRead` and `delete` requests through `utils/messages.ts`. The background serializes the local updates, so actions from open views cannot overwrite one another. For topics with deletion sync enabled, `utils/delete.ts` follows the local update with an authenticated `DELETE /<topic>/<sequence_id>` using `getConfig`. It checks the message's stored source origin against the configured server and fallback. For older history without a source origin, a bounded poll verifies the original message ID and timestamp on the current server. The request refuses redirects and ntfy checks topic write access. Delete all sends one request per selected sequence with bounded concurrency. The Receive tab reports denied or unconfirmed deletions after removing the local copies. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
+The popup sends `setRead` and `delete` requests through `utils/messages.ts`. The background serializes the local updates, so actions from open views cannot overwrite one another. For topics with deletion sync enabled, `utils/delete.ts` follows the local update with an authenticated `DELETE /<topic>/<sequence_id>` using `getConfig`. It checks the message's stored source origin against the configured server and fallback. For older history without a source origin, a bounded poll verifies the original message ID and timestamp on the current server. The request refuses redirects and ntfy checks topic write access. Delete all sends one request per selected sequence with bounded concurrency. The inbox reports denied or unconfirmed deletions after removing the local copies. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
 
 The history keeps the newest 100 messages per topic by server time (so a busy topic doesn't push out the others, and a late older message doesn't push out a newer one), up to 8 MB in all. Deleted ids are kept (newest 1000) so a poll doesn't bring a deleted message back.
 
@@ -150,11 +150,13 @@ A message new to the history triggers `notifyNewMessage`: a desktop notification
 
 ### Connection status
 
-The receiver writes its state to `storage.session` (`utils/status.ts`): connecting, connected, reconnecting (with the retry time), server unreachable, no readable topic, topics whose poll failed, the fallback in use, credentials held back. The Receive tab shows it above the list.
+The receiver writes its state to `storage.session` (`utils/status.ts`): connecting, connected, reconnecting (with the retry time), server unreachable, no readable topic, topics whose poll failed, the fallback in use, credentials held back. The inbox shows it above the list.
 
 ## Sending
 
-The popup's Send tab publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
+The popup and extension tab share one inbox and Send form. The toolbar popup starts with the Send form collapsed above the inbox. The full-page view places it to the right of the inbox and stacks them in a narrow window. A specific inbox filter sets the send destination. All topics restores the independent choice stored in `lastTopic` or the draft. The filter stays local to each open view so a change in another view cannot redirect a send.
+
+The Send form publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 
 - The popup closes when a file dialog opens, so files are picked in a separate window (`entrypoints/filepicker/`) and wait in `storage.local` as data URLs until sent. The draft is saved as you type. Both are dropped when a new browser session starts.
 - With "Fill in the current tab" (`includeUrl`), the page's title goes in the Title field and its URL in the Message field; a field the user typed in is left alone, and filled values aren't saved in the draft. Context menu sends put the page URL in the title. In the extension's own tab, "Use tab" asks once for the optional `tabs` permission to find the page used last.

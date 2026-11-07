@@ -1,4 +1,4 @@
-// Receive tab: topic list with unread counts, connection status, search, and the received messages
+// Inbox: topic list with unread counts, connection status, search, and the received messages
 // (Markdown, links, image previews, the click URL on the title, view actions) with read and delete actions.
 
 import { browser } from 'wxt/browser';
@@ -9,7 +9,8 @@ import { sendToBackground } from '@/utils/messages';
 import type { DeletionSyncResult } from '@/utils/delete';
 import { ruleFor } from '@/utils/rules';
 import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
-import { elements, isConfigured, loadReceiveState, saveLocal, state } from './state';
+import { updateSendTopic } from './send';
+import { elements, inboxTopic, isConfigured, saveReceiveFilter, state } from './state';
 import { showReceiveStatus } from './ui';
 
 function emptyMessage(text: string): HTMLElement {
@@ -29,22 +30,23 @@ function formatTime(unixTime: number, now = new Date()): string {
 }
 
 /** All topics, then each configured topic, with unread counts */
-function renderTopicSidebar(messages: NtfyMessage[]): void {
-  const unreadCount = (topic: string) =>
-    messages.filter((m) => (topic === 'all' || m.topic === topic) && !state.readMessageIds.includes(m.id)).length;
+function renderTopicSidebar(messages: NtfyMessage[], selected: string | null): void {
+  const unreadCount = (topic: string | null) =>
+    messages.filter((m) => (topic === null || m.topic === topic) && !state.readMessageIds.includes(m.id)).length;
 
   elements.topicSidebar.replaceChildren(
-    ...['all', ...state.topics].map((topic) => {
+    ...[null, ...state.topics].map((topic) => {
       const button = document.createElement('button');
       button.className = 'topic-filter-btn';
-      button.classList.toggle('active', topic === state.receiveFilter);
+      button.classList.toggle('active', topic === selected);
+      button.setAttribute('aria-pressed', String(topic === selected));
 
       const name = document.createElement('span');
       name.className = 'topic-filter-name';
-      name.textContent = topic === 'all' ? 'All topics' : topic;
+      name.textContent = topic ?? 'All topics';
       button.appendChild(name);
 
-      if (topic !== 'all' && ruleFor(state.notifyRules, topic) === 'off') {
+      if (topic !== null && ruleFor(state.notifyRules, topic) === 'off') {
         const muted = document.createElement('span');
         muted.className = 'topic-muted';
         muted.textContent = '🔕';
@@ -52,7 +54,7 @@ function renderTopicSidebar(messages: NtfyMessage[]): void {
         button.appendChild(muted);
       }
 
-      if (state.receiverStatus?.unreadableTopics.includes(topic)) {
+      if (topic !== null && state.receiverStatus?.unreadableTopics.includes(topic)) {
         button.classList.add('send-only');
         button.title = 'No read access: this topic is used for sending only';
         const label = document.createElement('span');
@@ -70,8 +72,9 @@ function renderTopicSidebar(messages: NtfyMessage[]): void {
       }
 
       button.addEventListener('click', () => {
-        state.receiveFilter = topic;
-        saveLocal({ receiveTopicFilter: topic }).catch(() => {});
+        saveReceiveFilter(topic).catch(() => {});
+        updateSendTopic();
+        state.currentNotifications = [];
         void loadNotifications();
       });
       return button;
@@ -258,20 +261,23 @@ function renderMessageSafely(message: NtfyMessage): HTMLElement {
 /** The received messages of all topics, like the unread badge counts them, filtered by the topic list */
 export async function loadNotifications(): Promise<void> {
   if (!isConfigured()) {
+    elements.topicSidebar.replaceChildren();
+    elements.notificationsControlBar.style.visibility = 'hidden';
+    state.currentNotifications = [];
     elements.notificationsList.replaceChildren(emptyMessage('Configure server and topics to view notifications'));
     return;
   }
 
   try {
-    const { receivedNotifications } = await getHistoryState();
+    const { receivedNotifications, readMessageIds, deletedMessageIds } = await getHistoryState();
+    state.readMessageIds = readMessageIds;
+    state.deletedMessageIds = deletedMessageIds;
     const all = receivedNotifications.filter((m) => !state.deletedMessageIds.includes(m.id));
 
-    if (state.receiveFilter !== 'all' && !state.topics.includes(state.receiveFilter)) {
-      state.receiveFilter = 'all';
-    }
-    renderTopicSidebar(all);
+    const topic = inboxTopic();
+    renderTopicSidebar(all, topic);
 
-    const inTopic = state.receiveFilter === 'all' ? all : all.filter((m) => m.topic === state.receiveFilter);
+    const inTopic = topic === null ? all : all.filter((m) => m.topic === topic);
     const query = elements.notificationsSearch.value;
     const shown = inTopic.filter((m) => matchesSearch(m, query));
     state.currentNotifications = shown;
@@ -370,7 +376,8 @@ async function markAllRead(): Promise<void> {
 
 async function deleteAll(): Promise<void> {
   if (state.currentNotifications.length === 0) return;
-  const scope = state.receiveFilter === 'all' ? '' : ` in topic "${state.receiveFilter}"`;
+  const topic = inboxTopic();
+  const scope = topic === null ? '' : ` in topic "${topic}"`;
   const serverNotice = state.currentNotifications.some((message) => state.syncDeletionTopics.has(message.topic))
     ? ' This also deletes on the server for topics with deletion sync enabled, when allowed.'
     : '';
@@ -411,7 +418,7 @@ export function setupReceive(): void {
   void loadConnectionStatus();
   // The reconnect countdown
   setInterval(() => {
-    if (state.activeTab === 'receive' && state.receiverStatus?.retryAt) {
+    if (state.receiverStatus?.retryAt) {
       renderConnectionStatus();
     }
   }, 1000);
@@ -430,7 +437,7 @@ export function setupReceive(): void {
   // New messages from the background, and read or delete actions from another popup or tab
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes.receivedNotifications || changes.readMessageIds || changes.deletedMessageIds)) {
-      void loadReceiveState().then(loadNotifications);
+      void loadNotifications();
     }
   });
 }

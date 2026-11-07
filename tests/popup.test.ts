@@ -68,7 +68,7 @@ beforeEach(async () => {
   await fakeBrowser.storage.session.set({ sessionActive: true });
 });
 
-describe('Receive tab', () => {
+describe('Inbox', () => {
   beforeEach(async () => {
     await fakeBrowser.storage.local.set({
       receivedNotifications: [message('a1', 'alerts', 2, { priority: 5 }), message('a2', 'alerts', 120), message('c1', 'coolify', 60)],
@@ -77,13 +77,13 @@ describe('Receive tab', () => {
   });
 
   it('lists the messages of all topics, with a topic list and unread counts', async () => {
-    await openPopup('?tab=receive');
+    await openPopup();
     const sidebar = [...document.querySelectorAll('.topic-filter-btn')].map((button) => button.textContent);
     expect(sidebar).toEqual(['All topics2', 'alerts1', 'coolify1', 'inbox']);
     const titles = [...document.querySelectorAll('.notification-title')].map((title) => title.textContent);
     expect(titles).toEqual(['a1', 'c1', 'a2']); // newest first
     expect($('.notification-time').textContent).toBe('alerts · 2m ago');
-    expect(document.body.classList.contains('receive-active')).toBe(true);
+    expect($<HTMLDetailsElement>('#send-section').open).toBe(false);
   });
 
   it('filters by topic, remembers it, and deletes within it only', async () => {
@@ -92,12 +92,26 @@ describe('Receive tab', () => {
     document.querySelectorAll<HTMLElement>('.topic-filter-btn')[1]!.click(); // alerts
     await flush();
     expect([...document.querySelectorAll('.notification-title')].map((t) => t.textContent)).toEqual(['a1', 'a2']);
-    expect(await fakeBrowser.storage.local.get('receiveTopicFilter')).toEqual({ receiveTopicFilter: 'alerts' });
+    expect(await fakeBrowser.storage.local.get('receiveTopicFilter')).toEqual({ receiveTopicFilter: { topic: 'alerts' } });
 
     $('#delete-all-btn').click();
     await flush();
     const { deletedMessageIds } = await fakeBrowser.storage.local.get('deletedMessageIds');
     expect(deletedMessageIds).toEqual(['a1', 'a2']);
+  });
+
+  it('distinguishes a topic named all from the legacy All topics filter', async () => {
+    await fakeBrowser.storage.sync.set({ topics: 'all,inbox' });
+    await fakeBrowser.storage.local.set({ receiveTopicFilter: 'all' });
+    await openPopup('?mode=page');
+    const destination = $<HTMLSelectElement>('#topic-select');
+    expect(destination.disabled).toBe(false);
+
+    document.querySelectorAll<HTMLButtonElement>('.topic-filter-btn')[1]!.click();
+    expect(destination.disabled).toBe(true);
+    expect(destination.value).toBe('all');
+    await flush();
+    expect(await fakeBrowser.storage.local.get('receiveTopicFilter')).toEqual({ receiveTopicFilter: { topic: 'all' } });
   });
 
   it('shows the connection state and marks topics the credentials can only send to', async () => {
@@ -247,7 +261,7 @@ describe('Receive tab', () => {
   });
 });
 
-describe('Send tab', () => {
+describe('Send form', () => {
   it("puts the tab's title in the title and its URL in the message, and sends to the selected topic", async () => {
     await fakeBrowser.storage.sync.set({ includeUrl: true });
     await openPopup();

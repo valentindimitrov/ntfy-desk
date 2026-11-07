@@ -14,8 +14,8 @@ import {
 } from '@/utils/ntfy';
 import { NOTIFY_RULES, NOTIFY_RULES_KEY, RULE_LABELS, isNotifyRule, ruleFor, storedTopicRules, type TopicRules } from '@/utils/rules';
 import { SYNC_DELETION_TOPICS_KEY } from '@/utils/sync-modes';
-import { updateTopicDropdown } from './send';
-import { elements, isConfigured, saveSync, state, type Theme } from './state';
+import { updateTopicOptions } from './send';
+import { elements, isConfigured, saveReceiveFilter, saveSync, state, type Theme } from './state';
 import { debounce, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
 
 export function applyTheme(): void {
@@ -170,7 +170,7 @@ async function saveSettings(): Promise<void> {
     state.heldBackFrom = (await getConfig()).heldBackFrom;
 
     // Not a full refresh: that would disturb typing
-    updateTopicDropdown();
+    updateTopicOptions();
     renderTopics();
     updateThemeChips();
     updateHeldBackUI();
@@ -288,6 +288,7 @@ function renderTopics(): void {
 function removeTopic(index: number): void {
   const [topic] = state.topics.splice(index, 1);
   if (topic === undefined) return;
+  if (state.receiveFilter === topic) void saveReceiveFilter(null).catch(() => {});
   if (state.syncDeletionTopics.delete(topic)) {
     saveSyncModes().catch(() => showSettingsStatus('Failed to save settings', 'error'));
   }

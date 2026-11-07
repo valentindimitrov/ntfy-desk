@@ -12,7 +12,9 @@ export function getElements() {
   return {
     // Views
     mainView: byId('main-view'),
-    mainContent: byId('main-content'), // Send tab form
+    mainContent: byId('main-content'), // Send form
+    sendSection: byId<HTMLDetailsElement>('send-section'),
+    inbox: byId('inbox'),
     settingsView: byId('settings-view'),
 
     // Header
@@ -24,10 +26,7 @@ export function getElements() {
 
     // Send form
     topicSelect: byId<HTMLSelectElement>('topic-select'),
-    topicDropdown: byId('topic-dropdown'),
-    topicDropdownSelected: byId('topic-dropdown-selected'),
-    topicDropdownText: byId('topic-dropdown-text'),
-    topicDropdownOptions: byId('topic-dropdown-options'),
+    sendTopicHint: byId('send-topic-hint'),
     titleInput: byId<HTMLInputElement>('title-input'),
     tabUrlBtn: byId<HTMLButtonElement>('tab-url-btn'),
     messageInput: byId<HTMLTextAreaElement>('message-input'),
@@ -79,7 +78,7 @@ export function getElements() {
     syncModesGroup: byId('sync-modes-group'),
     syncModes: byId('sync-modes'),
 
-    // Receive tab
+    // Inbox
     notificationsList: byId('notifications-list'),
     topicSidebar: byId('topic-sidebar'),
     notificationsControlBar: byId('notifications-control-bar'),
@@ -88,10 +87,6 @@ export function getElements() {
     notificationsSearch: byId<HTMLInputElement>('notifications-search'),
     markAllReadBtn: byId<HTMLButtonElement>('mark-all-read-btn'),
     deleteAllBtn: byId<HTMLButtonElement>('delete-all-btn'),
-
-    // Tabs
-    tabButtons: document.querySelectorAll<HTMLButtonElement>('.tab-btn'),
-    tabContents: document.querySelectorAll<HTMLElement>('.tab-content'),
 
     tooltip: byId('tooltip'),
   };

@@ -104,8 +104,8 @@ describe('desktop notifications', () => {
     await handleNotificationClick('badUrl');
     expect(create.mock.calls).toEqual([
       [{ url: 'https://status.example/x' }],
-      [{ url: 'chrome-extension://id/popup.html?mode=page&tab=receive&message=plain' }],
-      [{ url: 'chrome-extension://id/popup.html?mode=page&tab=receive&message=badUrl' }],
+      [{ url: 'chrome-extension://id/popup.html?mode=page&message=plain' }],
+      [{ url: 'chrome-extension://id/popup.html?mode=page&message=badUrl' }],
     ]);
     expect(clear).toHaveBeenCalledTimes(3);
   });

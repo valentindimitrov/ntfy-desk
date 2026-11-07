@@ -48,5 +48,5 @@ if (!id) {
 }
 cli(`goto chrome-extension://${id}/popup.html?mode=page`);
 console.log(`ntfy Desk is open in playwright-cli (extension id ${id}).`);
-console.log(`Popup: chrome-extension://${id}/popup.html  ·  as a tab: ?mode=page  ·  Receive tab: ?tab=receive`);
+console.log(`Popup: chrome-extension://${id}/popup.html  ·  as a tab: ?mode=page`);
 console.log('Next: playwright-cli snapshot | click <ref> | fill <ref> <text> | screenshot | close');

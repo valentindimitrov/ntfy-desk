@@ -15,14 +15,10 @@ async function findExtensionTab(): Promise<{ tabId: number; windowId: number } |
 }
 
 /**
- * Switch to the extension's tab, or open it. With a message, the tab (re)loads showing that message
- * on the Receive tab.
+ * Switch to the extension's tab, or open it. With a message, the inbox highlights it.
  */
-export async function openExtensionTab(options: { tab?: 'send' | 'receive'; message?: string } = {}): Promise<void> {
-  const params = new URLSearchParams();
-  if (options.tab) params.set('tab', options.tab);
-  if (options.message) params.set('message', options.message);
-  const url = `${pageUrl()}&${params}`;
+export async function openExtensionTab(options: { message?: string } = {}): Promise<void> {
+  const url = options.message ? `${pageUrl()}&${new URLSearchParams({ message: options.message })}` : pageUrl();
 
   const open = await findExtensionTab();
   if (open) {

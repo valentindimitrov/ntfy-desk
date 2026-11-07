@@ -88,7 +88,7 @@ export async function handleNotificationClick(notificationId: string): Promise<v
   if (message && isHttpUrl(message.click)) {
     await browser.tabs.create({ url: message.click });
   } else {
-    await openExtensionTab({ tab: 'receive', message: notificationId });
+    await openExtensionTab({ message: notificationId });
   }
 }
 

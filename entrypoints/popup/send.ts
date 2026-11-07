@@ -1,4 +1,4 @@
-// Send tab: topic, title (optionally the tab's URL), message, attachments, priority and tags.
+// Send form: topic, title (optionally the tab's URL), message, attachments, priority and tags.
 
 import { browser, type Browser } from 'wxt/browser';
 import { getConfig, isHttpUrl, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
@@ -13,72 +13,43 @@ import {
 } from '@/utils/stored-files';
 import { withFallback } from '@/utils/servers';
 import { createZip } from '@/utils/zip';
-import { elements, isPageMode, saveSync, state, type PageInfo } from './state';
+import { elements, inboxTopic, isConfigured, isPageMode, saveSync, state, type PageInfo } from './state';
 import { moveItem, setupDragAndDrop, showStatus } from './ui';
 
 // ==================
 // Topic dropdown
 // ==================
 
-export function updateTopicDropdown(): void {
-  elements.topicSelect.replaceChildren();
-  elements.topicDropdownOptions.replaceChildren();
-
-  for (const topic of state.topics) {
-    // Hidden select holds the form value
+export function updateTopicOptions(): void {
+  const options = state.topics.map((topic) => {
     const option = document.createElement('option');
     option.value = topic;
     option.textContent = topic;
-    elements.topicSelect.appendChild(option);
-
-    const customOption = document.createElement('div');
-    customOption.className = 'custom-dropdown-option';
-    customOption.dataset.value = topic;
-    customOption.textContent = topic;
-    customOption.addEventListener('click', () => selectTopic(topic));
-    elements.topicDropdownOptions.appendChild(customOption);
-  }
-
-  if (state.topics.length > 0) {
-    const selected = elements.topicSelect.value || state.topics[0]!;
-    elements.topicDropdownText.textContent = selected;
-    updateDropdownSelection(selected);
-  } else {
-    elements.topicDropdownText.textContent = 'No topics configured';
-  }
-}
-
-/** Topic dropdown when nothing is configured */
-export function clearTopicDropdown(): void {
-  const option = document.createElement('option');
-  option.disabled = true;
-  option.textContent = 'No topics configured';
-  elements.topicSelect.replaceChildren(option);
-  elements.topicDropdownText.textContent = 'No topics configured';
-  elements.topicDropdownOptions.replaceChildren();
-}
-
-export function showTopic(topic: string): void {
-  elements.topicSelect.value = topic;
-  elements.topicDropdownText.textContent = topic;
-  updateDropdownSelection(topic);
-}
-
-function selectTopic(topic: string): void {
-  showTopic(topic);
-  closeTopicDropdown();
-  state.lastTopic = topic;
-  void saveSync({ lastTopic: topic });
-}
-
-function updateDropdownSelection(selected: string): void {
-  elements.topicDropdownOptions.querySelectorAll<HTMLElement>('.custom-dropdown-option').forEach((option) => {
-    option.classList.toggle('selected', option.dataset.value === selected);
+    return option;
   });
+  if (options.length === 0) {
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = 'No topics configured';
+    options.push(empty);
+  }
+  elements.topicSelect.replaceChildren(...options);
+  updateSendTopic();
 }
 
-function closeTopicDropdown(): void {
-  elements.topicDropdown.classList.remove('open');
+function independentSendTopic(): string {
+  const last = state.lastTopic;
+  return last && state.topics.includes(last) ? last : (state.topics[0] ?? '');
+}
+
+/** A specific inbox topic overrides the independent send choice without overwriting it. */
+export function updateSendTopic(): void {
+  const topic = inboxTopic();
+  elements.topicSelect.value = topic ?? independentSendTopic();
+  elements.topicSelect.disabled = topic !== null || !isConfigured();
+  elements.sendTopicHint.hidden = topic === null;
+  if (topic === null) elements.topicSelect.removeAttribute('aria-describedby');
+  else elements.topicSelect.setAttribute('aria-describedby', elements.sendTopicHint.id);
 }
 
 // ==================
@@ -243,7 +214,7 @@ async function saveDraft(): Promise<void> {
     // An automatically filled tab title or URL isn't part of the draft: the next popup fills in its own tab's
     title: elements.titleInput.value === state.autoTitle ? '' : elements.titleInput.value,
     message: elements.messageInput.value === state.autoMessage ? '' : elements.messageInput.value,
-    topic: elements.topicSelect.value,
+    topic: independentSendTopic(),
     tags: state.tags,
     priority: state.selectedPriority,
   };
@@ -477,7 +448,7 @@ export async function send(): Promise<void> {
 }
 
 async function sendNow(): Promise<void> {
-  const topic = elements.topicSelect.value;
+  const topic = inboxTopic() ?? independentSendTopic();
   // With "Fill in the current tab", the tab's title and URL are in these fields (applyPagePrefill)
   const message = elements.messageInput.value.trim();
   const title = elements.titleInput.value.trim();
@@ -616,11 +587,11 @@ export function setupSend(): void {
     elements.mainContent.classList.toggle('advanced-open', isOpen);
   });
 
-  elements.topicDropdownSelected.addEventListener('click', () => elements.topicDropdown.classList.toggle('open'));
-  document.addEventListener('click', (event) => {
-    if (!elements.topicDropdown.contains(event.target as Node)) {
-      closeTopicDropdown();
-    }
+  elements.topicSelect.addEventListener('change', () => {
+    if (elements.topicSelect.disabled) return;
+    state.lastTopic = elements.topicSelect.value;
+    void saveSync({ lastTopic: state.lastTopic });
+    scheduleDraftSave();
   });
 
   // The file picker window writes the attachments to storage

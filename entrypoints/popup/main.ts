@@ -1,4 +1,4 @@
-// Popup (also opened as a page in its own tab): Send and Receive tabs, and the settings view.
+// Popup and full-page view: inbox, send form, and settings.
 
 import '@/assets/styles.css';
 import { browser } from 'wxt/browser';
@@ -7,18 +7,16 @@ import { focusMessage, loadNotifications, setupReceive } from './receive';
 import {
   applyPagePrefill,
   cleanUpAfterBrowserRestart,
-  clearTopicDropdown,
   getPage,
   loadAttachments,
   renderTags,
   restoreDraft,
   setupSend,
-  showTopic,
   updatePriorityUI,
-  updateTopicDropdown,
+  updateTopicOptions,
 } from './send';
 import { applyTheme, populateSettings, setupSettings, updateServerAccessUI } from './settings';
-import { elements, isConfigured, isPageMode, loadReceiveState, loadSettings, pageParams, saveLocal, state, type Tab } from './state';
+import { elements, isConfigured, isPageMode, loadReceiveFilter, loadSettings, pageParams, saveReceiveFilter, state } from './state';
 import { setupTooltips } from './ui';
 
 const appName = browser.runtime.getManifest().name;
@@ -29,20 +27,6 @@ function requestSync(): void {
   });
 }
 
-function switchTab(tab: Tab): void {
-  if (tab === state.activeTab) return;
-  state.activeTab = tab;
-
-  elements.tabButtons.forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
-  elements.tabContents.forEach((content) => content.classList.toggle('active', content.id === `tab-content-${tab}`));
-  document.body.classList.toggle('receive-active', tab === 'receive');
-
-  if (tab === 'receive') {
-    void loadNotifications();
-    requestSync();
-  }
-}
-
 /** Refresh the main view from the settings */
 function updateUI(): void {
   const configured = isConfigured();
@@ -50,14 +34,7 @@ function updateUI(): void {
   elements.settingsBtn.classList.toggle('highlight', !configured || state.serverAccessMissing || state.heldBackFrom.length > 0);
   elements.openUrlBtn.disabled = !state.apiUrl;
 
-  if (!configured) {
-    clearTopicDropdown();
-  } else {
-    updateTopicDropdown();
-    if (state.lastTopic && state.topics.includes(state.lastTopic)) {
-      showTopic(state.lastTopic);
-    }
-  }
+  updateTopicOptions();
   updatePriorityUI();
 }
 
@@ -79,24 +56,31 @@ function showMainView(): void {
   elements.openUrlBtn.style.display = '';
   elements.headerText.textContent = appName;
   updateUI();
+  void loadNotifications();
   applyPagePrefill();
 }
 
 /** Open this page in a browser tab (any size), or switch to that tab if it is already open */
 async function openInTab(): Promise<void> {
-  await openExtensionTab({ tab: state.activeTab });
+  await openExtensionTab();
   window.close();
 }
 
-/** Right Ctrl + Enter sends */
+/** Right Ctrl + Enter sends while focus is in the open composer. */
 function setupKeyboardShortcut(): void {
   let rightCtrlDown = false;
   document.addEventListener('keydown', (event) => {
     if (event.code === 'ControlRight') {
       rightCtrlDown = true;
     }
-    // offsetParent is null while the button or a parent is hidden
-    if (event.key === 'Enter' && rightCtrlDown && elements.sendBtn.offsetParent !== null && !elements.sendBtn.disabled) {
+    if (
+      event.key === 'Enter' &&
+      rightCtrlDown &&
+      elements.sendSection.open &&
+      elements.mainContent.contains(document.activeElement) &&
+      elements.sendBtn.offsetParent !== null &&
+      !elements.sendBtn.disabled
+    ) {
       event.preventDefault();
       elements.sendBtn.click();
     }
@@ -112,15 +96,32 @@ function setupKeyboardShortcut(): void {
 }
 
 async function init(): Promise<void> {
+  if (isPageMode) {
+    document.body.classList.add('page-mode');
+    elements.mainView.prepend(elements.inbox);
+    elements.sendSection.open = true;
+    elements.popoutBtn.style.display = 'none';
+    elements.tabUrlBtn.style.display = '';
+  } else if (pageParams.get('tab') === 'send') {
+    elements.sendSection.open = true;
+  }
+
   await loadSettings();
   state.page = await getPage();
-  await loadReceiveState();
+  await loadReceiveFilter();
   await cleanUpAfterBrowserRestart();
   await restoreDraft();
   await loadAttachments();
 
   elements.sendAnotherCheckbox.checked = state.sendAnotherEnabled;
   elements.includeUrlCheckbox.checked = state.includeUrl;
+
+  // A desktop notification opens the inbox and highlights the message across all topics.
+  const messageId = pageParams.get('message');
+  if (messageId) {
+    await saveReceiveFilter(null);
+    focusMessage(messageId);
+  }
 
   setupSend();
   setupReceive();
@@ -130,7 +131,6 @@ async function init(): Promise<void> {
   elements.settingsBtn.addEventListener('click', showSettingsView);
   elements.backBtn.addEventListener('click', showMainView);
   elements.popoutBtn.addEventListener('click', () => void openInTab());
-  elements.tabButtons.forEach((button) => button.addEventListener('click', () => switchTab(button.dataset.tab as Tab)));
 
   await updateServerAccessUI();
   updateUI();
@@ -139,9 +139,6 @@ async function init(): Promise<void> {
   elements.headerText.textContent = appName;
 
   if (isPageMode) {
-    document.body.classList.add('page-mode');
-    elements.popoutBtn.style.display = 'none';
-    elements.tabUrlBtn.style.display = '';
     // Coming back to this tab: the user may have moved on to another page
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible') {
@@ -152,17 +149,7 @@ async function init(): Promise<void> {
   }
   applyPagePrefill();
 
-  // Opened by a click on a desktop notification: show that message
-  const messageId = pageParams.get('message');
-  if (messageId) {
-    // All topics, saved: reloads of the receive state read the filter back
-    state.receiveFilter = 'all';
-    await saveLocal({ receiveTopicFilter: 'all' });
-    focusMessage(messageId);
-  }
-  if (pageParams.get('tab') === 'receive') {
-    switchTab('receive');
-  } else {
+  if (!isPageMode && elements.sendSection.open) {
     elements.messageInput.focus();
   }
   requestSync();

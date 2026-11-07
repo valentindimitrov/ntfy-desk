@@ -136,6 +136,59 @@ test.describe('receiving', () => {
 });
 
 test.describe('sending', () => {
+  test('shows the inbox beside Send and switches between linked and independent destinations', async ({ ntfy, configure, openPopup }) => {
+    await configure({ topics: 'alerts,backups' });
+    const page = await openPopup('?mode=page');
+    await page.setViewportSize({ width: 1100, height: 720 });
+    const inbox = page.getByRole('region', { name: 'Inbox' });
+    const message = page.getByLabel('Message', { exact: true });
+    const destination = page.getByLabel('Send to');
+    await expect(inbox).toBeVisible();
+    await expect(message).toBeVisible();
+    expect((await inbox.boundingBox())!.x).toBeLessThan((await message.boundingBox())!.x);
+
+    await destination.selectOption('backups');
+    await message.fill('Check disk space');
+    await page.getByRole('button', { name: 'alerts', exact: true }).click();
+    await expect(destination).toHaveValue('alerts');
+    await expect(destination).toBeDisabled();
+    await page.getByRole('button', { name: 'All topics', exact: true }).click();
+    await expect(destination).toHaveValue('backups');
+    await expect(destination).toBeEnabled();
+    await expect(message).toHaveValue('Check disk space');
+
+    await page.getByRole('button', { name: 'alerts', exact: true }).click();
+    await page.getByRole('searchbox', { name: 'Search messages' }).press('ControlRight+Enter');
+    await expect(message).toHaveValue('Check disk space');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(page.locator('#status')).toHaveText('Notification sent!');
+    expect(ntfy.published).toMatchObject([{ topic: 'alerts', body: 'Check disk space' }]);
+  });
+
+  test('keeps the inbox below a collapsible Send section in the toolbar popup', async ({ configure, openPopup, serviceWorker }) => {
+    await configure({ topics: 'alerts,backups' });
+    await serviceWorker.evaluate(() => chrome.storage.local.set({ receiveTopicFilter: { topic: 'backups' } }));
+    const popup = await openPopup();
+    await popup.setViewportSize({ width: 390, height: 620 });
+    const inbox = popup.getByRole('region', { name: 'Inbox' });
+    const disclosure = popup.locator('#send-section summary');
+    const message = popup.getByLabel('Message', { exact: true });
+    await expect(inbox).toBeVisible();
+    await expect(message).toBeHidden();
+    await disclosure.press('Enter');
+    await expect(message).toBeVisible();
+    await expect(popup.getByLabel('Send to')).toHaveValue('backups');
+    await expect(popup.getByLabel('Send to')).toBeDisabled();
+    expect((await message.boundingBox())!.y).toBeLessThan((await inbox.boundingBox())!.y);
+
+    await message.fill('Keep this draft');
+    await disclosure.click();
+    await expect(message).toBeHidden();
+    await expect(inbox).toBeVisible();
+    await disclosure.click();
+    await expect(message).toHaveValue('Keep this draft');
+  });
+
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
     await configure({ topics: 'inbox' });
     const popup = await openPopup('?mode=page');
