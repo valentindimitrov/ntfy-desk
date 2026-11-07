@@ -20,6 +20,7 @@ export function getElements() {
     // Header
     backBtn: byId<HTMLButtonElement>('back-btn'),
     headerText: byId('header-text'),
+    headerConnection: byId('header-connection'),
     openUrlBtn: byId<HTMLButtonElement>('open-url-btn'),
     settingsBtn: byId<HTMLButtonElement>('settings-btn'),
     popoutBtn: byId<HTMLButtonElement>('popout-btn'),

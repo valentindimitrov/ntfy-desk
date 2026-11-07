@@ -82,7 +82,8 @@ test.describe('receiving', () => {
 
     const popup = await openPopup('?tab=receive');
     await expect(popup.locator('.notification-title')).toHaveText(['Disk full']);
-    await expect(popup.locator('.status-line')).toHaveText(`Connected to ${new URL(ntfy.url).host}`);
+    await expect(popup.locator('#header-connection')).toHaveText('Connected');
+    await expect(popup.locator('#header-connection')).toHaveAttribute('aria-label', `Connected to ${new URL(ntfy.url).host}`);
 
     // The poll after connecting must not notify it again
     await serviceWorker.evaluate(() => chrome.runtime.sendMessage({ action: 'sync' }).catch(() => {}));
@@ -192,10 +193,14 @@ test.describe('sending', () => {
 
   test('the native toolbar popup keeps its width with long topic names', async ({ configure, ntfy, openPopup, serviceWorker }) => {
     const topic = 'w'.repeat(64);
-    await configure({ topics: topic });
-    ntfy.publish(topic, { title: 'Container update needed' });
+    await configure({ topics: `${topic},nightly-backups,container-alerts,build-notifications` });
+    for (let index = 0; index < 7; index++) {
+      ntfy.publish('container-alerts', { title: `Earlier alert ${index}`, message: 'Short alert.' });
+    }
+    const message = 'Review this container update. '.repeat(20);
+    ntfy.publish(topic, { title: 'Container update needed', message });
     const tab = await openPopup('?mode=page');
-    await expect(tab.locator('.notification-title')).toHaveText('Container update needed');
+    await expect(tab.locator('.notification-title')).toHaveCount(8);
 
     // Opening popup.html in a tab gives it a fixed viewport and bypasses native popup sizing.
     await serviceWorker.evaluate(() => chrome.action.openPopup());
@@ -203,21 +208,32 @@ test.describe('sending', () => {
       tab.evaluate(() => {
         const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
         if (!popup) return null;
-        const heading = popup.document.querySelector('.notification-header');
+        const inboxHeading = popup.document.querySelector('#inbox-heading');
+        const topics = popup.document.querySelector('#topic-sidebar');
+        const details = popup.document.querySelector<HTMLDetailsElement>('.notification-details');
+        const heading = details?.closest('.notification-item')?.querySelector('.notification-header');
         return {
           width: popup.innerWidth,
           documentFits: popup.document.documentElement.scrollWidth === popup.innerWidth,
           headingFits: heading && heading.scrollWidth === heading.clientWidth,
+          topicsBelowHeading: inboxHeading && topics && inboxHeading.getBoundingClientRect().bottom <= topics.getBoundingClientRect().top,
+          topicsFit: topics && topics.scrollWidth === topics.clientWidth,
+          messageOpen: details?.open,
           composerOpen: popup.document.querySelector<HTMLDetailsElement>('#send-section')?.open,
         };
       });
-    const fitted = { width: 390, documentFits: true, headingFits: true };
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: false });
+    const fitted = { width: 390, documentFits: true, headingFits: true, topicsBelowHeading: true, topicsFit: true };
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: false, messageOpen: false });
     await tab.evaluate(() => {
       const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
       popup?.document.querySelector<HTMLElement>('#send-section summary')?.click();
     });
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true });
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, messageOpen: false });
+    await tab.evaluate(() => {
+      const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
+      popup?.document.querySelector<HTMLElement>('.notification-details summary')?.click();
+    });
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, messageOpen: true });
   });
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
@@ -265,6 +281,7 @@ test.describe('fallback server', () => {
     await expect.poll(async () => (await notified()).map((n) => n.title)).toEqual(['Via fallback']);
 
     const popup = await openPopup('?tab=receive');
-    await expect(popup.locator('.status-line').first()).toHaveText(`Connected to ${new URL(ntfy.url).host} (fallback)`);
+    await expect(popup.locator('#header-connection')).toHaveText('Fallback');
+    await expect(popup.locator('#header-connection')).toHaveAttribute('aria-label', `Connected to ${new URL(ntfy.url).host} (fallback)`);
   });
 });

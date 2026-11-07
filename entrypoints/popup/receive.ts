@@ -10,7 +10,7 @@ import type { DeletionSyncResult } from '@/utils/delete';
 import { ruleFor } from '@/utils/rules';
 import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
 import { updateSendTopic } from './send';
-import { elements, inboxTopic, isConfigured, saveReceiveFilter, state } from './state';
+import { elements, inboxTopic, isConfigured, isPageMode, saveReceiveFilter, state } from './state';
 import { showReceiveStatus } from './ui';
 
 function emptyMessage(text: string): HTMLElement {
@@ -90,6 +90,7 @@ let pendingFocus = false;
 export function focusMessage(id: string): void {
   focusedId = id;
   pendingFocus = true;
+  expandedMessages.add(id);
 }
 
 function applyPendingFocus(): void {
@@ -139,8 +140,42 @@ function openUrl(url: string): void {
   void browser.tabs.create({ url });
 }
 
+const expandedMessages = new Set<string>();
+const PREVIEW_LENGTH = 140;
+
+/** Long messages show an excerpt, with the original rendered content in a disclosure. */
+function messageContent(message: NtfyMessage, body: HTMLElement, image: HTMLElement | null): HTMLElement[] {
+  const content = image ? [body, image] : [body];
+  const raw = message.message ?? '';
+  if ((!image || isPageMode) && raw.length <= PREVIEW_LENGTH && raw.split('\n', 4).length < 4) return content;
+
+  const details = document.createElement('details');
+  details.className = 'notification-details';
+  details.open = expandedMessages.has(message.id);
+  details.addEventListener('toggle', () => {
+    if (details.open) expandedMessages.add(message.id);
+    else expandedMessages.delete(message.id);
+  });
+
+  const summary = document.createElement('summary');
+  const excerpt = document.createElement('span');
+  excerpt.className = 'notification-excerpt';
+  const text = raw.trim().replace(/\s+/g, ' ');
+  excerpt.textContent = text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH).trimEnd()}…` : text;
+
+  const show = document.createElement('span');
+  show.className = 'notification-expand';
+  show.textContent = 'Show full message';
+  const hide = document.createElement('span');
+  hide.className = 'notification-collapse';
+  hide.textContent = 'Show less';
+  summary.append(excerpt, show, hide);
+  details.append(summary, ...content);
+  return [details];
+}
+
 function renderMessage(message: NtfyMessage): HTMLElement {
-  const item = document.createElement('div');
+  const item = document.createElement('article');
   item.className = 'notification-item';
   item.dataset.id = message.id;
   item.classList.toggle('focused', message.id === focusedId);
@@ -162,7 +197,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   }
   const time = document.createElement('span');
   time.className = 'notification-time';
-  time.textContent = `${message.topic} · ${formatTime(message.time)}`;
+  time.textContent = formatTime(message.time);
   header.append(title, time);
 
   const body = document.createElement('div');
@@ -189,8 +224,18 @@ function renderMessage(message: NtfyMessage): HTMLElement {
 
   const footer = document.createElement('div');
   footer.className = 'notification-footer';
+  const meta = document.createElement('span');
+  meta.className = 'notification-topic';
+  meta.textContent = message.topic;
+  const unread = document.createElement('span');
+  unread.className = 'notification-unread';
+  unread.textContent = ' · Unread';
+  meta.appendChild(unread);
+  footer.appendChild(meta);
+
+  let tags: HTMLElement | undefined;
   if (message.tags && message.tags.length > 0) {
-    const tags = document.createElement('div');
+    tags = document.createElement('div');
     tags.className = 'notification-tags';
     for (const tag of message.tags) {
       const span = document.createElement('span');
@@ -198,7 +243,6 @@ function renderMessage(message: NtfyMessage): HTMLElement {
       span.textContent = tag;
       tags.appendChild(span);
     }
-    footer.appendChild(tags);
   }
 
   const actions = document.createElement('div');
@@ -241,7 +285,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   actions.appendChild(deleteButton);
 
   footer.appendChild(actions);
-  item.append(header, body, ...(preview ? [preview] : []), footer);
+  item.append(header, ...messageContent(message, body, preview), ...(tags ? [tags] : []), footer);
   return item;
 }
 
@@ -396,10 +440,22 @@ async function deleteAll(): Promise<void> {
   }
 }
 
-/** Connection state line(s) above the list */
+/** Connection status in the header, with warnings and errors above the list. */
 function renderConnectionStatus(): void {
+  const lines = describeStatus(state.receiverStatus);
+  const connected = lines[0]?.level === 'ok' ? lines.shift() : undefined;
+  elements.headerConnection.hidden = !connected;
+  elements.headerConnection.textContent = connected
+    ? isPageMode
+      ? connected.text
+      : state.receiverStatus?.usingFallback
+        ? 'Fallback'
+        : 'Connected'
+    : '';
+  elements.headerConnection.title = connected?.text ?? '';
+  elements.headerConnection.setAttribute('aria-label', connected?.text ?? '');
   elements.connectionStatus.replaceChildren(
-    ...describeStatus(state.receiverStatus).map(({ text, level }) => {
+    ...lines.map(({ text, level }) => {
       const line = document.createElement('div');
       line.className = `status-line ${level}`;
       line.textContent = text;

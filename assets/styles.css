@@ -198,6 +198,70 @@ body {
   display: flex;
 }
 
+.desk-header {
+  gap: 8px;
+  min-height: 46px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: none;
+}
+
+.desk-header .header-title {
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.desk-header .header-title img {
+  padding: 2px;
+  border-radius: 4px;
+  background: var(--primary-dark);
+}
+
+.desk-header .header-actions {
+  gap: 2px;
+}
+
+.desk-header :is(.back-btn, .icon-btn) {
+  color: var(--text-secondary);
+}
+
+.desk-header :is(.back-btn, .icon-btn):hover:not(:disabled) {
+  background: var(--bg-main);
+  color: var(--text-primary);
+}
+
+.desk-header .icon-btn.highlight {
+  background: var(--bg-main);
+  border-color: var(--primary-light);
+  color: var(--primary-light);
+  animation: none;
+}
+
+.header-connection {
+  margin-inline-start: auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-connection::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 5px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  vertical-align: middle;
+}
+
+body:has(#settings-view.active) .header-connection {
+  display: none;
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -717,27 +781,24 @@ body {
   cursor: pointer;
 }
 
-/* Send Button - Text style like ntfy.sh */
 .send-btn {
   padding: 8px 16px;
   font-size: 14px;
   font-weight: 500;
-  color: var(--primary);
-  background: transparent;
+  color: white;
+  background: var(--primary-dark);
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.2s;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 .send-btn:hover {
-  background-color: rgba(51, 133, 116, 0.1);
+  background-color: var(--primary);
 }
 
 .send-btn:active {
-  background-color: rgba(51, 133, 116, 0.2);
+  background-color: var(--primary-dark);
 }
 
 .send-btn:disabled {
@@ -945,22 +1006,20 @@ body.filepicker-page {
    Recent Notifications Section
    ======================================== */
 
-.notifications-section {
-  margin-top: 0;
-  border-top: none;
-  padding-top: 0;
+#inbox {
+  min-width: 0;
+  background: var(--bg-card);
 }
 
-.notifications-section .section-header {
+.inbox-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 10px;
 }
 
-.notifications-section .section-title,
+.inbox-header .section-title,
 .send-heading {
   margin: 0;
   line-height: 1.3;
@@ -969,41 +1028,24 @@ body.filepicker-page {
   color: var(--text-primary);
 }
 
-.notifications-list {
-  max-height: 250px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-right: 4px; /* space for scrollbar */
-}
-
 .notification-item {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 10px 10px 10px 14px; /* Left padding increased for priority indicator */
+  border-bottom: 1px solid var(--border-color);
+  padding: 10px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
   position: relative;
-  transition: border-color 0.2s;
-}
-
-.notification-item:hover {
-  border-color: var(--primary-light);
 }
 
 /* Priority indicator left border */
 .notification-item::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  border-top-left-radius: 8px;
-  border-bottom-left-radius: 8px;
+  inset-inline-start: -7px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 2px;
   background-color: transparent;
 }
 
@@ -1039,7 +1081,8 @@ body.filepicker-page {
   overflow-wrap: anywhere;
 }
 
-.notification-time {
+.notification-time,
+.notification-topic {
   font-size: 12px;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
@@ -1050,6 +1093,33 @@ body.filepicker-page {
   color: var(--text-primary);
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+.notification-details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.notification-excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.notification-expand,
+.notification-collapse {
+  color: var(--primary-light);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.notification-details:not([open]) .notification-collapse,
+.notification-details[open] :is(.notification-excerpt, .notification-expand),
+.notification-item.read .notification-unread {
+  display: none;
 }
 
 .notification-tags {
@@ -1093,13 +1163,14 @@ body.filepicker-page {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 6px;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 2px 8px;
 }
 
 .notification-actions {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px;
   margin-left: auto; /* Push to right if no tags */
 }
 
@@ -1148,19 +1219,38 @@ body.filepicker-page {
    Inbox and send form
    ======================================== */
 
+/* Scroll the toolbar view as a unit. A scrollbar on the document would grow the native popup. */
+body:not(.page-mode) #main-view {
+  max-height: 450px;
+  overflow-y: auto;
+}
+
 .send-section {
   min-width: 0;
   border-bottom: 1px solid var(--border-color);
+  background: var(--bg-main);
 }
 
 .send-section > summary {
   padding: 12px 16px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .send-section > summary:hover {
   background-color: var(--bg-input);
+}
+
+#main-content :is(.form-input, .form-select, .form-textarea) {
+  padding: 7px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+}
+
+#main-content :is(.form-input, .form-select, .form-textarea):focus {
+  border-color: var(--border-focus);
 }
 
 .send-heading {
@@ -1170,6 +1260,7 @@ body.filepicker-page {
 
 .page-mode .send-section {
   border-bottom: 0;
+  background: var(--bg-card);
 }
 
 .page-mode .send-section > summary {
@@ -1244,22 +1335,19 @@ body.filepicker-page {
    ======================================== */
 
 .receive-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  gap: 8px;
 }
 
 .receive-layout .notifications-section {
-  flex: 1;
   min-width: 0;
 }
 
 .topic-sidebar {
   display: flex;
-  gap: 2px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
 }
 
 .topic-filter-btn {
@@ -1275,7 +1363,7 @@ body.filepicker-page {
   background: none;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
@@ -1286,7 +1374,7 @@ body.filepicker-page {
 }
 
 .topic-filter-btn.active {
-  background-color: var(--bg-input);
+  background-color: color-mix(in srgb, var(--primary) 14%, var(--bg-card));
   color: var(--primary-light);
   font-weight: 600;
 }
@@ -1299,11 +1387,7 @@ body.filepicker-page {
 
 .topic-unread-count {
   flex: none;
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 9px;
-  background-color: #f44336;
-  color: #ffffff;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
   text-align: center;
@@ -1311,22 +1395,29 @@ body.filepicker-page {
 
 .page-mode .notifications-list {
   max-height: max(250px, calc(100vh - 170px));
+  overflow-y: auto;
 }
 
 @media (min-width: 960px) {
   .page-mode .receive-layout {
-    flex-direction: row;
-    align-items: flex-start;
+    grid-template-columns: 144px minmax(0, 1fr);
+    align-items: start;
+    column-gap: 14px;
   }
 
   .page-mode .topic-sidebar {
-    flex: 0 0 144px;
+    grid-area: 1 / 1 / span 2;
     flex-direction: column;
+    flex-wrap: nowrap;
     overflow-y: auto;
     max-height: max(250px, calc(100vh - 170px));
     padding: 0 8px 0 0;
     border-inline-end: 1px solid var(--border-color);
-    border-bottom: 0;
+  }
+
+  .page-mode .inbox-header,
+  .page-mode .notifications-section {
+    grid-column: 2;
   }
 
   .page-mode .topic-filter-btn {
@@ -1357,7 +1448,7 @@ body.filepicker-page {
 }
 
 /* Heading and bulk actions of the Receive tab on one centred line */
-.notifications-section .control-btn {
+.inbox-header .control-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1390,10 +1481,6 @@ body.filepicker-page {
   border-radius: 50%;
   background-color: currentColor;
   vertical-align: middle;
-}
-
-.status-line.ok::before {
-  background-color: #4caf50;
 }
 
 .status-line.warning::before {
@@ -1497,13 +1584,19 @@ button.notification-title {
 
 /* The message a desktop notification click opened */
 .notification-item.focused {
-  border-color: var(--primary-light);
-  box-shadow: 0 0 0 1px var(--primary-light);
+  background-color: color-mix(in srgb, var(--primary) 10%, var(--bg-card));
 }
 
 /* ========================================
    Receive Tab: Search, Images, Markdown
    ======================================== */
+
+.notifications-search-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 
 .notifications-search {
   width: 100%;

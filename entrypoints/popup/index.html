@@ -29,13 +29,14 @@
 
   <body data-theme="auto">
     <!-- Header -->
-    <div class="header">
+    <header class="header desk-header">
       <div class="header-left">
         <div class="header-title">
           <img src="/icon/48.png" alt="" style="width: 20px; height: 20px" />
           <span id="header-text">ntfy Desk</span>
         </div>
       </div>
+      <span class="header-connection" id="header-connection" role="status" hidden></span>
       <div class="header-actions">
         <button class="back-btn" id="back-btn" title="Back">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
@@ -62,7 +63,7 @@
           </svg>
         </button>
       </div>
-    </div>
+    </header>
 
     <!-- Main View -->
     <div class="view active" id="main-view">
@@ -90,14 +91,14 @@
                 🔗 Use tab
               </button>
             </div>
-            <input type="text" class="form-input" id="title-input" />
+            <input type="text" class="form-input" id="title-input" placeholder="Optional" />
           </div>
 
           <!-- Message -->
           <div class="form-group">
             <label class="form-label" for="message-input">Message</label>
           </div>
-          <textarea class="form-textarea" id="message-input" rows="3"></textarea>
+          <textarea class="form-textarea" id="message-input" rows="2" placeholder="Write a notification…"></textarea>
 
           <!-- File Attachment -->
           <div class="file-section">
@@ -119,7 +120,7 @@
           <!-- Advanced Options Toggle -->
           <div class="advanced-toggle" id="advanced-toggle">
             <span class="arrow">▶</span>
-            Advanced options
+            More options
           </div>
 
           <!-- Advanced Options -->
@@ -162,26 +163,21 @@
 
       <section id="inbox" aria-labelledby="inbox-heading">
         <div class="main-content receive-layout">
+          <div class="section-header inbox-header">
+            <h2 class="section-title" id="inbox-heading">Inbox</h2>
+            <div class="notifications-control-bar" id="notifications-control-bar" style="visibility: hidden">
+              <button class="control-btn" id="mark-all-read-btn" title="Mark all read">✓ Mark all read</button>
+              <button class="control-btn" id="delete-all-btn" title="Delete all">🗑 Delete all</button>
+            </div>
+          </div>
           <!-- Topic list: All topics, then each configured topic -->
           <nav class="topic-sidebar" id="topic-sidebar" aria-label="Topics"></nav>
           <!-- Notifications Section -->
           <div class="notifications-section" id="notifications-section">
-            <div class="section-header">
-              <h2 class="section-title" id="inbox-heading">Inbox</h2>
-              <div class="notifications-control-bar" id="notifications-control-bar" style="visibility: hidden">
-                <button class="control-btn" id="mark-all-read-btn" title="Mark all read">✓ Mark all read</button>
-                <button class="control-btn" id="delete-all-btn" title="Delete all">🗑 Delete all</button>
-              </div>
-            </div>
             <div class="connection-status" id="connection-status" aria-live="polite"></div>
             <div class="status" id="receive-action-status" role="status"></div>
-            <input
-              type="search"
-              class="notifications-search"
-              id="notifications-search"
-              placeholder="Search messages"
-              aria-label="Search messages"
-            />
+            <label class="notifications-search-label" for="notifications-search">Search messages</label>
+            <input type="search" class="notifications-search" id="notifications-search" placeholder="Search inbox" />
             <div class="notifications-list" id="notifications-list">
               <div class="notifications-loading">Loading notifications...</div>
             </div>
