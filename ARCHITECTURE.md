@@ -154,9 +154,9 @@ The receiver writes its state to `storage.session` (`utils/status.ts`): connecti
 
 ## Sending
 
-The popup and extension tab share one inbox and Send form. The toolbar popup starts with the Send form collapsed above the inbox. The full-page view places it to the right of the inbox and stacks them in a narrow window. A specific inbox filter sets the send destination. All topics restores the independent choice stored in `lastTopic` or the draft. The filter stays local to each open view so a change in another view cannot redirect a send.
+The popup and extension tab share one inbox and Send form. Both place the Send form to the right of the inbox. The extension tab stacks the sections in a narrow window. A specific inbox filter sets the send destination. All topics restores the independent choice stored in `lastTopic` or the draft. The filter stays local to each open view so a change in another view cannot redirect a send.
 
-The toolbar view scrolls as a single region to keep the native popup at its intended width. Long messages show a short text excerpt. An inline disclosure contains the full rendered message and keeps its open state as the inbox refreshes.
+The toolbar popup uses a fixed content width of 768 px so the browser can size its action popup before the viewport is known. The toolbar view keeps overflow inside the popup to keep the native width stable.
 
 The Send form publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 

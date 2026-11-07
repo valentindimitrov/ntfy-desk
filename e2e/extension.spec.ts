@@ -82,8 +82,7 @@ test.describe('receiving', () => {
 
     const popup = await openPopup('?tab=receive');
     await expect(popup.locator('.notification-title')).toHaveText(['Disk full']);
-    await expect(popup.locator('#header-connection')).toHaveText('Connected');
-    await expect(popup.locator('#header-connection')).toHaveAttribute('aria-label', `Connected to ${new URL(ntfy.url).host}`);
+    await expect(popup.locator('header #header-connection')).toHaveText(`Connected to ${new URL(ntfy.url).host}`);
 
     // The poll after connecting must not notify it again
     await serviceWorker.evaluate(() => chrome.runtime.sendMessage({ action: 'sync' }).catch(() => {}));
@@ -167,73 +166,68 @@ test.describe('sending', () => {
     expect(ntfy.published).toMatchObject([{ topic: 'alerts', body: 'Check disk space' }]);
   });
 
-  test('keeps the inbox below a collapsible Send section in the toolbar popup', async ({ configure, openPopup, serviceWorker }) => {
+  test('keeps a draft in the toolbar composer when the inbox topic changes', async ({ configure, openPopup, serviceWorker }) => {
     await configure({ topics: 'alerts,backups' });
     await serviceWorker.evaluate(() => chrome.storage.local.set({ receiveTopicFilter: { topic: 'backups' } }));
     const popup = await openPopup();
-    await popup.setViewportSize({ width: 390, height: 620 });
-    const inbox = popup.getByRole('region', { name: 'Inbox' });
-    const disclosure = popup.locator('#send-section summary');
+    await popup.setViewportSize({ width: 768, height: 496 });
     const message = popup.getByLabel('Message', { exact: true });
-    await expect(inbox).toBeVisible();
-    await expect(message).toBeHidden();
-    await disclosure.press('Enter');
+    const destination = popup.getByLabel('Send to');
     await expect(message).toBeVisible();
-    await expect(popup.getByLabel('Send to')).toHaveValue('backups');
-    await expect(popup.getByLabel('Send to')).toBeDisabled();
-    expect((await message.boundingBox())!.y).toBeLessThan((await inbox.boundingBox())!.y);
+    await expect(destination).toHaveValue('backups');
+    await expect(destination).toBeDisabled();
 
     await message.fill('Keep this draft');
-    await disclosure.click();
-    await expect(message).toBeHidden();
-    await expect(inbox).toBeVisible();
-    await disclosure.click();
+    await popup.getByRole('button', { name: 'All topics', exact: true }).click();
+    await expect(destination).toBeEnabled();
     await expect(message).toHaveValue('Keep this draft');
   });
 
-  test('the native toolbar popup keeps its width with long topic names', async ({ configure, ntfy, openPopup, serviceWorker }) => {
+  test('the native toolbar popup opens wide with topics, inbox, and Send side by side', async ({
+    configure,
+    ntfy,
+    openPopup,
+    serviceWorker,
+  }) => {
     const topic = 'w'.repeat(64);
-    await configure({ topics: `${topic},nightly-backups,container-alerts,build-notifications` });
+    await configure({ topics: topic + ',nightly-backups,container-alerts,build-notifications' });
     for (let index = 0; index < 7; index++) {
-      ntfy.publish('container-alerts', { title: `Earlier alert ${index}`, message: 'Short alert.' });
+      ntfy.publish('container-alerts', { title: 'Earlier alert ' + index, message: 'Short alert.' });
     }
-    const message = 'Review this container update. '.repeat(20);
+    const message = 'Review this container update. '.repeat(20).trimEnd();
     ntfy.publish(topic, { title: 'Container update needed', message });
     const tab = await openPopup('?mode=page');
     await expect(tab.locator('.notification-title')).toHaveCount(8);
 
-    // Opening popup.html in a tab gives it a fixed viewport and bypasses native popup sizing.
+    // Opening popup.html in a tab bypasses native popup sizing.
     await serviceWorker.evaluate(() => chrome.action.openPopup());
     const measurePopup = () =>
       tab.evaluate(() => {
         const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
         if (!popup) return null;
-        const inboxHeading = popup.document.querySelector('#inbox-heading');
-        const topics = popup.document.querySelector('#topic-sidebar');
-        const details = popup.document.querySelector<HTMLDetailsElement>('.notification-details');
-        const heading = details?.closest('.notification-item')?.querySelector('.notification-header');
+        const { document } = popup;
+        const topics = document.querySelector('#topic-sidebar')?.getBoundingClientRect();
+        const inbox = document.querySelector('#notifications-section')?.getBoundingClientRect();
+        const composer = document.querySelector('.send-section')?.getBoundingClientRect();
+        const card = [...document.querySelectorAll('.notification-item')].find(
+          (item) => item.querySelector('.notification-title')?.textContent === 'Container update needed',
+        );
         return {
           width: popup.innerWidth,
-          documentFits: popup.document.documentElement.scrollWidth === popup.innerWidth,
-          headingFits: heading && heading.scrollWidth === heading.clientWidth,
-          topicsBelowHeading: inboxHeading && topics && inboxHeading.getBoundingClientRect().bottom <= topics.getBoundingClientRect().top,
-          topicsFit: topics && topics.scrollWidth === topics.clientWidth,
-          messageOpen: details?.open,
-          composerOpen: popup.document.querySelector<HTMLDetailsElement>('#send-section')?.open,
+          documentFits: document.documentElement.scrollWidth === popup.innerWidth,
+          sideBySide: Boolean(topics && inbox && composer && topics.right <= inbox.left && inbox.right <= composer.left),
+          connectionInHeader: document.querySelector('header #header-connection')?.textContent?.startsWith('Connected to '),
+          advancedOpen: document.querySelector('#advanced-options')?.classList.contains('visible'),
+          message: card?.querySelector('.notification-message')?.textContent,
         };
       });
-    const fitted = { width: 390, documentFits: true, headingFits: true, topicsBelowHeading: true, topicsFit: true };
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: false, messageOpen: false });
+    const fitted = { width: 768, documentFits: true, sideBySide: true, connectionInHeader: true, message };
+    await expect.poll(measurePopup).toEqual({ ...fitted, advancedOpen: false });
     await tab.evaluate(() => {
       const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
-      popup?.document.querySelector<HTMLElement>('#send-section summary')?.click();
+      popup?.document.querySelector<HTMLElement>('#advanced-toggle')?.click();
     });
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, messageOpen: false });
-    await tab.evaluate(() => {
-      const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
-      popup?.document.querySelector<HTMLElement>('.notification-details summary')?.click();
-    });
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, messageOpen: true });
+    await expect.poll(measurePopup).toEqual({ ...fitted, advancedOpen: true });
   });
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
@@ -281,7 +275,6 @@ test.describe('fallback server', () => {
     await expect.poll(async () => (await notified()).map((n) => n.title)).toEqual(['Via fallback']);
 
     const popup = await openPopup('?tab=receive');
-    await expect(popup.locator('#header-connection')).toHaveText('Fallback');
-    await expect(popup.locator('#header-connection')).toHaveAttribute('aria-label', `Connected to ${new URL(ntfy.url).host} (fallback)`);
+    await expect(popup.locator('header #header-connection')).toHaveText(`Connected to ${new URL(ntfy.url).host} (fallback)`);
   });
 });

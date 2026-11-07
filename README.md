@@ -11,8 +11,8 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Notification rules per topic**: all, from a priority up, or off; the messages are still listed.
 - **Clickable notifications**: a click opens the message's link, or the message in the extension's tab; `view` actions become buttons.
 - **Connection state**. The header shows the active connection. The inbox shows reconnects, unreachable servers, send-only topics and failed fetches.
-- **Received messages**. The inbox shows topic filters, unread counts, search and per-topic deletion sync. Long messages open inline from a short preview. Links open in a new tab, Markdown is rendered, and images hosted on your server can be previewed.
-- **Send and receive on one page**. Expand **Send notification** above the inbox in the toolbar popup. **Open in a tab** places the inbox beside the Send form. A specific inbox topic sets the send destination. Choose **All topics** to pick a different destination.
+- **Received messages**. The inbox shows full messages, topic filters, unread counts, search and per-topic deletion sync. Links open in a new tab, Markdown is rendered, and images hosted on your server can be previewed.
+- **Send and receive on one page**. The toolbar popup and extension tab put the inbox on the left and the Send form on the right. A specific inbox topic sets the send destination. Choose **All topics** to pick a different destination.
 - **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
 - **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.

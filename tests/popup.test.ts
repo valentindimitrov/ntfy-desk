@@ -82,9 +82,7 @@ describe('Inbox', () => {
     expect(sidebar).toEqual(['All topics2', 'alerts1', 'coolify1', 'inbox']);
     const titles = [...document.querySelectorAll('.notification-title')].map((title) => title.textContent);
     expect(titles).toEqual(['a1', 'c1', 'a2']); // newest first
-    expect($('.notification-time').textContent).toBe('2m ago');
-    expect($('.notification-topic').textContent).toBe('alerts · Unread');
-    expect($<HTMLDetailsElement>('#send-section').open).toBe(false);
+    expect($('.notification-time').textContent).toBe('alerts · 2m ago');
   });
 
   it('filters by topic, remembers it, and deletes within it only', async () => {

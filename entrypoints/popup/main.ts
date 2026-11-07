@@ -66,7 +66,7 @@ async function openInTab(): Promise<void> {
   window.close();
 }
 
-/** Right Ctrl + Enter sends while focus is in the open composer. */
+/** Right Ctrl + Enter sends while focus is in the composer. */
 function setupKeyboardShortcut(): void {
   let rightCtrlDown = false;
   document.addEventListener('keydown', (event) => {
@@ -76,7 +76,6 @@ function setupKeyboardShortcut(): void {
     if (
       event.key === 'Enter' &&
       rightCtrlDown &&
-      elements.sendSection.open &&
       elements.mainContent.contains(document.activeElement) &&
       elements.sendBtn.offsetParent !== null &&
       !elements.sendBtn.disabled
@@ -98,12 +97,8 @@ function setupKeyboardShortcut(): void {
 async function init(): Promise<void> {
   if (isPageMode) {
     document.body.classList.add('page-mode');
-    elements.mainView.prepend(elements.inbox);
-    elements.sendSection.open = true;
     elements.popoutBtn.style.display = 'none';
     elements.tabUrlBtn.style.display = '';
-  } else if (pageParams.get('tab') === 'send') {
-    elements.sendSection.open = true;
   }
 
   await loadSettings();
@@ -149,9 +144,6 @@ async function init(): Promise<void> {
   }
   applyPagePrefill();
 
-  if (!isPageMode && elements.sendSection.open) {
-    elements.messageInput.focus();
-  }
   requestSync();
 }
 

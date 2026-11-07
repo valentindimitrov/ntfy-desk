@@ -7,7 +7,7 @@
     <style>
       /* The toolbar popup sizes to its contents, so its width must not depend on its viewport. */
       body {
-        width: 390px;
+        width: 768px;
       }
 
       /* Opened in a browser tab: follow the tab's width, up to a readable maximum */
@@ -67,10 +67,38 @@
 
     <!-- Main View -->
     <div class="view active" id="main-view">
-      <details class="send-section" id="send-section">
-        <summary>Send notification</summary>
+      <section id="inbox" aria-labelledby="inbox-heading">
+        <div class="main-content receive-layout">
+          <!-- Topic list: All topics, then each configured topic -->
+          <nav class="topic-sidebar" id="topic-sidebar" aria-label="Topics"></nav>
+          <!-- Notifications Section -->
+          <div class="notifications-section" id="notifications-section">
+            <div class="section-header">
+              <h2 class="section-title" id="inbox-heading">Inbox</h2>
+              <div class="notifications-control-bar" id="notifications-control-bar" style="visibility: hidden">
+                <button class="control-btn" id="mark-all-read-btn" title="Mark all read">✓ Mark all read</button>
+                <button class="control-btn" id="delete-all-btn" title="Delete all">🗑 Delete all</button>
+              </div>
+            </div>
+            <div class="connection-status" id="connection-status" aria-live="polite"></div>
+            <div class="status" id="receive-action-status" role="status"></div>
+            <input
+              type="search"
+              class="notifications-search"
+              id="notifications-search"
+              placeholder="Search messages"
+              aria-label="Search messages"
+            />
+            <div class="notifications-list" id="notifications-list">
+              <div class="notifications-loading">Loading notifications...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="send-section" aria-labelledby="send-heading">
         <div class="main-content" id="main-content">
-          <h2 class="section-title send-heading">Send notification</h2>
+          <h2 class="section-title send-heading" id="send-heading">Send notification</h2>
           <!-- Topic Selection -->
           <div class="form-group">
             <label class="form-label" for="topic-select">Send to</label>
@@ -91,14 +119,14 @@
                 🔗 Use tab
               </button>
             </div>
-            <input type="text" class="form-input" id="title-input" placeholder="Optional" />
+            <input type="text" class="form-input" id="title-input" />
           </div>
 
           <!-- Message -->
           <div class="form-group">
             <label class="form-label" for="message-input">Message</label>
           </div>
-          <textarea class="form-textarea" id="message-input" rows="2" placeholder="Write a notification…"></textarea>
+          <textarea class="form-textarea" id="message-input" rows="3"></textarea>
 
           <!-- File Attachment -->
           <div class="file-section">
@@ -120,7 +148,7 @@
           <!-- Advanced Options Toggle -->
           <div class="advanced-toggle" id="advanced-toggle">
             <span class="arrow">▶</span>
-            More options
+            Advanced options
           </div>
 
           <!-- Advanced Options -->
@@ -158,30 +186,6 @@
 
           <!-- Status Message -->
           <div class="status" id="status"></div>
-        </div>
-      </details>
-
-      <section id="inbox" aria-labelledby="inbox-heading">
-        <div class="main-content receive-layout">
-          <div class="section-header inbox-header">
-            <h2 class="section-title" id="inbox-heading">Inbox</h2>
-            <div class="notifications-control-bar" id="notifications-control-bar" style="visibility: hidden">
-              <button class="control-btn" id="mark-all-read-btn" title="Mark all read">✓ Mark all read</button>
-              <button class="control-btn" id="delete-all-btn" title="Delete all">🗑 Delete all</button>
-            </div>
-          </div>
-          <!-- Topic list: All topics, then each configured topic -->
-          <nav class="topic-sidebar" id="topic-sidebar" aria-label="Topics"></nav>
-          <!-- Notifications Section -->
-          <div class="notifications-section" id="notifications-section">
-            <div class="connection-status" id="connection-status" aria-live="polite"></div>
-            <div class="status" id="receive-action-status" role="status"></div>
-            <label class="notifications-search-label" for="notifications-search">Search messages</label>
-            <input type="search" class="notifications-search" id="notifications-search" placeholder="Search inbox" />
-            <div class="notifications-list" id="notifications-list">
-              <div class="notifications-loading">Loading notifications...</div>
-            </div>
-          </div>
         </div>
       </section>
     </div>

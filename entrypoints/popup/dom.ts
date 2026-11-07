@@ -13,8 +13,6 @@ export function getElements() {
     // Views
     mainView: byId('main-view'),
     mainContent: byId('main-content'), // Send form
-    sendSection: byId<HTMLDetailsElement>('send-section'),
-    inbox: byId('inbox'),
     settingsView: byId('settings-view'),
 
     // Header
