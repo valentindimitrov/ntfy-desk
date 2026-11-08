@@ -498,7 +498,7 @@ body:has(#settings-view.active) .header-connection {
    ======================================== */
 
 .file-section {
-  margin-bottom: 8px;
+  margin-bottom: 11px;
   margin-top: 10px;
 }
 
@@ -993,7 +993,7 @@ body.filepicker-page {
 }
 
 .notifications-list {
-  max-height: 420px;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1223,6 +1223,7 @@ body:not(.page-mode) :is(#main-view, #settings-view) {
 
 body:not(.page-mode) #main-view.active {
   height: calc(600px - var(--desk-header-height));
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .send-section {
@@ -1281,7 +1282,20 @@ body:not(.page-mode) #main-view.active {
 
 .send-section > .main-content {
   padding-top: 0;
+  padding-bottom: 4px;
   padding-inline: var(--pane-padding);
+}
+
+body:not(.page-mode) .send-section > .main-content {
+  padding-bottom: 0;
+}
+
+body:not(.page-mode) .send-footer {
+  padding-bottom: 8px;
+}
+
+.send-section > .main-content > .form-group {
+  margin-bottom: 11px;
 }
 
 .pane-divider {
@@ -1406,8 +1420,16 @@ body:not(.page-mode) #main-view.active {
 
 .receive-layout .notifications-section {
   flex: 1;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
   margin-inline-start: var(--inbox-start-inset);
+}
+
+.notifications-section > :not(.notifications-list) {
+  flex: none;
 }
 
 .topic-sidebar {
@@ -1468,8 +1490,8 @@ body:not(.page-mode) #main-view.active {
   text-align: center;
 }
 
-.page-mode .notifications-list {
-  max-height: max(250px, calc(100vh - 140px));
+.page-mode .receive-layout {
+  max-height: max(300px, calc(100vh - var(--desk-header-height)));
 }
 
 .page-mode .topic-sidebar {

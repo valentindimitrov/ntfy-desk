@@ -70,6 +70,7 @@ export function getElements() {
     heldBackBtn: byId<HTMLButtonElement>('held-back-btn'),
     includeUrlCheckbox: byId<HTMLInputElement>('include-url-checkbox'),
     freezeDividersCheckbox: byId<HTMLInputElement>('freeze-dividers-checkbox'),
+    rememberSendPanelCheckbox: byId<HTMLInputElement>('remember-send-panel-checkbox'),
     topicsContainer: byId('topics-container'),
     newTopicInput: byId<HTMLInputElement>('new-topic-input'),
     topicInputHint: byId('topic-input-hint'),

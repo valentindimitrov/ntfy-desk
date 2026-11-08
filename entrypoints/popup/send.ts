@@ -13,8 +13,47 @@ import {
 } from '@/utils/stored-files';
 import { withFallback } from '@/utils/servers';
 import { createZip } from '@/utils/zip';
-import { elements, inboxTopic, isConfigured, isPageMode, saveSync, state, type PageInfo } from './state';
-import { moveItem, setupDragAndDrop, showStatus } from './ui';
+import { elements, inboxTopic, isConfigured, isPageMode, saveLocal, saveSync, state, type PageInfo } from './state';
+import { moveItem, setupDragAndDrop, showSettingsStatus, showStatus } from './ui';
+
+export async function setupSendPanel(): Promise<void> {
+  const { sendSection, rememberSendPanelCheckbox: checkbox } = elements;
+  const [settings, layout] = await Promise.all([
+    browser.storage.sync.get('rememberSendPanel').catch((): Record<string, unknown> => ({})),
+    browser.storage.local.get('sendPanelOpen').catch((): Record<string, unknown> => ({})),
+  ]);
+  let remember = settings.rememberSendPanel === true;
+  checkbox.checked = remember;
+  sendSection.open = !remember || layout.sendPanelOpen !== false;
+  let lastOpen = sendSection.open;
+
+  sendSection.addEventListener('toggle', () => {
+    const open = sendSection.open;
+    if (open === lastOpen) return;
+    lastOpen = open;
+    if (remember) void saveLocal({ sendPanelOpen: open }).catch(() => {});
+  });
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.rememberSendPanel) {
+      remember = changes.rememberSendPanel.newValue === true;
+      checkbox.checked = remember;
+    }
+  });
+  checkbox.addEventListener('change', async () => {
+    const enabled = checkbox.checked;
+    checkbox.disabled = true;
+    try {
+      if (enabled) await saveLocal({ sendPanelOpen: sendSection.open });
+      await saveSync({ rememberSendPanel: enabled });
+      remember = enabled;
+    } catch {
+      showSettingsStatus('Failed to save settings', 'error');
+    } finally {
+      checkbox.checked = remember;
+      checkbox.disabled = false;
+    }
+  });
+}
 
 // ==================
 // Topic dropdown

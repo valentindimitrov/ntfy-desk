@@ -13,6 +13,7 @@ import {
   renderTags,
   restoreDraft,
   setupSend,
+  setupSendPanel,
   updatePriorityUI,
   updateTopicOptions,
 } from './send';
@@ -103,7 +104,7 @@ async function init(): Promise<void> {
     elements.tabUrlBtn.style.display = '';
   }
 
-  await setupPaneDividers();
+  await Promise.all([setupPaneDividers(), setupSendPanel()]);
   await loadSettings();
   state.page = await getPage();
   await loadReceiveFilter();

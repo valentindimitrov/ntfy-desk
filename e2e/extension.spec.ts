@@ -327,6 +327,49 @@ test.describe('sending', () => {
     await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 64));
   });
 
+  test('remembers the Send panel state only when enabled in Settings', async ({ configure, openPopup, serviceWorker }) => {
+    await configure({ topics: 'alerts' });
+    const popup = await openPopup();
+    const panel = popup.locator('#send-section');
+    const summary = panel.locator('summary');
+    const remember = popup.getByRole('checkbox', { name: 'Remember Send panel state' });
+    const message = popup.getByLabel('Message', { exact: true });
+    const destination = popup.getByLabel('Send to');
+
+    await expect(destination).toHaveValue('alerts');
+    await summary.press('Enter');
+    await expect(message).toBeHidden();
+    await popup.reload();
+    await expect(message).toBeVisible();
+    await expect(destination).toHaveValue('alerts');
+
+    await summary.press('Enter');
+    await popup.locator('#settings-btn').click();
+    await expect(remember).not.toBeChecked();
+    await remember.check();
+    await expect(remember).toBeEnabled();
+    await popup.reload();
+    await expect(message).toBeHidden();
+    await expect(panel).not.toHaveAttribute('open');
+
+    const tab = await openPopup('?mode=page');
+    const tabPanel = tab.locator('#send-section');
+    await expect(tabPanel).not.toHaveAttribute('open');
+    await tabPanel.locator('summary').press('Space');
+    await expect.poll(() => serviceWorker.evaluate(() => chrome.storage.local.get('sendPanelOpen'))).toEqual({ sendPanelOpen: true });
+    await popup.reload();
+    await expect(message).toBeVisible();
+    await expect(destination).toHaveValue('alerts');
+
+    await summary.press('Enter');
+    await popup.locator('#settings-btn').click();
+    await expect(remember).toBeChecked();
+    await remember.uncheck();
+    await expect(remember).toBeEnabled();
+    await popup.reload();
+    await expect(message).toBeVisible();
+  });
+
   test('freezes both dividers across views and restores resizing when unfrozen', async ({ configure, openPopup }) => {
     await configure({ topics: 'alerts,backups' });
     const popup = await openPopup();
@@ -400,6 +443,7 @@ test.describe('sending', () => {
         const mainView = document.querySelector('#main-view');
         const topics = document.querySelector('#topic-sidebar')?.getBoundingClientRect();
         const inbox = document.querySelector('#notifications-section')?.getBoundingClientRect();
+        const list = document.querySelector('#notifications-list');
         const topicDivider = document.querySelector('#topic-divider')?.getBoundingClientRect();
         const sendDivider = document.querySelector('#send-divider')?.getBoundingClientRect();
         const sendSection = document.querySelector<HTMLDetailsElement>('#send-section');
@@ -413,6 +457,12 @@ test.describe('sending', () => {
           documentFits:
             document.documentElement.scrollWidth === popup.innerWidth && document.documentElement.scrollHeight === popup.innerHeight,
           viewFits: Boolean(mainView && mainView.scrollWidth === mainView.clientWidth && mainView.scrollHeight === mainView.clientHeight),
+          scrollableInboxFillsPane: Boolean(
+            list &&
+            mainView &&
+            list.scrollHeight > list.clientHeight &&
+            mainView.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom === 12,
+          ),
           sideBySide: Boolean(topics && inbox && composer && topics.right <= inbox.left && inbox.right <= composer.left),
           inboxInsets:
             inbox && topicDivider && composer
@@ -433,6 +483,7 @@ test.describe('sending', () => {
       height: 600,
       documentFits: true,
       viewFits: true,
+      scrollableInboxFillsPane: true,
       sideBySide: true,
       inboxInsets: [12, 12],
       connectionInHeader: true,
@@ -463,7 +514,12 @@ test.describe('sending', () => {
       const topics = popup?.document.querySelectorAll<HTMLButtonElement>('#topic-sidebar button');
       [...(topics ?? [])].find((button) => button.textContent === 'nightly-backups')?.click();
     });
-    await expect.poll(measurePopup).toEqual({ ...resized, message: null, emptyInbox: 'No recent notifications' });
+    await expect.poll(measurePopup).toEqual({
+      ...resized,
+      message: null,
+      emptyInbox: 'No recent notifications',
+      scrollableInboxFillsPane: false,
+    });
   });
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
@@ -474,6 +530,7 @@ test.describe('sending', () => {
     await expect(sendDivider).toHaveAttribute('aria-valuenow', '260');
     await sendDivider.press('Home');
     await expect(sendDivider).toHaveAttribute('aria-valuenow', '240');
+    await popup.getByRole('button', { name: 'inbox', exact: true }).click();
     const priority = popup.getByRole('group', { name: 'Priority' });
     const buttons = priority.getByRole('button');
     await expect(buttons).toHaveText(['', '', '', '', '']);
@@ -491,6 +548,12 @@ test.describe('sending', () => {
     await expect(defaultPriority).toHaveAttribute('aria-pressed', 'false');
     const tags = popup.getByLabel('Tags', { exact: true });
     await tags.fill('laptop');
+    await expect(popup.locator('#tag-input-hint')).toBeVisible();
+    expect(
+      await popup
+        .locator('#main-view')
+        .evaluate((view) => view.scrollWidth === view.clientWidth && view.scrollHeight === view.clientHeight),
+    ).toBe(true);
     await tags.press('Enter');
     await popup.getByLabel('Send another').check();
     await popup.locator('#send-btn').click();
