@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { sendNotification } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
-import { isServerUp, pickServer, withFallback } from '@/utils/servers';
+import { isServerUp, pickServer } from '@/utils/servers';
 import { getReceiverStatus } from '@/utils/status';
 import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
@@ -34,10 +34,12 @@ describe('picking a server', () => {
   it('sends Basic authentication from the stored credentials to the fallback too', async () => {
     server.downHosts = ['ntfy.lan'];
     const credentials = { username: 'alice', password: 'secret' };
-    await withFallback({ ...config, accessToken: '', credentials }, (s) => sendNotification(s, 'inbox', { message: 'x' }));
+    const selected = await pickServer({ ...config, accessToken: '', credentials });
+    await sendNotification(selected, 'inbox', { message: 'x' });
     const basic = `Basic ${Buffer.from('alice:secret').toString('base64')}`;
     expect(server.requests.map((r) => [r.url, r.auth])).toEqual([
-      ['https://ntfy.lan/inbox', basic],
+      ['https://ntfy.lan/v1/health', null],
+      ['https://ntfy.example.com/v1/health', null],
       ['https://ntfy.example.com/inbox', basic],
     ]);
   });
@@ -45,24 +47,6 @@ describe('picking a server', () => {
   it('skips the health check without a fallback', async () => {
     await pickServer({ ...config, fallbackUrl: '' });
     expect(server.requests).toEqual([]);
-  });
-});
-
-describe('sending', () => {
-  it('retries on the fallback when the main server gives no response', async () => {
-    server.downHosts = ['ntfy.lan'];
-    await withFallback(config, (s) => sendNotification(s, 'inbox', { message: 'x' }));
-    expect(server.requests.map((r) => r.url)).toEqual(['https://ntfy.lan/inbox', 'https://ntfy.example.com/inbox']);
-  });
-
-  it("doesn't retry an HTTP error: the server answered", async () => {
-    server.pollStatus = 200;
-    const failing = async () => {
-      throw new Error('HTTP 403: Forbidden');
-    };
-    let calls = 0;
-    await expect(withFallback(config, () => (calls++, failing()))).rejects.toThrow('HTTP 403');
-    expect(calls).toBe(1);
   });
 });
 

@@ -50,6 +50,8 @@ export interface NtfyTestServer {
   published: PublishedRequest[];
   /** When set, an accepted publish waits before returning its response. */
   publishGate?: Promise<void>;
+  /** Accept the publish but close the connection before sending a response. */
+  dropPublishResponse?: boolean;
   /** Topic lists of the subscriptions (JSON streams) accepted so far */
   subscriptions: string[][];
   /** Publish as another client would: stored, and sent to open subscriptions */
@@ -193,7 +195,8 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
         title: decodeHeader(req.headers['x-title']),
         ...(priority ? { priority } : {}),
       });
-      send(res, 200, JSON.stringify(message));
+      if (server.dropPublishResponse) res.destroy();
+      else send(res, 200, JSON.stringify(message));
       return;
     }
 

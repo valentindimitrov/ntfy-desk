@@ -69,14 +69,13 @@ export function showDesktopNotification(message: NtfyMessage): void {
     iconUrl: browser.runtime.getURL('/icon/128.png'),
     title: (message.title || 'Notification') + (label ? ` [${label}]` : ''),
     message: message.content_type === 'text/markdown' ? markdownToText(message.message || '') : message.message || '',
-    contextMessage: `Topic: ${message.topic}`,
-    // High and urgent messages stay until dismissed
-    requireInteraction: (message.priority ?? 3) >= 4,
   };
-  const buttons = notificationButtons(message);
-  // Firefox doesn't support notification buttons (BROWSER, not FIREFOX: env flags are strings in tests)
-  if (buttons.length > 0 && import.meta.env.BROWSER !== 'firefox') {
-    options.buttons = buttons.map(({ title }) => ({ title }));
+  // Firefox rejects Chromium-only notification options.
+  if (import.meta.env.BROWSER !== 'firefox') {
+    options.contextMessage = `Topic: ${message.topic}`;
+    options.requireInteraction = (message.priority ?? 3) >= 4;
+    const buttons = notificationButtons(message);
+    if (buttons.length > 0) options.buttons = buttons.map(({ title }) => ({ title }));
   }
   void browser.notifications.create(message.id, options);
 }
@@ -94,7 +93,7 @@ function summaryOptions(summary: CatchUpSummary): Browser.notifications.Notifica
     iconUrl: browser.runtime.getURL('/icon/128.png'),
     title: `${summary.count} new notifications`,
     message: summary.topic ? `Open the Inbox for ${summary.topic}` : 'Open the Inbox',
-    requireInteraction: summary.urgent,
+    ...(import.meta.env.BROWSER !== 'firefox' && { requireInteraction: summary.urgent }),
   };
 }
 
@@ -117,7 +116,13 @@ export function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
         topic: previous.topic === current.topic ? current.topic : null,
         urgent: previous.urgent || current.urgent,
       };
-      if (await browser.notifications.update(CATCH_UP_ID, summaryOptions(combined))) {
+      const options = summaryOptions(combined);
+      // Firefox replaces an existing notification on create and has no update method.
+      const updated =
+        typeof browser.notifications.update === 'function'
+          ? await browser.notifications.update(CATCH_UP_ID, options)
+          : await browser.notifications.create(CATCH_UP_ID, options);
+      if (updated) {
         await browser.storage.session.set({ [CATCH_UP_KEY]: combined });
         return;
       }
@@ -180,9 +185,21 @@ export async function updateUnreadBadge(): Promise<void> {
   }
 }
 
-/** A short ✓ or ✗ after a context-menu send, then the unread count again */
-export function showSendResult(success: boolean): void {
-  void browser.action.setBadgeText({ text: success ? '✓' : '✗' });
-  void browser.action.setBadgeBackgroundColor({ color: success ? '#4CAF50' : '#f44336' });
-  setTimeout(() => void updateUnreadBadge(), 2000);
+let sendResultTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** A temporary result on the toolbar after a context-menu send. */
+export function showSendResult(result: boolean | 'uncertain'): void {
+  clearTimeout(sendResultTimer);
+  const uncertain = result === 'uncertain';
+  const name = browser.runtime.getManifest().name;
+  void browser.action.setTitle({ title: uncertain ? 'Delivery is uncertain. Check the Inbox before retrying.' : name });
+  void browser.action.setBadgeText({ text: uncertain ? '?' : result ? '✓' : '✗' });
+  void browser.action.setBadgeBackgroundColor({ color: uncertain ? '#ad6000' : result ? '#4CAF50' : '#f44336' });
+  sendResultTimer = setTimeout(
+    () => {
+      if (uncertain) void browser.action.setTitle({ title: name });
+      void updateUnreadBadge();
+    },
+    uncertain ? 6000 : 2000,
+  );
 }

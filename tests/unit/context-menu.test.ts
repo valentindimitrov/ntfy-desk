@@ -20,6 +20,7 @@ beforeEach(async () => {
   vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ name: 'ntfy Desk', version: '0', manifest_version: 3 });
   vi.spyOn(fakeBrowser.action, 'setBadgeText').mockResolvedValue();
   vi.spyOn(fakeBrowser.action, 'setBadgeBackgroundColor').mockResolvedValue();
+  vi.spyOn(fakeBrowser.action, 'setTitle').mockResolvedValue();
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init: RequestInit) => {
@@ -59,6 +60,23 @@ describe('menu', () => {
 });
 
 describe('sending', () => {
+  it('shows an uncertain result on the toolbar without retrying a context-menu publish', async () => {
+    await fakeBrowser.storage.sync.set({ topics: 'inbox', fallbackUrl: 'https://fallback.example' });
+    await updateContextMenu();
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/v1/health')) return Response.json({ healthy: true });
+      throw new TypeError('response connection lost');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await click(idFor('Text (inbox)'), { selectionText: 'quoted text' });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['https://ntfy.example/v1/health', 'https://ntfy.example/inbox']);
+    expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: '?' });
+    expect(fakeBrowser.action.setTitle).toHaveBeenLastCalledWith({ title: 'Delivery is uncertain. Check the Inbox before retrying.' });
+  });
+
   it('sends selected text with the page URL as title, to the chosen topic', async () => {
     await fakeBrowser.storage.sync.set({ topics: 'inbox,alerts' });
     await updateContextMenu();

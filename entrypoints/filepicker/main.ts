@@ -2,7 +2,7 @@
 // added to the stored attachments, which the popup shows.
 
 import '@/assets/styles.css';
-import { addStoredFiles, readFileAsDataUrl } from '@/utils/stored-files';
+import { addPickedFiles } from '@/utils/stored-files';
 
 function byId<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -27,9 +27,7 @@ async function processFiles(files: File[]): Promise<void> {
   dropZone.disabled = true;
   dropZone.style.opacity = '0.6';
   try {
-    // Read the whole selection before writing, so a read error doesn't append part of it
-    const newFiles = await Promise.all(files.map(readFileAsDataUrl));
-    await addStoredFiles(newFiles);
+    await addPickedFiles(files);
 
     status.textContent = `✓ ${files.length} file${files.length === 1 ? '' : 's'} attached!`;
     status.className = 'status visible success';

@@ -2,19 +2,18 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import { sendToBackground, type Draft } from '@/utils/messages';
-import { getConfig, isHttpUrl, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
+import { getConfig, isHttpUrl, PublishUncertainError, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
 import {
   STORED_FILES_KEY,
-  addStoredFiles,
+  addPickedFiles,
   decodeDataUrl,
   dispatchStoredUpload,
   formatFileSize,
-  readFileAsDataUrl,
   readStoredFiles,
   removeStoredFiles,
   type StoredFile,
 } from '@/utils/stored-files';
-import { withFallback } from '@/utils/servers';
+import { pickServer } from '@/utils/servers';
 import { createZip } from '@/utils/zip';
 import { elements, inboxTopic, isConfigured, isPageMode, saveLocal, saveSync, state, type PageInfo } from './state';
 import { clearStatus, moveItem, setupDragAndDrop, showSettingsStatus, showStatus } from './ui';
@@ -382,9 +381,7 @@ async function handleFileSelect(event: Event): Promise<void> {
   if (files.length === 0 || state.isSending) return;
 
   try {
-    // Read the whole selection before writing, so a read error doesn't append part of it
-    const records = await Promise.all(files.map(readFileAsDataUrl));
-    await addStoredFiles(records);
+    await addPickedFiles(files);
     await loadAttachments();
   } catch (error) {
     console.error('Error storing files:', error);
@@ -465,7 +462,11 @@ export async function send(): Promise<void> {
   state.isSending = true;
   elements.sendBtn.disabled = true;
   try {
-    await sendNow();
+    // The toolbar popup and extension tabs share attachments and a saved draft.
+    await navigator.locks.request('ntfy-publish', { ifAvailable: true }, async (lock) => {
+      if (lock) await sendNow();
+      else showStatus('A send is already in progress in another ntfy Desk window.', 'warning');
+    });
   } catch {
     showStatus('Could not prepare or finish the send. Check the inbox before retrying.', 'error');
   } finally {
@@ -517,7 +518,6 @@ async function sendNow(): Promise<void> {
 
   renderAttachments();
 
-  // The fallback server is tried when the main one gives no response
   // getConfig: the token and password only for servers approved on this device
   const servers = await getConfig();
   if (servers.apiUrl !== apiUrl || servers.fallbackUrl !== fallbackUrl || !servers.topics.includes(topic)) {
@@ -525,8 +525,9 @@ async function sendNow(): Promise<void> {
     return;
   }
   try {
+    const server = await pickServer(servers);
     if (files.length === 0) {
-      await withFallback(servers, (server) => sendNotification(server, topic, { message, title, priority, tags }));
+      await sendNotification(server, topic, { message, title, priority, tags });
       await finishSuccessfulSend(revision, 0);
       return;
     }
@@ -537,9 +538,7 @@ async function sendNow(): Promise<void> {
         const zip = await createZip(files.map((file) => ({ name: file.name, data: decodeDataUrl(file.data) })));
         const filename = getZipFilename();
         const sent = await dispatchStoredUpload(ids, () =>
-          withFallback(servers, (server) =>
-            sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
-          ),
+          sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
         );
         if (sent) {
           await finishSuccessfulSend(revision, files.length, 'ZIP sent!', !(await clearSentFiles(ids)));
@@ -559,7 +558,7 @@ async function sendNow(): Promise<void> {
       try {
         const data = decodeDataUrl(file.data) as BodyInit;
         const dispatched = await dispatchStoredUpload([file.id], () =>
-          withFallback(servers, (server) => sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags })),
+          sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags }),
         );
         if (!dispatched) continue;
       } catch (error) {
@@ -572,10 +571,11 @@ async function sendNow(): Promise<void> {
 
     if (failures.length > 0) {
       // Failed files stay attached and the form stays as it is, for a retry
-      const details = failures.map(({ file, error }) => `${file.name}: ${error.message}`).join('; ');
+      const details = failures.map(({ file, error }) => `${file.name}: ${error.message}`).join(' · ');
+      const uncertain = failures.some(({ error }) => error instanceof PublishUncertainError);
       showStatus(
-        `${sent} of ${files.length} attachment${files.length === 1 ? '' : 's'} sent. Failed: ${details}${filesNotCleared ? '. Some uploaded files could not be cleared.' : ''}`,
-        'error',
+        `${sent} of ${files.length} attachment${files.length === 1 ? '' : 's'} ${uncertain ? 'confirmed' : 'sent'}. ${details}${filesNotCleared ? ' Some uploaded files could not be cleared.' : ''}`,
+        uncertain ? 'warning' : 'error',
       );
       return;
     }
@@ -586,7 +586,8 @@ async function sendNow(): Promise<void> {
     }
     await finishSuccessfulSend(revision, sent, undefined, filesNotCleared);
   } catch (error) {
-    showStatus(`Error: ${(error as Error).message}`, 'error');
+    if (error instanceof PublishUncertainError) showStatus(error.message, 'warning');
+    else showStatus(`Error: ${(error as Error).message}`, 'error');
   }
 }
 

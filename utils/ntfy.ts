@@ -2,6 +2,7 @@
 // Used by the background script and the popup.
 
 import { browser } from 'wxt/browser';
+import { MAX_ATTACHMENT_BYTES } from './stored-files';
 
 /** Username and password for Basic authentication (used when there's no access token) */
 export interface Credentials {
@@ -485,6 +486,12 @@ export function isNoResponse(error: unknown): boolean {
   return error instanceof TypeError || (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'));
 }
 
+export class PublishUncertainError extends Error {
+  constructor() {
+    super('Delivery is uncertain. Check the Inbox before retrying.');
+  }
+}
+
 /**
  * No redirects with credentials: the browser drops the Authorization header on a redirect to another
  * origin, but keeps it on the same origin, where a redirect could reach any path (ntfy publishes on GET)
@@ -500,6 +507,9 @@ async function post(url: string, headers: Headers, body: BodyInit, timeout: numb
     body,
     redirect: redirectPolicy(headers),
     signal: AbortSignal.timeout(timeout),
+  }).catch((error: unknown) => {
+    if (isNoResponse(error)) throw new PublishUncertainError();
+    throw error;
   });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -550,19 +560,43 @@ export async function sendImageFromUrl(
     throw new Error(`Failed to fetch image: ${imageResponse.status}`);
   }
 
-  const imageBlob = await imageResponse.blob();
-  const imageBuffer = await imageBlob.arrayBuffer();
+  const body = imageResponse.body;
+  const type = imageResponse.headers.get('Content-Type') ?? '';
+  const tooLarge = () => new Error('Images must be 20 MiB or smaller.');
+  if (Number(imageResponse.headers.get('Content-Length')) > MAX_ATTACHMENT_BYTES) {
+    await body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
+  const parts: Uint8Array<ArrayBuffer>[] = [];
+  if (body) {
+    const reader = body.getReader();
+    let bytes = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > MAX_ATTACHMENT_BYTES) {
+          await reader.cancel().catch(() => {});
+          throw tooLarge();
+        }
+        parts.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
 
   let filename: string;
   try {
     const lastPart = new URL(imageUrl).pathname.split('/').pop();
     // Without an extension in the URL, take it from the MIME type
-    filename = lastPart && lastPart.includes('.') ? lastPart : `image.${imageBlob.type.split('/')[1] || 'png'}`;
+    filename = lastPart && lastPart.includes('.') ? lastPart : `image.${type.split(';')[0]?.split('/')[1] || 'png'}`;
   } catch {
     filename = 'image.png';
   }
 
-  return sendAttachment(server, topic, { data: imageBuffer, filename, message, title });
+  return sendAttachment(server, topic, { data: new Blob(parts, { type }), filename, message, title });
 }
 
 /** Whether the credentials can read a topic (ntfy's GET /<topic>/auth); null if the server couldn't be asked */

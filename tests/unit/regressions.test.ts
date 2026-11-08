@@ -5,10 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { MAX_HISTORY_PER_TOPIC, getHistoryState, getTopicSyncStates, recordMessage } from '@/utils/history';
 import { clearComposerOnStartup, handlePopupRequest } from '@/utils/messages';
-import { isNoResponse, sendAttachment, type NtfyMessage } from '@/utils/ntfy';
+import { isNoResponse, PublishUncertainError, sendAttachment, sendNotification, type NtfyMessage } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 import { parseTopicRules, ruleFor, storedTopicRules } from '@/utils/rules';
-import { withFallback } from '@/utils/servers';
 import { getReceiverStatus } from '@/utils/status';
 import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
@@ -195,7 +194,7 @@ describe('draft cleanup from several views', () => {
 });
 
 describe('#13 requests that never answer', () => {
-  it('gives every request a time limit, and retries a send on the fallback after one', async () => {
+  it('gives every request a time limit and distinguishes an unconfirmed publish', async () => {
     await configure('alerts');
     await newReceiver().sync();
     const fetchMock = vi.mocked(fetch);
@@ -203,11 +202,16 @@ describe('#13 requests that never answer', () => {
 
     const timeout = new DOMException('The operation timed out.', 'TimeoutError');
     expect(isNoResponse(timeout)).toBe(true);
-    const servers: string[] = [];
-    await withFallback({ apiUrl: 'https://main.example', fallbackUrl: 'https://fallback.example', accessToken: '' }, async (s) => {
-      servers.push(s.apiUrl);
-      if (s.apiUrl === 'https://main.example') throw timeout;
+    const publish = vi.fn(async () => {
+      throw timeout;
     });
-    expect(servers).toEqual(['https://main.example', 'https://fallback.example']);
+    vi.stubGlobal('fetch', publish);
+    await expect(sendNotification({ apiUrl: 'https://main.example', accessToken: '' }, 'alerts', {})).rejects.toBeInstanceOf(
+      PublishUncertainError,
+    );
+    expect(publish).toHaveBeenCalledExactlyOnceWith(
+      'https://main.example/alerts',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

@@ -287,6 +287,38 @@ test.describe('receiving', () => {
 });
 
 test.describe('sending', () => {
+  test('one queued attachment cannot be sent concurrently from two extension tabs', async ({
+    configure,
+    ntfy,
+    openPopup,
+    serviceWorker,
+  }) => {
+    await configure({ topics: 'alerts' });
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        storedFiles: [{ id: 'shared', name: 'shared.txt', type: 'text/plain', size: 6, data: 'data:text/plain;base64,c2hhcmVk' }],
+      }),
+    );
+    const first = await openPopup('?mode=page');
+    const second = await openPopup('?mode=page');
+    await expect(first.locator('#file-preview')).toContainText('shared.txt');
+    await expect(second.locator('#file-preview')).toContainText('shared.txt');
+    let release!: () => void;
+    ntfy.publishGate = new Promise((resolve) => (release = resolve));
+    try {
+      await first.getByRole('button', { name: 'Send', exact: true }).click();
+      await expect.poll(() => ntfy.published.map(({ body }) => body)).toEqual(['shared']);
+      await second.getByRole('button', { name: 'Send', exact: true }).click();
+      await expect(second.locator('#status')).toHaveText('A send is already in progress in another ntfy Desk window.');
+      expect(ntfy.published).toHaveLength(1);
+    } finally {
+      release();
+    }
+    await expect(first.locator('#status')).toHaveText('Notification sent!');
+    await expect(second.locator('#file-preview')).not.toContainText('shared.txt');
+    expect(ntfy.published).toHaveLength(1);
+  });
+
   test('approves a server for the stored token through Settings', async ({ configure, openPopup, ntfy, serviceWorker }) => {
     await configure({ topics: 'alerts', approveOrigins: false });
     const page = await openPopup();
@@ -901,6 +933,28 @@ test.describe('sending', () => {
 });
 
 test.describe('fallback server', () => {
+  test('keeps the draft when a publish lands but loses its response without reposting to the fallback', async ({
+    configure,
+    ntfy,
+    openPopup,
+  }) => {
+    const fallback = await startNtfyServer();
+    try {
+      ntfy.dropPublishResponse = true;
+      await configure({ topics: 'alerts', fallbackUrl: fallback.url });
+      const page = await openPopup('?mode=page');
+      const draft = 'Published before the response connection dropped';
+      await page.locator('#message-input').fill(draft);
+      await page.getByRole('button', { name: 'Send', exact: true }).click();
+      await expect(page.locator('#status')).toHaveText('Delivery is uncertain. Check the Inbox before retrying.');
+      expect(ntfy.messages).toContainEqual(expect.objectContaining({ message: draft, event: 'message' }));
+      expect(fallback.published).toEqual([]);
+      await expect(page.locator('#message-input')).toHaveValue(draft);
+    } finally {
+      await fallback.close();
+    }
+  });
+
   test('receives through the fallback while the main server is down', async ({ ntfy, configure, notified, openPopup }) => {
     // Nothing listens on port 9: the main server is down
     await configure({ apiUrl: 'http://127.0.0.1:9', fallbackUrl: ntfy.url, topics: 'alerts' });

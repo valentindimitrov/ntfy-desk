@@ -2,8 +2,8 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import { showSendResult } from './notifications';
-import { getConfig, isHttpUrl, isNtfyPathPart, sendImageFromUrl, sendNotification, type NtfyConfig } from './ntfy';
-import { withFallback } from './servers';
+import { getConfig, isHttpUrl, isNtfyPathPart, PublishUncertainError, sendImageFromUrl, sendNotification, type NtfyConfig } from './ntfy';
+import { pickServer } from './servers';
 
 const PARENT_MENU_ID = 'ntfy-parent';
 const SEND_SELECTION_ID = 'ntfy-send-selection';
@@ -132,27 +132,26 @@ export async function handleContextMenuClick(info: Browser.contextMenus.OnClickD
   }
 
   try {
+    const server = await pickServer(config);
     if (kind === SEND_SELECTION_ID) {
-      await withFallback(config, (server) =>
-        sendNotification(server, topic, { message: info.selectionText, title: pageUrlTitle(config, tab) }),
-      );
+      await sendNotification(server, topic, { message: info.selectionText, title: pageUrlTitle(config, tab) });
     } else if (kind === SEND_IMAGE_ID && isHttpUrl(info.srcUrl)) {
       const srcUrl = info.srcUrl;
-      await withFallback(config, (server) => sendImageFromUrl(server, topic, srcUrl, '', pageUrlTitle(config, tab)));
+      await sendImageFromUrl(server, topic, srcUrl, '', pageUrlTitle(config, tab));
     } else if (kind === SEND_LINK_ID && info.linkUrl) {
       // The link text is the title, so the page URL goes in the message
       const title = await getLinkText(tab, info.linkUrl);
       const pageUrl = pageUrlTitle(config, tab);
       const message = pageUrl ? `${info.linkUrl}\n\nSent from: ${pageUrl}` : info.linkUrl;
-      await withFallback(config, (server) => sendNotification(server, topic, { message, title }));
+      await sendNotification(server, topic, { message, title });
     } else if (kind === SEND_TAB_ID) {
-      await withFallback(config, (server) => sendNotification(server, topic, { message: tab?.url, title: tab?.title }));
+      await sendNotification(server, topic, { message: tab?.url, title: tab?.title });
     } else {
       return;
     }
     showSendResult(true);
   } catch (error) {
     console.error('Failed to send notification:', error);
-    showSendResult(false);
+    showSendResult(error instanceof PublishUncertainError ? 'uncertain' : false);
   }
 }

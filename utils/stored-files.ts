@@ -13,6 +13,9 @@ export interface StoredFile {
 }
 
 export const STORED_FILES_KEY = 'storedFiles';
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_QUEUED_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const MAX_QUEUED_FILES = 100;
 
 export async function readStoredFiles(): Promise<StoredFile[]> {
   const result = await browser.storage.local.get([STORED_FILES_KEY]);
@@ -22,15 +25,27 @@ export async function readStoredFiles(): Promise<StoredFile[]> {
 }
 
 /** The popup, tab and file picker share storage. Keep the entire read/modify/write under one lock. */
-async function editStoredFiles(edit: (files: StoredFile[]) => StoredFile[]): Promise<void> {
+async function editStoredFiles(edit: (files: StoredFile[]) => StoredFile[] | Promise<StoredFile[]>): Promise<void> {
   return navigator.locks.request(STORED_FILES_KEY, async () => {
-    const files = edit(await readStoredFiles());
+    const files = await edit(await readStoredFiles());
     if (files.length === 0) await browser.storage.local.remove(STORED_FILES_KEY);
     else await browser.storage.local.set({ [STORED_FILES_KEY]: files });
   });
 }
 
-export const addStoredFiles = (files: StoredFile[]): Promise<void> => editStoredFiles((stored) => [...stored, ...files]);
+/** Validate the whole selection before reading it. Concurrent pickers share the same queue budget. */
+export function addPickedFiles(files: File[]): Promise<void> {
+  return editStoredFiles(async (stored) => {
+    if (stored.length + files.length > MAX_QUEUED_FILES) throw new Error(`Attach up to ${MAX_QUEUED_FILES} files at a time.`);
+    if (files.some(({ size }) => size > MAX_ATTACHMENT_BYTES)) throw new Error('Each attachment must be 20 MiB or smaller.');
+    const queued = stored.reduce((size, file) => size + file.size, 0);
+    const selected = files.reduce((size, file) => size + file.size, 0);
+    if (queued + selected > MAX_QUEUED_ATTACHMENT_BYTES) throw new Error('The attachment queue can hold up to 50 MiB.');
+    const added: StoredFile[] = [];
+    for (const file of files) added.push(await readFileAsDataUrl(file));
+    return [...stored, ...added];
+  });
+}
 
 export function removeStoredFiles(ids: string[]): Promise<void> {
   const removed = new Set(ids);
@@ -53,7 +68,7 @@ export async function dispatchStoredUpload(ids: string[], upload: () => Promise<
   return true;
 }
 
-export function readFileAsDataUrl(file: File): Promise<StoredFile> {
+function readFileAsDataUrl(file: File): Promise<StoredFile> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {

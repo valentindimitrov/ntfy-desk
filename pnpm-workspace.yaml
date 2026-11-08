@@ -1,2 +1,10 @@
 # Keep the lockfile readable by GitHub's dependency graph. CI still installs the version in package.json.
 pmOnFail: ignore
+
+# Keep the Firefox tooling on patched versions within the same major release.
+overrides:
+  '@devicefarmer/adbkit>node-forge': ^1.4.3
+  'ajv>fast-uri': ^3.1.9
+
+patchedDependencies:
+  deepmerge@4.3.1: patches/deepmerge@4.3.1.patch

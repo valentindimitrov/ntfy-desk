@@ -397,7 +397,7 @@ describe('Send form', () => {
     await vi.waitFor(() => expect(closed).toBe(true));
   });
 
-  it('sends the saved attachment on the fallback after a network failure on the main server', async () => {
+  it('selects the fallback before dispatching the saved attachment when the primary is unreachable', async () => {
     await fakeBrowser.storage.sync.set({ fallbackUrl: 'https://fallback.example' });
     await fakeBrowser.storage.local.set({
       storedFiles: [{ name: 'a.txt', type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' }],
@@ -405,14 +405,35 @@ describe('Send form', () => {
     await openPopup('?mode=page');
     const fetchMock = vi.fn(async (url: string) => {
       if (url.startsWith('https://ntfy.example/')) throw new TypeError('network error');
+      if (url.endsWith('/v1/health')) return Response.json({ healthy: true });
       return new Response('');
     });
     vi.stubGlobal('fetch', fetchMock);
     const { send } = await import('@/entrypoints/popup/send');
     await send();
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['https://ntfy.example/inbox', 'https://fallback.example/inbox']);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://ntfy.example/v1/health',
+      'https://fallback.example/v1/health',
+      'https://fallback.example/inbox',
+    ]);
     expect($('#status').textContent).toBe('Notification sent!');
     expect(await fakeBrowser.storage.local.get('storedFiles')).toEqual({});
+  });
+
+  it('preserves the draft and reports uncertainty after a lost publish response', async () => {
+    await fakeBrowser.storage.sync.set({ fallbackUrl: 'https://fallback.example' });
+    await openPopup('?mode=page');
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/v1/health')) return Response.json({ healthy: true });
+      throw new TypeError('response connection lost');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    $<HTMLTextAreaElement>('#message-input').value = 'Check before resending';
+    const { send } = await import('@/entrypoints/popup/send');
+    await send();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['https://ntfy.example/v1/health', 'https://ntfy.example/inbox']);
+    expect($('#status').textContent).toBe('Delivery is uncertain. Check the Inbox before retrying.');
+    expect((await fakeBrowser.storage.local.get('draftState')).draftState).toMatchObject({ message: 'Check before resending' });
   });
 
   it.each([

@@ -165,6 +165,40 @@ describe('desktop notifications', () => {
     expect(new URLSearchParams(new URL(url).hash.slice(1)).get('topic')).toBe('');
   });
 
+  it('recreates an active summary with its combined count when the browser has no update API', async () => {
+    const id = 'catch-up-summary';
+    const create = mockResolved(fakeBrowser.notifications, 'create', id);
+    mockResolved(fakeBrowser.notifications, 'getAll', { [id]: {} });
+    const original = Object.getOwnPropertyDescriptor(fakeBrowser.notifications, 'update')!;
+    Object.defineProperty(fakeBrowser.notifications, 'update', { configurable: true, value: undefined });
+    vi.stubEnv('BROWSER', 'firefox');
+    try {
+      await notifyCatchUp(Array.from({ length: 6 }, (_, index) => message(String(index))));
+      await notifyCatchUp([message('later', { topic: 'backups', priority: 4 })]);
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(create).toHaveBeenLastCalledWith(id, expect.objectContaining({ title: '7 new notifications', message: 'Open the Inbox' }));
+      expect(callsOf<[string, Options]>(create)[1]![1]).not.toHaveProperty('requireInteraction');
+    } finally {
+      vi.unstubAllEnvs();
+      Object.defineProperty(fakeBrowser.notifications, 'update', original);
+    }
+  });
+
+  it('omits Chromium-only options from Firefox individual notifications', () => {
+    const create = mockResolved(fakeBrowser.notifications, 'create', '');
+    vi.stubEnv('BROWSER', 'firefox');
+    try {
+      showDesktopNotification(message('firefox', { priority: 5, attachment: { url: 'https://ntfy.example/file/a.png' } }));
+      const [, options] = callsOf<[string, Options]>(create)[0]!;
+      expect(options.title).toBe('Notification [⇈ Urgent]');
+      expect(options).not.toHaveProperty('requireInteraction');
+      expect(options).not.toHaveProperty('contextMessage');
+      expect(options).not.toHaveProperty('buttons');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('opens only http(s) attachment URLs from the button', async () => {
     await fakeBrowser.storage.local.set({
       receivedNotifications: [

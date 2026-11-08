@@ -18,12 +18,17 @@ export function callsOf<A extends unknown[]>(spy: { mock: { calls: unknown[][] }
 /** Happy DOM has no Web Locks implementation. Preserve real per-name exclusivity in tests. */
 export function mockWebLocks(): void {
   const queues = new Map<string, Promise<unknown>>();
-  const request = <T>(name: string, task: () => Promise<T>) => {
-    const result = (queues.get(name) ?? Promise.resolve()).then(task);
-    queues.set(
-      name,
-      result.catch(() => {}),
-    );
+  type Task<T> = (lock: Lock | null) => Promise<T>;
+  const request = <T>(name: string, options: LockOptions | Task<T>, task?: Task<T>) => {
+    const callback = typeof options === 'function' ? options : task!;
+    const previous = queues.get(name);
+    if (typeof options !== 'function' && options.ifAvailable && previous) return callback(null);
+    const result = (previous ?? Promise.resolve()).then(() => callback({ name, mode: 'exclusive' }));
+    const tail = result.catch(() => {});
+    queues.set(name, tail);
+    void tail.then(() => {
+      if (queues.get(name) === tail) queues.delete(name);
+    });
     return result;
   };
   vi.spyOn(navigator, 'locks', 'get').mockReturnValue({ request } as LockManager);
