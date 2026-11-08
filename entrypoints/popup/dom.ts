@@ -45,10 +45,6 @@ export function getElements() {
     priorityChips: byId('priority-chips'),
     themeChips: byId('theme-chips'),
 
-    // Advanced options
-    advancedToggle: byId('advanced-toggle'),
-    advancedOptions: byId('advanced-options'),
-
     // Actions
     sendBtn: byId<HTMLButtonElement>('send-btn'),
     sendAnotherCheckbox: byId<HTMLInputElement>('send-another-checkbox'),

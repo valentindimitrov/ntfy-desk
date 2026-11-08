@@ -286,7 +286,6 @@ function renderAttachments(): void {
   const { attachments, isSending } = state;
   elements.filePreview.replaceChildren();
   elements.filePreview.classList.toggle('visible', attachments.length > 0);
-  elements.mainContent.classList.toggle('has-multiple-attachments', attachments.length > 1);
   elements.fileBtn.textContent = attachments.length > 0 ? `📎 Attach files (${attachments.length})` : '📎 Attach files';
 
   attachments.forEach((file, index) => {
@@ -579,12 +578,6 @@ export function setupSend(): void {
     if (target === elements.tagsContainer) {
       elements.newTagInput.focus();
     }
-  });
-
-  elements.advancedToggle.addEventListener('click', () => {
-    const isOpen = elements.advancedOptions.classList.toggle('visible');
-    elements.advancedToggle.classList.toggle('open', isOpen);
-    elements.mainContent.classList.toggle('advanced-open', isOpen);
   });
 
   elements.topicSelect.addEventListener('change', () => {

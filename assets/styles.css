@@ -510,19 +510,13 @@ body:has(#settings-view.active) .header-connection {
   flex-direction: column;
   gap: 6px;
   margin-top: 8px;
-  /* Reserve room for the ZIP toggle, advanced options, and send footer. */
+  /* Keep the attachment list scrollable alongside the other composer controls. */
   max-height: 100px;
   overflow-y: auto;
 }
 
 .file-preview.visible {
   display: flex;
-}
-
-/* The action popup cannot exceed 600px. Collapse file rows while the larger
-   advanced section is open; the attachment count remains on the button. */
-.main-content.advanced-open.has-multiple-attachments .file-preview.visible {
-  display: none;
 }
 
 .file-preview-item {
@@ -820,43 +814,6 @@ body:has(#settings-view.active) .header-connection {
 .status.warning {
   background-color: rgba(255, 152, 0, 0.15);
   color: #f57c00;
-}
-
-/* ========================================
-   Advanced Options
-   ======================================== */
-
-.advanced-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  user-select: none;
-  margin-bottom: 8px;
-  margin-top: 12px;
-}
-
-.advanced-toggle:hover {
-  color: var(--primary);
-}
-
-.advanced-toggle .arrow {
-  transition: transform 0.2s;
-}
-
-.advanced-toggle.open .arrow {
-  transform: rotate(90deg);
-}
-
-.advanced-options {
-  display: none;
-}
-
-.advanced-options.visible {
-  display: block;
 }
 
 /* ========================================

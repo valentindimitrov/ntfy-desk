@@ -281,25 +281,20 @@ test.describe('sending', () => {
           sideBySide: Boolean(topics && inbox && composer && topics.right <= inbox.left && inbox.right <= composer.left),
           connectionInHeader: document.querySelector('header #header-connection')?.textContent?.startsWith('Connected to '),
           composerOpen: sendSection?.open,
-          advancedOpen: document.querySelector('#advanced-options')?.classList.contains('visible'),
           message: card?.querySelector('.notification-message')?.textContent,
         };
       });
     const fitted = { width: 800, taller: true, documentFits: true, sideBySide: true, connectionInHeader: true, message };
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, advancedOpen: false });
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true });
     const toggleComposer = () =>
       tab.evaluate(() => {
         const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
         popup?.document.querySelector<HTMLElement>('#send-section summary')?.click();
       });
     await toggleComposer();
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: false, advancedOpen: false });
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: false });
     await toggleComposer();
-    await tab.evaluate(() => {
-      const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
-      popup?.document.querySelector<HTMLElement>('#advanced-toggle')?.click();
-    });
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, advancedOpen: true });
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true });
   });
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
@@ -307,10 +302,10 @@ test.describe('sending', () => {
     const popup = await openPopup('?mode=page');
     await popup.locator('#title-input').fill('Grüße');
     await popup.locator('#message-input').fill('Hello from the popup');
-    await popup.locator('#advanced-toggle').click();
-    await popup.locator('#priority-chips .chip[data-priority="4"]').click();
-    await popup.locator('#new-tag-input').fill('laptop');
-    await popup.locator('#new-tag-input').press('Enter');
+    await popup.getByRole('group', { name: 'Priority' }).getByRole('button', { name: 'High' }).click();
+    const tags = popup.getByLabel('Tags', { exact: true });
+    await tags.fill('laptop');
+    await tags.press('Enter');
     await popup.locator('#send-btn').click();
 
     await expect(popup.locator('#status')).toHaveText('Notification sent!');

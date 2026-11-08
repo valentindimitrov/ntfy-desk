@@ -150,33 +150,24 @@
             </label>
           </div>
 
-          <!-- Advanced Options Toggle -->
-          <div class="advanced-toggle" id="advanced-toggle">
-            <span class="arrow">▶</span>
-            Advanced options
+          <!-- Priority -->
+          <div class="form-group">
+            <div class="form-label" id="priority-label">Priority</div>
+            <div class="chips" id="priority-chips" role="group" aria-labelledby="priority-label">
+              <button class="chip" data-priority="1"><span class="p-icon">⇊</span>Min</button>
+              <button class="chip" data-priority="2"><span class="p-icon">↓</span>Low</button>
+              <button class="chip active" data-priority="3">Default</button>
+              <button class="chip" data-priority="4"><span class="p-icon">↑</span>High</button>
+              <button class="chip" data-priority="5"><span class="p-icon">⇈</span>Urgent</button>
+            </div>
           </div>
 
-          <!-- Advanced Options -->
-          <div class="advanced-options" id="advanced-options">
-            <!-- Priority -->
-            <div class="form-group">
-              <label class="form-label">Priority</label>
-              <div class="chips" id="priority-chips">
-                <button class="chip" data-priority="1"><span class="p-icon">⇊</span>Min</button>
-                <button class="chip" data-priority="2"><span class="p-icon">↓</span>Low</button>
-                <button class="chip active" data-priority="3">Default</button>
-                <button class="chip" data-priority="4"><span class="p-icon">↑</span>High</button>
-                <button class="chip" data-priority="5"><span class="p-icon">⇈</span>Urgent</button>
-              </div>
-            </div>
-
-            <!-- Tags -->
-            <div class="form-group">
-              <label class="form-label">Tags</label>
-              <div class="tags-container" id="tags-container">
-                <input type="text" class="tag-input-field" id="new-tag-input" />
-                <span class="tag-input-hint" id="tag-input-hint">Press enter to add tag</span>
-              </div>
+          <!-- Tags -->
+          <div class="form-group">
+            <label class="form-label" for="new-tag-input">Tags</label>
+            <div class="tags-container" id="tags-container">
+              <input type="text" class="tag-input-field" id="new-tag-input" />
+              <span class="tag-input-hint" id="tag-input-hint">Press enter to add tag</span>
             </div>
           </div>
 
