@@ -70,8 +70,9 @@ Code layout:
 - `entrypoints/popup/`: the popup (also the page opened in a tab): `send.ts`, `receive.ts`, `settings.ts`.
 - `entrypoints/filepicker/`: the window for picking files (the popup closes when a file dialog opens).
 - `utils/`: ntfy API (`ntfy.ts`), receiving (`receiver.ts`, `history.ts`), notifications and badge, context menu, ZIP.
-- `tests/`: Vitest tests, including a fake ntfy server that follows ntfy v2.29's `since=` semantics.
-- `e2e/`: Playwright tests and the test ntfy server; `scripts/browse.ts`: `pnpm browse`.
+- `tests/unit/` contains the Vitest suite and a fake ntfy server that follows ntfy v2.29's `since=` semantics.
+- `tests/e2e/` contains the Playwright suite and its HTTP test ntfy server.
+- `scripts/browse.ts` opens the extension in an interactive browser via `pnpm browse`.
 
 ## Credits
 
