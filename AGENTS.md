@@ -8,6 +8,7 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 - Lint and format come from Vite+ (`vp lint`, `vp fmt`; settings in `vite.config.ts`, used only by Vite+). Oxlint runs with type-aware rules and the full type check (`typeCheck`), strict with `noUncheckedIndexedAccess`; warnings fail. `pnpm compile` runs `tsc --noEmit` on its own. Markdown isn't formatted.
 - `pnpm build` / `pnpm build:firefox`: `.output/chrome-mv3`, `.output/firefox-mv3`.
 - `pnpm zip` / `pnpm zip:firefox`: the release zips.
+- WXT takes the extension version from `package.json`. Verify both generated manifests when changing it.
 - `pnpm lint:firefox`: builds for Firefox, then runs Mozilla's add-on checks (`web-ext lint`); CI runs them too.
 - CI (`.github/workflows/ci.yml`): read-only token by default, write access only in the release job; actions pinned to commit SHAs with the version in a comment, updated by Dependabot (`.github/dependabot.yml`). Keep new actions pinned the same way.
 - `pnpm dev`: opens a browser with hot reload. The owner loads `.output/chrome-mv3` unpacked in Vivaldi on the laptop.
@@ -18,7 +19,7 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 
 - Extension APIs: `import { browser, type Browser } from 'wxt/browser'`, promise style only (Firefox's `browser` has no callbacks). Types come from `@types/chrome`; methods with a callback overload need `mockResolved` from `tests/helpers/mock.ts` in tests.
 - Enums in the types (`contextMenus.ContextType`, `runtime.ContextType`) are passed as their string values, cast to the enum type: the enum objects don't exist at runtime in every browser.
-- Storage: settings in `storage.sync`; the access token and everything else (received messages, read and deleted ids, per-topic sync state, attachments, draft) in `storage.local`. The username and password (`serverCredentials`) are local too. Never put the token or credentials in `storage.sync`: server URLs are synced without user:password@, and `getConfig` moves credentials found in a synced URL to `storage.local`. Never put credentials in a tab's address ("Open in ntfy" strips them). Strip credentials from a URL with the URL parser (`splitCredentials`), never by slicing the string.
+- Storage: preferences in `storage.sync`. History, topic sync state, credentials, drafts, attachments, the inbox filter, pane widths and the Send disclosure state stay in `storage.local`. Use separate pane width keys for the popup and tab. The synced divider freeze and Send remember preferences apply to both views. Keep credentials out of synced settings and tab addresses. Strip userinfo from parseable server URLs with the URL parser (`splitCredentials`). `getConfig` migrates credentials from legacy synced URLs.
 - The token and password are bound to the server origins approved on this device (`authOrigins` in `storage.local`): saving server URLs in this browser's settings approves them; a URL changed elsewhere (browser sync) gets no credentials until the user confirms in the settings. `getConfig` enforces it (`heldBackFrom`, empty token and credentials), so requests take their authentication from `getConfig`; `getStoredAuth` is for the settings form only. Authenticated requests refuse redirects (`redirect: 'error'`).
 - The background is the only writer of the received messages, the read and deleted ids and the sync state, through one queue (`serialized` in `utils/history.ts`). The popup sends read and delete actions as messages (`utils/messages.ts`); it never saves those lists itself.
 - Data keyed by topic is stored as a list (`[topic, value]` entries, or objects with a `topic` field) and read into a `Map`: topic names such as `__proto__` and `constructor` are valid in ntfy and break plain objects.
@@ -48,7 +49,10 @@ Open items; remove a row when it lands (the design goes to `ARCHITECTURE.md` if 
 | # | Improvement | Status |
 |---|---|---|
 | 7 | Run-test the Firefox build in Firefox | Open: `web-ext lint` passes; `web-ext run` can't attach while another Firefox instance is running. Close Firefox, then `pnpm dev:firefox` |
-| 8 | Releases: set up the release pipeline once testing (#7) is complete | TODO: no releases yet; don't tag or publish one. `ci.yml` already has a `release` job (on a `v*` tag, publishes the zips), untried |
+| 8 | Validate the release pipeline after the Firefox runtime check (#7) | CI builds both ZIPs. The untried `release` job publishes them on a `v*` tag. Keep version bumps separate from tagging and publishing. |
+| 9 | Validate server URLs before auto-saving them | An incomplete URL containing userinfo can reach `storage.sync`. Reproduced in Chromium with synthetic userinfo. |
+| 10 | Scope inbound deletion sync to the logical server | After switching to an unrelated server, a deletion can remove saved messages from the previous server if the topic and sequence match. Reproduced with two test servers. |
+| 11 | Preserve the last draft edit when the toolbar popup closes | Closing before the 250 ms save timer fires can discard the edit. Reproduced in Chromium. |
 
 ## Skills
 

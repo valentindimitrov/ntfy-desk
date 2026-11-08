@@ -1,6 +1,6 @@
 # Architecture
 
-How ntfy Desk works, and why it is built this way. User-facing docs are in [README.md](README.md); conventions and commands for working on the code are in [AGENTS.md](AGENTS.md).
+How ntfy Desk works. See [README.md](README.md) for installation and setup, and [AGENTS.md](AGENTS.md) for repository conventions and commands.
 
 ntfy Desk is a Manifest V3 browser extension for Chrome (and Chromium browsers) and Firefox, built with [WXT](https://wxt.dev) and TypeScript. It does two things against an [ntfy](https://ntfy.sh) server:
 
@@ -12,11 +12,11 @@ ntfy Desk is a Manifest V3 browser extension for Chrome (and Chromium browsers) 
 ```mermaid
 flowchart LR
   subgraph Browser
-    BG["Background service worker<br/>entrypoints/background.ts"]
+    BG["Background worker or event page<br/>entrypoints/background.ts"]
     POP["Popup / extension tab<br/>entrypoints/popup/"]
     FP["File picker window<br/>entrypoints/filepicker/"]
     SYNC[("storage.sync<br/>settings")]
-    LOCAL[("storage.local<br/>credentials, history,<br/>sync state, attachments")]
+    LOCAL[("storage.local<br/>credentials, history, sync state,<br/>draft, attachments, pane state")]
     SESSION[("storage.session<br/>connection status")]
   end
   NTFY["ntfy server<br/>(main, and an optional fallback URL)"]
@@ -25,25 +25,26 @@ flowchart LR
   POP -- "publish POST /topic" --> NTFY
   BG -- "context menu: publish" --> NTFY
   POP -- "runtime messages:<br/>sync, mark read, delete" --> BG
-  BG -- "only writer" --> LOCAL
+  BG -- "writes history and topic sync state" --> LOCAL
   BG -- "only writer" --> SESSION
-  POP -- "reads; writes settings" --> SYNC
-  POP -- reads --> LOCAL
+  POP -- "reads and writes settings" --> SYNC
+  POP -- "reads history; saves credentials, draft and layout" --> LOCAL
   FP -- "picked files" --> LOCAL
 ```
 
-The **background service worker** owns receiving: the subscription, the catch-up polls, the received-message history, desktop notifications, the unread badge and the context menu. The **popup** (also opened as a page in its own tab) sends messages, shows the received ones and holds the settings. The two talk through storage and through a few runtime messages.
+The background owns the subscription, catch-up polls, received-message history, desktop notifications, unread badge and context menu. It runs as a service worker on Chromium and as an event page on Firefox. The popup and extension tab share the same page for sending, browsing the inbox and editing settings. They communicate with the background through storage and runtime messages.
 
 ## Components
 
 | Path | Role |
 |---|---|
 | `entrypoints/background.ts` | Registers every listener at startup (MV3 requires it): storage changes, the one-minute alarm, the context menu, notification clicks, messages from the popup. Starts the receiver. |
-| `entrypoints/popup/` | The popup page contains the Send form (`send.ts`), inbox (`receive.ts`), and settings view (`settings.ts`). `state.ts`, `dom.ts`, and `ui.ts` support both layouts. With `?mode=page` it opens in the extension's own tab. |
+| `entrypoints/popup/` | Send form and its disclosure preference (`send.ts`), inbox (`receive.ts`), settings (`settings.ts`) and resizable dividers (`pane-dividers.ts`). `?mode=page` selects the browser-tab layout. |
 | `entrypoints/filepicker/` | A small window for picking files: the popup closes as soon as a file dialog opens, so files are picked here and stored for the popup. |
 | `utils/ntfy.ts` | The ntfy API: configuration (`getConfig`), authentication headers, publishing, polls, the subscription stream, message validation (`parseMessage`). |
 | `utils/receiver.ts` | Receiving: the subscription stream, the per-topic polls, reconnects, the service worker keepalive, the connection status. |
 | `utils/history.ts` | Received messages, read and deleted ids, per-topic sync state; one write queue. |
+| `utils/delete.ts`, `utils/sync-modes.ts` | Local and remote deletion requests and the per-topic opt-in to server deletion sync. |
 | `utils/servers.ts` | Main and fallback server: health check, picking one, retrying a send on the fallback. |
 | `utils/notifications.ts` | Desktop notifications (with `view` action buttons), notification clicks, the unread badge. |
 | `utils/rules.ts` | Per-topic notification rules: all, from a priority up, or off. |
@@ -58,10 +59,11 @@ The **background service worker** owns receiving: the subscription, the catch-up
 
 | Area | Keys | Why there |
 |---|---|---|
-| `storage.sync` | `apiUrl`, `fallbackUrl`, `topics`, `includeUrl`, `notifyRules`, `syncDeletionTopics`, `theme`, `priority`, `lastTags`, `lastTopic`, `sendAnotherEnabled`, `sendAsZipEnabled` | Settings follow the user to their other browsers. Never credentials. |
+| `storage.sync` | `apiUrl`, `fallbackUrl`, `topics`, `includeUrl`, `notifyRules`, `syncDeletionTopics`, `theme`, `priority`, `lastTags`, `lastTopic`, `sendAnotherEnabled`, `sendAsZipEnabled`, `freezeDividers`, `rememberSendPanel` | Settings follow the user to their other browsers. Credentials belong in local storage. |
 | `storage.local` | `accessToken`, `serverCredentials`, `authOrigins` | Credentials stay on this device. |
 | `storage.local` | `receivedNotifications`, `readMessageIds`, `deletedMessageIds`, `topicSync` | Received messages and the sync state, per device. |
 | `storage.local` | `storedFiles`, `draftState`, `receiveTopicFilter` | Attachments, draft and last inbox filter. `receiveTopicFilter` stores `{ topic }` for a specific topic or `null` for All topics. Legacy string values still load. |
+| `storage.local` | `popupTopicsPaneWidth`, `popupSendPaneWidth`, `topicsPaneWidth`, `sendPaneWidth`, `sendPanelOpen` | Pane widths are separate for the popup and tab. The remembered Send disclosure state is shared on this device. |
 | `storage.session` | `receiverStatus`, `sessionActive` | Gone after a browser restart: no stale connection state; a new session drops the old draft and attachments. |
 
 `getConfig()` in `utils/ntfy.ts` is the one place that assembles the configuration for requests. It:
@@ -148,7 +150,7 @@ The history keeps the newest 100 messages per topic by server time (so a busy to
 
 ### Notifications and the badge
 
-A message new to the history triggers `notifyNewMessage`: a desktop notification unless the topic's rule says otherwise (`utils/rules.ts`). High and urgent priorities stay until dismissed. A click opens the message's `click` URL, or the message in the extension's tab; `view` actions become buttons (Chrome only). `http` and `broadcast` actions are left out: they would make the browser send requests the publisher chose. The unread count on the toolbar icon is recomputed whenever the history or the read and deleted ids change.
+A message new to the history triggers `notifyNewMessage` when the topic's rule allows it (`utils/rules.ts`). High and urgent priorities set `requireInteraction`. A click opens the message's `click` URL or highlights the message in the extension's tab. Chromium notification buttons open HTTP(S) view actions first, then the attachment if space remains. The unread badge is recomputed when history or the read and deleted ids change.
 
 ### Connection status
 
@@ -158,7 +160,7 @@ The receiver writes its state to `storage.session` (`utils/status.ts`): connecti
 
 The popup and extension tab share one inbox and Send form. The Send form uses a native disclosure and collapses to a rail on the right, leaving the draft in place. A narrow extension tab stacks the sections and collapses Send in place. Send opens expanded by default. With the synced remember setting enabled, both views reopen in the last state saved in `storage.local`. A specific inbox filter sets the send destination. All topics restores the independent choice stored in `lastTopic` or the draft. The filter stays local to each open view so a change in another view cannot redirect a send.
 
-The toolbar popup requests the native 800 × 600 px size for the main view before the viewport is known. The full-page view fills the tab. Content scrolls below the header in both layouts, and opening Settings swaps the gear for a back arrow in the same slot. Both views have dividers that resize the Topics and Send panes while reserving space for the inbox. Each view saves its preferred widths separately in `storage.local`. The synced freeze setting disables resizing in both views. The topic settings table stages deletion modes and notification rules until Apply writes both to synced storage.
+The toolbar popup requests 800 × 600 px for the main view, and the full-page view fills the tab. In both layouts, content scrolls below the header and the inbox list uses the remaining height beneath its controls. Settings swaps the gear for a back arrow in the same slot. The dividers resize the Topics and Send panes while reserving space for the inbox. The synced freeze setting disables pointer and keyboard resizing. The topic settings table stages deletion modes and notification rules until Apply writes both to synced storage.
 
 The Send form publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 
@@ -175,7 +177,7 @@ The extension handles two kinds of untrusted input: the **server** (or anyone wh
 
 **Credentials**
 
-- The token, or a username and password, live in `storage.local` only; browser sync never copies them. Server URLs are synced without `user:password@`, which is stripped with the URL parser (`splitCredentials`), never by slicing the string, so the host can't change in the process.
+- Credentials entered in the access token or username and password fields live in `storage.local`. For a URL the browser can parse, `splitCredentials` removes userinfo using the URL parser and preserves the parsed host.
 - Credentials are bound to the server origins approved on this device (`authOrigins`). Saving server URLs in this browser's settings approves them. A URL changed elsewhere, such as browser sync from another browser, gets no credentials until the user confirms in the settings; `getConfig` enforces it (`heldBackFrom`), and every request takes its authentication from `getConfig`.
 - Credentials travel only in the `Authorization` header, never in a URL (see the next section). "Open in ntfy" opens the server without credentials in the address.
 - Authenticated requests refuse redirects (`redirect: 'error'`): the browser keeps the `Authorization` header on a same-origin redirect, which could point at any path, and ntfy publishes on GET.
@@ -243,3 +245,4 @@ The trade-offs accepted:
 - **Unit tests** (`tests/`, Vitest with WXT's fake browser): `tests/helpers/fake-ntfy.ts` is a fake ntfy server behind `fetch`, following ntfy v2.29's `since=` semantics, with `FakeStream` for subscriptions (accept, refuse, deliver, end; deliver resolves once the receiver has handled the line). Popup tests load the real `index.html` in happy-dom. `regressions.test.ts` and `security.test.ts` hold one test per review finding.
 - **End-to-end tests** (`e2e/`, Playwright Test): the built extension in Playwright's Chromium against `e2e/ntfy-server.ts`, a real HTTP server with the JSON stream. It accepts credentials only in the `Authorization` header, so the tests also prove they never go in a URL.
 - **Checks**: `pnpm check` (format, lint with type checking, unit tests), `pnpm test:e2e`, `pnpm lint:firefox` (Mozilla's add-on checks). CI runs all three.
+- **Build version**. WXT uses `package.json` as the source of the version in both manifests and ZIP filenames. CI attaches the ZIPs to workflow runs. The release job publishes the ZIPs for `v*` tags after the checks pass.

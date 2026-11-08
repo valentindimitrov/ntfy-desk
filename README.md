@@ -7,27 +7,27 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 
 ## Features
 
-- **Receive**: live messages over ntfy's JSON stream, as desktop notifications, with an unread count on the icon. Messages published while the browser was closed are fetched when it starts. High and urgent priority notifications stay until dismissed.
+- **Receive**. Live messages arrive over ntfy's JSON stream. The toolbar icon shows the unread count. When the browser starts, the extension catches up on messages still in the server's cache. High and urgent desktop notifications request to stay visible until dismissed.
 - **Notification rules per topic**: all, from a priority up, or off; the messages are still listed.
-- **Clickable notifications**: a click opens the message's link, or the message in the extension's tab; `view` actions become buttons.
+- **Clickable notifications**. A click opens the message's link or highlights the message in the extension tab. Chromium can show up to two buttons for view actions and attachments.
 - **Connection state**. The header shows the active connection. The inbox shows reconnects, unreachable servers, send-only topics and failed fetches.
 - **Received messages**. The inbox shows full messages, topic filters, unread counts, search and per-topic deletion sync. Links open in a new tab, Markdown is rendered, and images hosted on your server can be previewed.
-- **Send and receive on one page**. The toolbar popup and wide extension tab put the inbox on the left and the Send form on the right. Select **Send notification** to collapse it into a slim rail on the right. Enable **Remember collapsed/expanded state of section Send notification** in Settings to reopen it as you left it. A specific inbox topic sets the send destination. Choose **All topics** to pick a different destination.
+- **Send and receive on one page**. The toolbar popup and wide extension tab put the inbox on the left and the Send form on the right. Select **Send notification** to collapse it into a slim rail on the right. Enable **Remember collapsed/expanded state of section Send notification** in Settings to reopen it as you left it. The Send form follows the selected inbox topic. Choose **All topics** to pick a different destination.
 - **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
 - **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.
 - **Resizable panes**. Drag the dividers on either side of the inbox, or focus a divider and use the arrow keys. The toolbar popup and browser tab remember their pane widths separately. Select **Freeze dividers between sections All topics, Inbox, and Send notification** in Settings to lock them in both views.
 - **Open in a tab**. Open ntfy Desk in its own browser tab to use the full viewport.
-- **Keyboard**: Right Ctrl + Enter sends.
+- **Keyboard**. Right Ctrl + Enter sends when focus is in the expanded Send form.
 - **Dark mode**, and no tracking.
 
 ## Install
 
-ntfy Desk isn't in the extension stores yet.
+The current build version is **1.0.0**. Install from a local build or a CI build artifact.
 
-1. Download the latest `ntfy-desk-*-chrome.zip` (or `-firefox.zip`) from [Releases](https://github.com/valentindimitrov/ntfy-desk/releases), or build it yourself (below).
-2. Chrome/Vivaldi/Edge: unzip it, open the extensions page (`chrome://extensions`, `vivaldi://extensions`), turn on Developer mode, and **Load unpacked** the unzipped folder.
-   Firefox: open `about:debugging#/runtime/this-firefox` and **Load Temporary Add-on**, choosing the zip.
+1. From this checkout, run `pnpm install`. Then run `pnpm build` for Chromium or `pnpm zip:firefox` for Firefox. Successful CI runs also upload both ZIPs as the `ntfy-desk` artifact.
+2. **Chromium**. Open the browser's extensions page, turn on Developer mode, and choose **Load unpacked**. Select `.output/chrome-mv3` or the extracted Chromium ZIP folder.
+3. **Firefox**. Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select the Firefox ZIP. This installation lasts until Firefox restarts.
 
 ## Setup
 
@@ -35,11 +35,10 @@ In the settings (gear icon):
 
 1. **Server URL**: `https://ntfy.sh`, or your own server.
 2. **Fallback URL** (optional): another address of the same server, e.g. the public URL when the main one is a LAN address. Receiving switches to it while the main server doesn't answer (checked every minute) and back when it returns; sending retries on it when the main server gives no response.
-3. **Access Token**, or **Username and password**: if your server needs them. Both are stored on this device only and aren't copied to other browsers by browser sync. Credentials typed into a server URL (`https://user:password@host`) move to the username and password fields; the URL is synced without them.
-   They are used only with the server addresses saved in this browser's settings. If the server URL changes elsewhere (browser sync from another browser), the settings say so, and nothing is sent to the new address until you confirm it. With an `http://` address the settings warn you: the token or password would go over the network unencrypted.
+3. **Access Token**, or **Username and password**. Enter credentials in these fields so they are stored on this device only. The extension uses them only with server origins approved on this device. A server URL changed through browser sync requires confirmation before requests to it use your credentials. The settings warn if an `http://` connection would send credentials unencrypted.
 4. **Allow access to this server**: appears when a token or credentials are set. ntfy's CORS headers don't allow the `Authorization` header, so the extension needs permission for the server's site (both sites, with a fallback URL) to send authenticated requests.
 5. **Topics**: the topics to send to and receive from. The extension receives from the topics your credentials can read; a topic you can only send to is used for sending only.
-6. **Topic settings** lists message sync and desktop notification rules for each topic. Choose **Apply** to save both columns together. **Keep received messages** is the default and keeps deletes on this device. Enabling **Sync server deletions** checks saved messages against deletion events still available in ntfy's cache and follows future deletion events. Delete and Delete all also request deletion on the server when the topic allows writes. A denied or unconfirmed server request removes the local copy and shows a warning. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
+6. **Topic settings** lists message sync and desktop notification rules for each topic. Choose **Apply** to save both columns together. **Keep received messages** is the default and keeps deletes on this device. Enabling **Sync server deletions** checks saved messages against deletion events still available in ntfy's cache and follows future deletion events. Delete and Delete all also request deletion of the corresponding sequence on the server. If the server denies the request or the extension cannot confirm it, the local copy is removed and the inbox shows a warning. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
 7. **Fill in the current tab**: puts the page's title in the Title field and its URL in the Message field (from the context menu, the page URL becomes the title). In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
 
 ### Receiving and the browser
@@ -62,6 +61,7 @@ pnpm test:e2e       # build, then end-to-end tests (Playwright, Chromium)
 pnpm browse         # build, then open the extension in playwright-cli
 pnpm build          # .output/chrome-mv3, load it unpacked
 pnpm zip            # .output/ntfy-desk-<version>-chrome.zip (pnpm zip:firefox)
+pnpm lint:firefox   # build and run Mozilla's add-on checks
 ```
 
 Code layout:
