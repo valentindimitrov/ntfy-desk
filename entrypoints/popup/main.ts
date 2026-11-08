@@ -76,6 +76,7 @@ function setupKeyboardShortcut(): void {
     if (
       event.key === 'Enter' &&
       rightCtrlDown &&
+      elements.sendSection.open &&
       elements.mainContent.contains(document.activeElement) &&
       elements.sendBtn.offsetParent !== null &&
       !elements.sendBtn.disabled

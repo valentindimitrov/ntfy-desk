@@ -25,13 +25,21 @@ test.describe('receiving', () => {
       .toBe(deletion.time + 1);
     await expect(popup.locator('.notification-title')).toHaveCount(2);
 
+    const actionStyle = (button: Element) => {
+      const { backgroundColor, borderRadius, color, fontSize, fontWeight, padding } = getComputedStyle(button);
+      return { backgroundColor, borderRadius, color, fontSize, fontWeight, padding };
+    };
+    const sendStyle = await popup.locator('#send-btn').evaluate(actionStyle);
+    expect(await popup.locator('#file-btn').evaluate(actionStyle)).toEqual(sendStyle);
     await popup.locator('#settings-btn').click();
     const table = popup.getByRole('table', { name: 'Topic settings' });
     await expect(table.getByRole('columnheader')).toHaveText(['Topic', 'Message sync', 'Desktop notifications']);
     await table.getByLabel('Message sync for alerts').selectOption('sync');
     await table.getByLabel('Desktop notifications for alerts').selectOption('off');
     expect(await serviceWorker.evaluate(() => chrome.storage.sync.get('syncDeletionTopics'))).toEqual({});
-    await popup.getByRole('button', { name: 'Apply', exact: true }).click();
+    const apply = popup.getByRole('button', { name: 'Apply', exact: true });
+    await expect.poll(() => apply.evaluate(actionStyle)).toEqual(sendStyle);
+    await apply.click();
     await expect(popup.locator('#topic-settings-status')).toContainText('Applied');
     await popup.locator('#back-btn').click();
     await expect(popup.locator('.notification-title')).toHaveText(['Current alert']);
@@ -203,7 +211,11 @@ test.describe('sending', () => {
     expect(ntfy.published).toMatchObject([{ topic: 'alerts', body: 'Check disk space' }]);
   });
 
-  test('keeps a draft in the toolbar composer when the inbox topic changes', async ({ configure, openPopup, serviceWorker }) => {
+  test('keeps the toolbar draft when the composer collapses or the inbox topic changes', async ({
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
     await configure({ topics: 'alerts,backups' });
     await serviceWorker.evaluate(() => chrome.storage.local.set({ receiveTopicFilter: { topic: 'backups' } }));
     const popup = await openPopup();
@@ -215,6 +227,15 @@ test.describe('sending', () => {
     await expect(destination).toBeDisabled();
 
     await message.fill('Keep this draft');
+    const inbox = popup.getByRole('region', { name: 'Inbox' });
+    const openWidth = (await inbox.boundingBox())!.width;
+    const summary = popup.locator('#send-section summary');
+    await summary.press('Enter');
+    await expect(message).toBeHidden();
+    await expect(inbox).toBeVisible();
+    expect((await inbox.boundingBox())!.width).toBeGreaterThan(openWidth);
+    await summary.press('Space');
+    await expect(message).toBeVisible();
     await popup.getByRole('button', { name: 'All topics', exact: true }).click();
     await expect(destination).toBeEnabled();
     await expect(message).toHaveValue('Keep this draft');
@@ -245,7 +266,8 @@ test.describe('sending', () => {
         const { document } = popup;
         const topics = document.querySelector('#topic-sidebar')?.getBoundingClientRect();
         const inbox = document.querySelector('#notifications-section')?.getBoundingClientRect();
-        const composer = document.querySelector('.send-section')?.getBoundingClientRect();
+        const sendSection = document.querySelector<HTMLDetailsElement>('#send-section');
+        const composer = sendSection?.getBoundingClientRect();
         const card = [...document.querySelectorAll('.notification-item')].find(
           (item) => item.querySelector('.notification-title')?.textContent === 'Container update needed',
         );
@@ -255,17 +277,26 @@ test.describe('sending', () => {
           documentFits: document.documentElement.scrollWidth === popup.innerWidth,
           sideBySide: Boolean(topics && inbox && composer && topics.right <= inbox.left && inbox.right <= composer.left),
           connectionInHeader: document.querySelector('header #header-connection')?.textContent?.startsWith('Connected to '),
+          composerOpen: sendSection?.open,
           advancedOpen: document.querySelector('#advanced-options')?.classList.contains('visible'),
           message: card?.querySelector('.notification-message')?.textContent,
         };
       });
     const fitted = { width: 800, taller: true, documentFits: true, sideBySide: true, connectionInHeader: true, message };
-    await expect.poll(measurePopup).toEqual({ ...fitted, advancedOpen: false });
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, advancedOpen: false });
+    const toggleComposer = () =>
+      tab.evaluate(() => {
+        const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
+        popup?.document.querySelector<HTMLElement>('#send-section summary')?.click();
+      });
+    await toggleComposer();
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: false, advancedOpen: false });
+    await toggleComposer();
     await tab.evaluate(() => {
       const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
       popup?.document.querySelector<HTMLElement>('#advanced-toggle')?.click();
     });
-    await expect.poll(measurePopup).toEqual({ ...fitted, advancedOpen: true });
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, advancedOpen: true });
   });
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {

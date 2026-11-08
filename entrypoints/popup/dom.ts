@@ -12,6 +12,7 @@ export function getElements() {
   return {
     // Views
     mainView: byId('main-view'),
+    sendSection: byId<HTMLDetailsElement>('send-section'),
     mainContent: byId('main-content'), // Send form
     settingsView: byId('settings-view'),
 

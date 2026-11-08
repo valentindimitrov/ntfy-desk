@@ -505,30 +505,6 @@ body:has(#settings-view.active) .header-connection {
   display: none;
 }
 
-.file-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--primary);
-  background-color: transparent;
-  border: 1px dashed var(--primary);
-  border-radius: 20px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.file-btn:hover {
-  background-color: rgba(51, 133, 116, 0.1);
-}
-
-.file-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .file-preview {
   display: none;
   flex-direction: column;
@@ -781,31 +757,37 @@ body:has(#settings-view.active) .header-connection {
   cursor: pointer;
 }
 
-/* Send Button - Text style like ntfy.sh */
-.send-btn {
-  padding: 8px 16px;
+/* Actions in the composer and topic settings */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background-color: var(--primary-dark);
+  color: #fff;
+  font: inherit;
   font-size: 14px;
   font-weight: 500;
-  color: var(--primary);
-  background: transparent;
-  border: none;
-  border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.2s;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
-.send-btn:hover {
-  background-color: rgba(51, 133, 116, 0.1);
+.action-btn:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--primary-dark) 70%, var(--primary));
 }
 
-.send-btn:active {
-  background-color: rgba(51, 133, 116, 0.2);
+.action-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
-.send-btn:disabled {
-  opacity: 0.5;
+.action-btn:disabled {
+  border-color: var(--border-color);
+  background-color: var(--bg-input);
+  color: var(--text-secondary);
   cursor: not-allowed;
 }
 
@@ -1214,8 +1196,12 @@ body.filepicker-page {
 
 #main-view.active {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 32%);
+  grid-template-columns: minmax(0, 1fr) var(--send-column, minmax(280px, 32%));
   align-items: start;
+}
+
+#main-view:has(.send-section:not([open])) {
+  --send-column: max-content;
 }
 
 /* Keep the scrollbar inside the toolbar view so the browser can size the popup to its contents. */
@@ -1233,8 +1219,25 @@ body:not(.page-mode) #main-view.active {
   border-inline-start: 1px solid var(--border-color);
 }
 
+.send-summary {
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.send-summary:hover {
+  background-color: var(--bg-input);
+}
+
+.send-summary:focus-visible {
+  outline-offset: -2px;
+}
+
 .send-heading {
-  margin-bottom: 12px;
+  display: inline;
+}
+
+.send-section > .main-content {
+  padding-top: 0;
 }
 
 @media (max-width: 759px) {
@@ -1521,11 +1524,6 @@ body:not(.page-mode) #main-view.active {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
-}
-
-#apply-topic-settings:disabled {
-  cursor: default;
-  opacity: 0.5;
 }
 
 .topic-muted {

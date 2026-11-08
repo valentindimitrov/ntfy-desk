@@ -96,9 +96,9 @@
         </div>
       </section>
 
-      <section class="send-section" aria-labelledby="send-heading">
+      <details class="send-section" id="send-section" open>
+        <summary class="send-summary"><h2 class="send-heading">Send notification</h2></summary>
         <div class="main-content" id="main-content">
-          <h2 class="section-title send-heading" id="send-heading">Send notification</h2>
           <!-- Topic Selection -->
           <div class="form-group">
             <label class="form-label" for="topic-select">Send to</label>
@@ -132,7 +132,7 @@
           <div class="file-section">
             <div class="file-input-wrapper">
               <input type="file" class="file-input" id="file-input" multiple />
-              <button class="file-btn" id="file-btn">📎 Attach files</button>
+              <button type="button" class="action-btn" id="file-btn">📎 Attach files</button>
             </div>
             <div class="file-preview" id="file-preview" aria-live="polite"></div>
             <label class="zip-toggle" id="zip-toggle">
@@ -181,13 +181,13 @@
               <input type="checkbox" id="send-another-checkbox" />
               <label for="send-another-checkbox">Send another</label>
             </div>
-            <button class="send-btn" id="send-btn">Send</button>
+            <button type="button" class="action-btn" id="send-btn">Send</button>
           </div>
 
           <!-- Status Message -->
           <div class="status" id="status"></div>
         </div>
-      </section>
+      </details>
     </div>
 
     <!-- Settings View -->
@@ -264,7 +264,7 @@
           </p>
           <p class="form-hint">Messages below the desktop notification level still appear in the inbox.</p>
           <div class="topic-settings-footer">
-            <button type="button" class="chip" id="apply-topic-settings" disabled>Apply</button>
+            <button type="button" class="action-btn" id="apply-topic-settings" disabled>Apply</button>
             <span class="form-hint" id="topic-settings-status" role="status"></span>
           </div>
         </section>
