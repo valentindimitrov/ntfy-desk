@@ -366,7 +366,7 @@ test.describe('sending', () => {
     const popup = await openPopup();
     const panel = popup.locator('#send-section');
     const summary = panel.locator('summary');
-    const remember = popup.getByRole('checkbox', { name: 'Remember Send panel state' });
+    const remember = popup.getByRole('checkbox', { name: 'Remember collapsed/expanded state of section Send notification', exact: true });
     const message = popup.getByLabel('Message', { exact: true });
     const destination = popup.getByLabel('Send to');
 
@@ -413,7 +413,10 @@ test.describe('sending', () => {
     const topicsDivider = popup.getByRole('separator', { name: 'Resize topics' });
     const sendDivider = popup.getByRole('separator', { name: 'Resize Send' });
     const tabDividers = tab.getByRole('separator');
-    const freeze = popup.getByRole('checkbox', { name: 'Freeze section dividers' });
+    const freeze = popup.getByRole('checkbox', {
+      name: 'Freeze dividers between sections All topics, Inbox, and Send notification',
+      exact: true,
+    });
 
     await expect(tabDividers).toHaveCount(2);
     await expect(topicsDivider).toHaveAttribute('aria-valuenow', '120');
