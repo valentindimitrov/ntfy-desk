@@ -34,9 +34,10 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 ## Behaviour that is easy to break
 
 - ntfy rejects a multi-topic subscription with 403 if any topic isn't readable: the receiver checks `/<topic>/auth` and subscribes to readable topics only.
-- Each topic's sync state is a catch-up watermark (`since=<unix time>`, inclusive) plus the id and time of every message at or after it; never a global `since=<id>` (ids are global across topics, and an expired id replays the whole cache).
+- Each topic's sync state carries the configured main and fallback origins, a catch-up watermark (`since=<unix time>`, inclusive), and the id and time of every message at or after it. An unrelated server starts a fresh poll.
 - Only a completed poll moves the watermark, never a live message: a live message newer than messages missed while disconnected must not let the next poll skip them. The sync state and the history are written in one storage write.
-- Deletion sync is opt-in per topic (`syncDeletionTopics`). The background applies ntfy's `message_delete` events from the stream and poll by sequence ID and topic. Preserve replay order for events in the same second so a later publish can revive a sequence. Popup deletes on opted-in topics also request deletion from the configured server when the message's origin is known or can be verified. Use `getConfig` for credentials and let ntfy enforce write access.
+- Deletion sync is opt-in per topic (`syncDeletionTopics`). Match inbound deletions by server origin, topic and sequence ID. Treat configured main and fallback addresses as aliases. A cached publish can establish the provenance of a legacy row by matching ID, topic and time. Preserve replay order for events in the same second so a later publish can revive a sequence. Popup deletes on opted-in topics also request deletion from the configured server when the message's origin is known or can be verified. Use `getConfig` for credentials and let ntfy enforce write access.
+- Validate both URL fields before saving settings and split userinfo from valid URLs. Dispatch draft storage writes from the edit handler so closing the popup cannot cancel a pending save timer.
 - History is ordered by server time before the per-topic limit applies; a connect() that an await made stale (settings changed meanwhile) stops; a subscription refused before it opened discards the cached read-access check.
 - Image previews only load the server's attachment route (`/file/<name>`, no query): other same-origin URLs can be API calls (ntfy publishes on GET).
 - A topic's first sync is silent; afterwards a desktop notification is shown only for messages new to the history.
@@ -50,9 +51,6 @@ Open items; remove a row when it lands (the design goes to `ARCHITECTURE.md` if 
 |---|---|---|
 | 7 | Run-test the Firefox build in Firefox | Open: `web-ext lint` passes; `web-ext run` can't attach while another Firefox instance is running. Close Firefox, then `pnpm dev:firefox` |
 | 8 | Validate the release pipeline after the Firefox runtime check (#7) | CI builds both ZIPs. The untried `release` job publishes them on a `v*` tag. Keep version bumps separate from tagging and publishing. |
-| 9 | Validate server URLs before auto-saving them | An incomplete URL containing userinfo can reach `storage.sync`. Reproduced in Chromium with synthetic userinfo. |
-| 10 | Scope inbound deletion sync to the logical server | After switching to an unrelated server, a deletion can remove saved messages from the previous server if the topic and sequence match. Reproduced with two test servers. |
-| 11 | Preserve the last draft edit when the toolbar popup closes | Closing before the 250 ms save timer fires can discard the edit. Reproduced in Chromium. |
 
 ## Skills
 

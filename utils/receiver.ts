@@ -10,6 +10,8 @@ import {
   recordDeletionReplay,
   recordMessage,
   recordPoll,
+  topicStateForServer,
+  type HistorySource,
 } from './history';
 import { pickServer } from './servers';
 import { INITIAL_STATUS, writeReceiverStatus, type ReceiverStatus } from './status';
@@ -203,20 +205,20 @@ export function createReceiver(events: ReceiverEvents) {
   }
 
   /** A line of the stream: accept messages and deletions of the subscribed topics only. */
-  async function handleLine(line: string, topics: string[], serverOrigin: string): Promise<void> {
+  async function handleLine(line: string, topics: string[], source: HistorySource): Promise<void> {
     const message = parseMessageJson(line);
     if (!message || (message.event !== 'message' && message.event !== 'message_delete') || !topics.includes(message.topic)) {
       return;
     }
     try {
-      if (await recordMessage(message, serverOrigin)) events.onNewMessage(message);
+      if (await recordMessage(message, source)) events.onNewMessage(message);
     } catch (error) {
       console.error('Error processing a live message:', error);
     }
   }
 
   /** Subscribe; reconnects when the stream fails, ends or stays silent, until close() or a newer open() */
-  function open(config: NtfyConfig, key: string): void {
+  function open(config: NtfyConfig, key: string, origins: string[]): void {
     close();
     const current: Subscription = { controller: new AbortController(), key };
     subscription = current;
@@ -238,7 +240,7 @@ export function createReceiver(events: ReceiverEvents) {
           throw new Error(`HTTP ${response.status}`);
         }
         if (!isCurrent()) return;
-        const serverOrigin = new URL(response.url || config.apiUrl).origin;
+        const source = { origin: new URL(response.url || config.apiUrl).origin, origins };
 
         opened = true;
         reconnectDelay = INITIAL_RECONNECT_DELAY;
@@ -251,7 +253,7 @@ export function createReceiver(events: ReceiverEvents) {
         await readLines(
           response.body,
           async (line) => {
-            if (isCurrent()) await handleLine(line, config.topics, serverOrigin);
+            if (isCurrent()) await handleLine(line, config.topics, source);
           },
           () => resetIdleTimer(current),
         );
@@ -307,14 +309,15 @@ export function createReceiver(events: ReceiverEvents) {
       return;
     }
     const subscribed = { ...onServer, topics };
-    const key = JSON.stringify([subscribed.apiUrl, topics, buildAuthHeaderValue(subscribed)]);
+    const origins = serverOrigins(config.apiUrl, config.fallbackUrl);
+    const key = JSON.stringify([subscribed.apiUrl, origins, topics, buildAuthHeaderValue(subscribed)]);
     if (subscription?.key === key) {
       return;
     }
     if (subscription) {
       console.log('Configuration changed, subscribing again...');
     }
-    open(subscribed, key);
+    open(subscribed, key, origins);
   }
 
   async function runSync(): Promise<void> {
@@ -328,8 +331,9 @@ export function createReceiver(events: ReceiverEvents) {
     const config = { ...configured, apiUrl };
 
     const [states, topics, syncDeletions] = await Promise.all([getTopicSyncStates(), getReadableTopics(config), getSyncDeletionTopics()]);
-    const needsReplay = new Set(topics.filter((topic) => syncDeletions.has(topic) && !states.get(topic)?.deletionReplay?.complete));
     const origins = serverOrigins(configured.apiUrl, configured.fallbackUrl);
+    const topicState = (topic: string) => topicStateForServer(states.get(topic), origins);
+    const needsReplay = new Set(topics.filter((topic) => syncDeletions.has(topic) && !topicState(topic)?.deletionReplay?.complete));
     const oldest = new Map<string, number>();
     if (needsReplay.size > 0) {
       const { receivedNotifications } = await getHistoryState();
@@ -353,7 +357,7 @@ export function createReceiver(events: ReceiverEvents) {
     }
 
     for (const topic of topics) {
-      const state = states.get(topic);
+      const state = topicState(topic);
       if (needsReplay.has(topic)) {
         try {
           const time = oldest.get(topic);
@@ -362,10 +366,12 @@ export function createReceiver(events: ReceiverEvents) {
               ? { events: [], serverOrigin: new URL(apiUrl).origin }
               : await getNotifications(config, topic, Math.max(1, Math.floor(time)), { includeDeletions: true });
           if (!origins.includes(replay.serverOrigin)) throw new Error('Unexpected server origin');
-          await recordDeletionReplay(topic, replay.events, replay.serverOrigin, {
-            generation: state?.deletionReplay?.generation ?? 0,
-            origins,
-          });
+          await recordDeletionReplay(
+            topic,
+            replay.events,
+            { origin: replay.serverOrigin, origins },
+            state?.deletionReplay?.generation ?? 0,
+          );
         } catch (error) {
           // The next sync retries the replay. A large or failed replay must not stop regular catch-up.
           unreachable = reportSyncError(topic, error, 'deletion replay: ') || unreachable;
@@ -375,7 +381,7 @@ export function createReceiver(events: ReceiverEvents) {
       try {
         const since = state?.since ?? INITIAL_SYNC_SINCE;
         const { events: replay, serverOrigin } = await getNotifications(config, topic, since, { includeDeletions: true });
-        const messages = await recordPoll(topic, replay, serverOrigin);
+        const messages = await recordPoll(topic, replay, { origin: serverOrigin, origins });
         for (const message of messages) events.onNewMessage(message);
       } catch (error) {
         unreachable = reportSyncError(topic, error) || unreachable;
@@ -398,7 +404,8 @@ export function createReceiver(events: ReceiverEvents) {
   }
 
   async function replayDeletions(topics: string[]): Promise<void> {
-    await invalidateDeletionReplays(topics);
+    const config = await getConfig();
+    await invalidateDeletionReplays(topics, serverOrigins(config.apiUrl, config.fallbackUrl));
     // A poll already in flight may have captured the old mode. Follow it with a fresh one.
     await syncInFlight?.catch(() => {});
     await sync();

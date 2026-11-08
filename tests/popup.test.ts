@@ -419,6 +419,20 @@ describe('settings', () => {
     expect(JSON.stringify(await fakeBrowser.storage.sync.get(null))).not.toContain('cret');
   });
 
+  it.each([
+    ['#url-input', 'https://example-user:dummy-text@'],
+    ['#fallback-url-input', 'example-user:dummy-text@ntfy.example'],
+  ])('keeps an invalid URL edit in %s out of sync storage', async (selector, value) => {
+    await openPopup();
+    $('#settings-btn').click();
+    const before = await fakeBrowser.storage.sync.get(null);
+    const input = $<HTMLInputElement>(selector);
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    await vi.waitFor(() => expect($('#settings-status').textContent).toContain('Enter a complete'), { timeout: 3000 });
+    expect(await fakeBrowser.storage.sync.get(null)).toEqual(before);
+  });
+
   it('asks for server access with a username and password, without a token', async () => {
     await fakeBrowser.storage.local.set({ accessToken: '', serverCredentials: { username: 'alice', password: 'secret' } });
     mockResolved(fakeBrowser.permissions, 'contains', false);

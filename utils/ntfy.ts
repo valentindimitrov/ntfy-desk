@@ -315,8 +315,8 @@ export async function getConfig(): Promise<NtfyConfig> {
     browser.storage.sync.get(['apiUrl', 'fallbackUrl', 'topics', 'includeUrl']),
     browser.storage.local.get(['accessToken', CREDENTIALS_KEY, AUTH_ORIGINS_KEY]),
   ]);
-  const main = splitCredentials(typeof synced.apiUrl === 'string' ? synced.apiUrl : '');
-  const fallback = splitCredentials(typeof synced.fallbackUrl === 'string' ? synced.fallbackUrl : '');
+  const main = splitCredentials(isHttpUrl(synced.apiUrl) ? synced.apiUrl : '');
+  const fallback = splitCredentials(isHttpUrl(synced.fallbackUrl) ? synced.fallbackUrl : '');
   const stored = local[CREDENTIALS_KEY];
   const credentials = isCredentials(stored) ? stored : (main.credentials ?? fallback.credentials);
 
@@ -324,8 +324,13 @@ export async function getConfig(): Promise<NtfyConfig> {
     if (!isCredentials(stored)) {
       await setCredentials(credentials);
     }
-    await browser.storage.sync.set({ apiUrl: main.url, fallbackUrl: fallback.url });
   }
+  // Remove incomplete URL edits left by older versions, as well as userinfo on valid URLs.
+  const cleanedUrls = {
+    ...(synced.apiUrl !== undefined && synced.apiUrl !== main.url && { apiUrl: main.url }),
+    ...(synced.fallbackUrl !== undefined && synced.fallbackUrl !== fallback.url && { fallbackUrl: fallback.url }),
+  };
+  if (Object.keys(cleanedUrls).length > 0) await browser.storage.sync.set(cleanedUrls);
 
   const accessToken = typeof local.accessToken === 'string' ? local.accessToken : '';
   const origins = serverOrigins(main.url, fallback.url);

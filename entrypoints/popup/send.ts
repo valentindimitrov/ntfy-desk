@@ -104,6 +104,7 @@ export function updatePriorityUI(): void {
 }
 
 function saveTags(): void {
+  persistDraft();
   void saveSync({ lastTags: [...state.tags] });
 }
 
@@ -248,8 +249,6 @@ interface Draft {
   priority: number;
 }
 
-let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
 async function saveDraft(): Promise<void> {
   const draft: Draft = {
     // An automatically filled tab title or URL isn't part of the draft: the next popup fills in its own tab's
@@ -262,25 +261,9 @@ async function saveDraft(): Promise<void> {
   await browser.storage.local.set({ draftState: draft });
 }
 
-/** Keep the composer text if the popup closes before sending */
-function scheduleDraftSave(): void {
-  cancelScheduledDraftSave();
-  draftSaveTimer = setTimeout(() => {
-    draftSaveTimer = null;
-    saveDraft().catch((error) => console.error('Error saving draft:', error));
-  }, 250);
-}
-
-function cancelScheduledDraftSave(): void {
-  if (draftSaveTimer !== null) {
-    clearTimeout(draftSaveTimer);
-    draftSaveTimer = null;
-  }
-}
-
-async function flushDraftSave(): Promise<void> {
-  cancelScheduledDraftSave();
-  await saveDraft();
+/** Hand the edit to storage before the popup can close. */
+function persistDraft(): void {
+  void saveDraft().catch(() => showStatus('Failed to save draft', 'error'));
 }
 
 /** Restore the draft; it is kept until a message is sent */
@@ -390,7 +373,7 @@ async function setAttachments(files: StoredFile[]): Promise<void> {
 /** The file dialog would close the popup, so files are picked in a small window of their own */
 async function openFilePicker(): Promise<void> {
   if (state.isSending) return;
-  await flushDraftSave();
+  await saveDraft();
 
   const url = browser.runtime.getURL(`/filepicker.html?theme=${state.theme}`);
   const width = 450;
@@ -451,7 +434,6 @@ function getZipFilename(date = new Date()): string {
 }
 
 async function finishSuccessfulSend(attachmentCount: number, successMessage?: string): Promise<void> {
-  cancelScheduledDraftSave();
   elements.messageInput.value = '';
   elements.titleInput.value = '';
   state.autoTitle = '';
@@ -496,7 +478,7 @@ async function sendNow(): Promise<void> {
   const priority = state.selectedPriority;
 
   // Capture the latest values first, so a failed send can be retried
-  await flushDraftSave();
+  await saveDraft();
 
   let files: StoredFile[];
   try {
@@ -581,8 +563,8 @@ function openNtfyUrl(): void {
 }
 
 export function setupSend(): void {
-  elements.titleInput.addEventListener('input', scheduleDraftSave);
-  elements.messageInput.addEventListener('input', scheduleDraftSave);
+  elements.titleInput.addEventListener('input', persistDraft);
+  elements.messageInput.addEventListener('input', persistDraft);
 
   elements.sendBtn.addEventListener('click', () => void send());
   elements.openUrlBtn.addEventListener('click', openNtfyUrl);
@@ -603,6 +585,7 @@ export function setupSend(): void {
     if (!chip?.dataset.priority) return;
     state.selectedPriority = Number(chip.dataset.priority);
     updatePriorityUI();
+    persistDraft();
     void saveSync({ priority: state.selectedPriority });
   });
 
@@ -625,7 +608,7 @@ export function setupSend(): void {
     if (elements.topicSelect.disabled) return;
     state.lastTopic = elements.topicSelect.value;
     void saveSync({ lastTopic: state.lastTopic });
-    scheduleDraftSave();
+    persistDraft();
   });
 
   // The file picker window writes the attachments to storage

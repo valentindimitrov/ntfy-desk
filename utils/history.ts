@@ -25,6 +25,8 @@ export const MAX_DELETED_IDS = 1000;
 /** A topic's sync state */
 export interface TopicSyncState {
   topic: string;
+  /** Origins configured as aliases of the same ntfy server when this state was recorded. */
+  origins?: string[];
   /**
    * Catch-up watermark: the newest message time that a completed poll covered, and the next poll's
    * since= (inclusive). Only polls move it, never live messages: a live message newer than messages
@@ -74,6 +76,7 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
       if (state && typeof state.topic === 'string') {
         states.set(state.topic, {
           topic: state.topic,
+          origins: Array.isArray(state.origins) ? state.origins : undefined,
           since: state.since ?? null,
           seen: Array.isArray(state.seen) ? state.seen : [],
           synced: state.synced === true,
@@ -147,8 +150,13 @@ export function countUnread({ receivedNotifications, readMessageIds, deletedMess
   return receivedNotifications.filter((n) => !deletedMessageIds.includes(n.id) && !readMessageIds.includes(n.id)).length;
 }
 
-function newState(topic: string): TopicSyncState {
-  return { topic, since: null, seen: [], synced: false };
+function newState(topic: string, origins?: string[]): TopicSyncState {
+  return { topic, origins, since: null, seen: [], synced: false };
+}
+
+/** A different server needs a fresh poll. Older cursors without provenance are also reset. */
+export function topicStateForServer(state: TopicSyncState | undefined, origins: string[]): TopicSyncState | undefined {
+  return state?.origins?.some((origin) => origins.includes(origin)) ? state : undefined;
 }
 
 /** Seen entries that still matter: at or after the watermark (polls are inclusive), capped */
@@ -158,8 +166,8 @@ function pruneSeen(state: TopicSyncState): void {
   state.seen = kept.slice(-MAX_SEEN_PER_TOPIC);
 }
 
-interface DeletionReplay {
-  generation: number;
+export interface HistorySource {
+  origin: string;
   origins: string[];
 }
 
@@ -168,14 +176,19 @@ function recordEvents(
   topic: string,
   events: NtfyMessage[],
   poll: boolean,
-  serverOrigin?: string,
-  replay?: DeletionReplay,
+  source?: HistorySource,
+  replayGeneration?: number,
 ): Promise<NtfyMessage[]> {
   return serialized(async () => {
     const [states, history, syncDeletionTopics] = await Promise.all([getTopicSyncStates(), getHistoryState(), getSyncDeletionTopics()]);
-    const syncDeletions = syncDeletionTopics.has(topic);
-    const state = states.get(topic) ?? newState(topic);
-    if (replay && (!syncDeletions || replay.generation !== (state.deletionReplay?.generation ?? 0))) return [];
+    const serverOrigin = source?.origin;
+    const deletionOrigins = source?.origins.includes(source.origin) ? source.origins : [];
+    const syncDeletions = deletionOrigins.length > 0 && syncDeletionTopics.has(topic);
+    const previous = states.get(topic);
+    const state = (source ? topicStateForServer(previous, source.origins) : previous) ?? newState(topic, source?.origins);
+    const replay = replayGeneration !== undefined;
+    if (replay && (!syncDeletions || replayGeneration !== (state.deletionReplay?.generation ?? 0))) return [];
+    state.origins = source?.origins ?? state.origins;
     const accepted = events.filter(
       (event) => event.event === 'message' || (syncDeletions && event.sequence_id && event.event === 'message_delete'),
     );
@@ -206,11 +219,16 @@ function recordEvents(
         event.event === 'message' &&
         stored?.topic === topic &&
         stored.time === event.time &&
-        (!stored.serverOrigin || stored.serverOrigin === serverOrigin) &&
+        (!stored.serverOrigin || stored.serverOrigin === serverOrigin || deletionOrigins.includes(stored.serverOrigin)) &&
         ((!stored.sequence_id && event.sequence_id) || (!stored.serverOrigin && serverOrigin))
       ) {
         if (deletedByServer) messages.delete(event.id);
-        else messages.set(event.id, { ...stored, sequence_id: stored.sequence_id ?? event.sequence_id, serverOrigin });
+        else
+          messages.set(event.id, {
+            ...stored,
+            sequence_id: stored.sequence_id ?? event.sequence_id,
+            serverOrigin: stored.serverOrigin ?? serverOrigin,
+          });
         changed = true;
       }
 
@@ -232,7 +250,7 @@ function recordEvents(
         deletions.set(sequence, { time: event.time, id: event.id });
         for (const message of messages.values()) {
           if (message.topic !== topic || sequenceOf(message) !== sequence || message.time > event.time) continue;
-          if (replay && message.serverOrigin && !replay.origins.includes(message.serverOrigin)) continue;
+          if (!message.serverOrigin || !deletionOrigins.includes(message.serverOrigin)) continue;
           // For equal timestamps, a message later in this replay revives the sequence. It may
           // already be in history if the stream delivered it while the poll was in flight.
           if (message.time === event.time && (pollOrder.get(message.id) ?? -1) > index) continue;
@@ -250,7 +268,7 @@ function recordEvents(
     if (!poll && !recorded && !changed) return [];
     const notify = !poll || state.synced;
     if (replay) {
-      state.deletionReplay = { generation: replay.generation, complete: true };
+      state.deletionReplay = { generation: replayGeneration, complete: true };
     } else if (poll) {
       state.synced = true;
       const newestTime = ordered.at(-1)?.time;
@@ -276,30 +294,25 @@ function recordEvents(
 }
 
 /** Resolves to true if a live notification was new to the history. */
-export async function recordMessage(message: NtfyMessage, serverOrigin?: string): Promise<boolean> {
-  return (await recordEvents(message.topic, [message], false, serverOrigin)).length > 0;
+export async function recordMessage(message: NtfyMessage, source?: HistorySource): Promise<boolean> {
+  return (await recordEvents(message.topic, [message], false, source)).length > 0;
 }
 
 /** A completed poll advances the watermark and applies replayed messages and deletions together. */
-export function recordPoll(topic: string, events: NtfyMessage[], serverOrigin: string): Promise<NtfyMessage[]> {
-  return recordEvents(topic, events, true, serverOrigin);
+export function recordPoll(topic: string, events: NtfyMessage[], source: HistorySource): Promise<NtfyMessage[]> {
+  return recordEvents(topic, events, true, source);
 }
 
-export async function recordDeletionReplay(
-  topic: string,
-  events: NtfyMessage[],
-  serverOrigin: string,
-  replay: DeletionReplay,
-): Promise<void> {
-  await recordEvents(topic, events, true, serverOrigin, replay);
+export async function recordDeletionReplay(topic: string, events: NtfyMessage[], source: HistorySource, generation: number): Promise<void> {
+  await recordEvents(topic, events, true, source, generation);
 }
 
 /** Mark newly enabled topics pending, including when an older replay is still in flight. */
-export function invalidateDeletionReplays(topics: string[]): Promise<void> {
+export function invalidateDeletionReplays(topics: string[], origins: string[]): Promise<void> {
   return serialized(async () => {
     const states = await getTopicSyncStates();
     for (const topic of topics) {
-      const state = states.get(topic) ?? newState(topic);
+      const state = topicStateForServer(states.get(topic), origins) ?? newState(topic, origins);
       state.deletionReplay = { generation: (state.deletionReplay?.generation ?? 0) + 1, complete: false };
       states.set(topic, state);
     }

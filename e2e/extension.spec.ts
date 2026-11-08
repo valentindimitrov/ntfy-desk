@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import type { Browser } from 'wxt/browser';
 import { expect, test } from './fixtures';
+import { startNtfyServer } from './ntfy-server';
 
 async function dragDivider(page: Page, name: string, dx: number): Promise<void> {
   const { x, y, width } = (await page.getByRole('separator', { name }).boundingBox())!;
@@ -12,6 +13,36 @@ async function dragDivider(page: Page, name: string, dx: number): Promise<void> 
 }
 
 test.describe('receiving', () => {
+  test('keeps history from an unrelated server when the current server deletes the same sequence', async ({
+    ntfy,
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
+    const next = await startNtfyServer();
+    try {
+      await configure({ topics: 'alerts' });
+      await serviceWorker.evaluate(() => chrome.storage.sync.set({ syncDeletionTopics: ['alerts'] }));
+      const popup = await openPopup();
+      await expect.poll(() => ntfy.subscriptions.length).toBeGreaterThan(0);
+      const sequence_id = 'deployment';
+      ntfy.publish('alerts', { id: 'previous', sequence_id, title: 'Saved from the previous server' });
+      await expect(popup.locator('.notification-title')).toHaveText(['Saved from the previous server']);
+
+      await serviceWorker.evaluate(async (apiUrl) => {
+        await chrome.storage.local.set({ authOrigins: [new URL(apiUrl).origin] });
+        await chrome.storage.sync.set({ apiUrl });
+      }, next.url);
+      await expect.poll(() => next.subscriptions.length).toBeGreaterThan(0);
+      next.publish('alerts', { id: 'current', sequence_id, title: 'Saved from the current server' });
+      await expect(popup.locator('.notification-title')).toHaveCount(2);
+      next.deleteNotification('alerts', sequence_id);
+      await expect(popup.locator('.notification-title')).toHaveText(['Saved from the previous server']);
+    } finally {
+      await next.close();
+    }
+  });
+
   test('applies the topic table and replays cached deletions for existing messages', async ({
     ntfy,
     configure,
@@ -193,6 +224,22 @@ test.describe('receiving', () => {
 });
 
 test.describe('sending', () => {
+  test('restores draft input from a popup closed in the next task', async ({ configure, openPopup }) => {
+    await configure({ topics: 'alerts' });
+    const popup = await openPopup();
+    await expect(popup.getByLabel('Send to')).toHaveValue('alerts');
+    await Promise.all([
+      popup.waitForEvent('close'),
+      popup.locator('#message-input').evaluate((input: HTMLTextAreaElement) => {
+        input.value = 'Latest draft edit';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        setTimeout(() => window.close(), 0);
+      }),
+    ]);
+    const reopened = await openPopup();
+    await expect(reopened.getByLabel('Message', { exact: true })).toHaveValue('Latest draft edit');
+  });
+
   test('keeps the header in place and swaps Settings and Back in the same slot', async ({ configure, ntfy, openPopup }) => {
     await configure({ topics: Array.from({ length: 16 }, (_, index) => 'topic' + index).join(',') });
     for (const mode of ['', '?mode=page']) {

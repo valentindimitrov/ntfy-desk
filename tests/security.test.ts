@@ -156,7 +156,9 @@ describe('#4 a hostile server cannot fill storage', () => {
     const notified: string[] = [];
     const receiver = createReceiver({ onNewMessage: (m) => notified.push(m.id) });
     await receiver.sync(); // first, silent sync
-    await fakeBrowser.storage.local.set({ topicSync: [{ topic: 'a', since: 1, seen: [], synced: true }] });
+    await fakeBrowser.storage.local.set({
+      topicSync: [{ topic: 'a', origins: ['https://ntfy.example'], since: 1, seen: [], synced: true }],
+    });
     await fakeBrowser.storage.local.remove(['receivedNotifications']);
     await receiver.sync();
     expect(notified).toHaveLength(MAX_POLL_EVENTS);
@@ -192,6 +194,16 @@ describe('#7 a malformed escape in a synced URL', () => {
     expect(config.apiUrl).toBe('https://ntfy.example');
     expect(config.credentials).toEqual({ username: 'user', password: 'bad%' });
     expect(JSON.stringify(await fakeBrowser.storage.sync.get(null))).not.toContain('bad');
+  });
+
+  it('clears an incomplete URL saved by an older version and preserves valid settings', async () => {
+    await fakeBrowser.storage.sync.set({
+      apiUrl: 'https://example-user:dummy-text@',
+      fallbackUrl: 'https://fallback.example',
+      topics: 'a',
+    });
+    expect(await getConfig()).toMatchObject({ apiUrl: '', fallbackUrl: 'https://fallback.example', topics: ['a'] });
+    expect(await fakeBrowser.storage.sync.get(null)).toEqual({ apiUrl: '', fallbackUrl: 'https://fallback.example', topics: 'a' });
   });
 });
 

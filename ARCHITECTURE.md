@@ -69,7 +69,7 @@ The background owns the subscription, catch-up polls, received-message history, 
 `getConfig()` in `utils/ntfy.ts` is the one place that assembles the configuration for requests. It:
 
 - reads the server URLs and topics from `storage.sync` and the token and username/password from `storage.local`;
-- moves `user:password@` found in a synced URL (saved by an earlier version) to `storage.local`, and syncs the URL without it;
+- moves `user:password@` from valid legacy URLs into `storage.local` and clears invalid legacy URL values from synced storage;
 - withholds the credentials from server origins not approved on this device (see [Security model](#security-model)).
 
 Data keyed by topic is stored as lists (`[topic, value]` pairs, or objects with a `topic` field) and read into a `Map`, because topic names such as `__proto__` are valid in ntfy and break plain objects.
@@ -129,6 +129,7 @@ Live messages alone would miss everything published while the browser was closed
 
 Each topic has a sync state in `topicSync`:
 
+- `origins` identifies the main and fallback aliases. An unrelated server, or a legacy cursor without origins, starts with a fresh poll.
 - `since` holds the newest event time a completed poll covered. The next poll asks for `since=<watermark>` (inclusive). Live events leave the watermark in place so the next poll can catch up on earlier events.
 - `seen` tracks the id and time of events at or after the watermark to deduplicate the inclusive replay.
 - `serverDeletions` tracks up to 1000 recent deletion events by sequence ID, so overlapping live delivery and polls can't reinsert an older version.
@@ -138,7 +139,7 @@ Polls use time watermarks per topic, never one global `since=<message id>`: ids 
 
 Enabling deletion sync schedules a one-time replay from the oldest saved message for the topic on the configured server. The replay applies cached delete events and recovers sequence IDs for existing rows. Ordinary message delivery and its watermark use the regular catch-up poll. The pending replay survives worker restarts and retries after failures. A new generation invalidates a replay started before a mode change.
 
-Deletion sync is opt-in per topic. A `message_delete` event names a `sequence_id`. It removes matching messages in that topic up to the event's timestamp, using message IDs for notifications without sequence IDs. Polls can recover custom sequence IDs for older saved messages that the server replays. A poll applies events in time order, preserving the server's order within a second. This allows a republish after a deletion to revive a sequence and suppresses desktop alerts for messages already deleted in the same poll. Cache expiry leaves local history intact. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
+Deletion sync is opt-in per topic. A `message_delete` event removes matching messages from that server's main or fallback origin, in the same topic and sequence, up to the event timestamp. The receiver uses message IDs for notifications without sequence IDs. A cached publish that matches an older message's ID, topic and time can recover its origin and sequence before deletion. Deletion markers share the topic cursor's server scope. A poll applies events in time order, preserving the server's order within a second. This allows a republish after a deletion to revive a sequence and suppresses desktop alerts for messages already deleted in the same poll. Cache expiry leaves local history intact. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
 
 ### History and the single writer
 
@@ -164,7 +165,7 @@ The toolbar popup requests 800 × 600 px for the main view, and the full-page vi
 
 The Send form publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 
-- The popup closes when a file dialog opens, so files are picked in a separate window (`entrypoints/filepicker/`) and wait in `storage.local` as data URLs until sent. The draft is saved as you type. Both are dropped when a new browser session starts.
+- The popup closes when a file dialog opens, so files are picked in a separate window (`entrypoints/filepicker/`) and wait in `storage.local` as data URLs until sent. Each draft edit immediately dispatches a local storage write. Sending and opening the file picker await a draft write. Drafts and attachments are dropped when a new browser session starts.
 - With "Fill in the current tab" (`includeUrl`), the page's title goes in the Title field and its URL in the Message field; a field the user typed in is left alone, and filled values aren't saved in the draft. Context menu sends put the page URL in the title. In the extension's own tab, "Use tab" asks once for the optional `tabs` permission to find the page used last.
 - The right-click menu sends the page, the selection, a link or an image (`utils/context-menu.ts`). An image is fetched and sent as an attachment, which asks for access to that image's site.
 - Sending retries on the fallback URL when the main server gives no response (network error or timeout); an HTTP error is not retried, because the server answered.
@@ -177,7 +178,7 @@ The extension handles two kinds of untrusted input: the **server** (or anyone wh
 
 **Credentials**
 
-- Credentials entered in the access token or username and password fields live in `storage.local`. For a URL the browser can parse, `splitCredentials` removes userinfo using the URL parser and preserves the parsed host.
+- Credentials entered in the access token or username and password fields live in `storage.local`. The settings editor saves only valid HTTP(S) URLs or empty fields. It uses `splitCredentials` to move userinfo to the local credentials fields before syncing the URLs.
 - Credentials are bound to the server origins approved on this device (`authOrigins`). Saving server URLs in this browser's settings approves them. A URL changed elsewhere, such as browser sync from another browser, gets no credentials until the user confirms in the settings; `getConfig` enforces it (`heldBackFrom`), and every request takes its authentication from `getConfig`.
 - Credentials travel only in the `Authorization` header, never in a URL (see the next section). "Open in ntfy" opens the server without credentials in the address.
 - Authenticated requests refuse redirects (`redirect: 'error'`): the browser keeps the `Authorization` header on a same-origin redirect, which could point at any path, and ntfy publishes on GET.

@@ -5,6 +5,7 @@ import { browser } from 'wxt/browser';
 import {
   getConfig,
   hasAuthentication,
+  isHttpUrl,
   serverOrigins,
   setAccessToken,
   setAuthOrigins,
@@ -134,9 +135,12 @@ function requestServerAccess(): void {
  * user:password@ typed or pasted into a server URL goes into the username and password fields, and
  * the URL keeps the rest: URLs are synced, credentials stay on this device
  */
-function moveUrlCredentialsToFields(): { apiUrl: string; fallbackUrl: string } {
-  const main = splitCredentials(elements.urlInput.value.trim());
-  const fallback = splitCredentials(elements.fallbackUrlInput.value.trim());
+function moveUrlCredentialsToFields(): { apiUrl: string; fallbackUrl: string } | null {
+  const apiUrl = elements.urlInput.value.trim();
+  const fallbackUrl = elements.fallbackUrlInput.value.trim();
+  if ((apiUrl && !isHttpUrl(apiUrl)) || (fallbackUrl && !isHttpUrl(fallbackUrl))) return null;
+  const main = splitCredentials(apiUrl);
+  const fallback = splitCredentials(fallbackUrl);
   const fromUrl = main.credentials ?? fallback.credentials;
   if (fromUrl) {
     elements.usernameInput.value = fromUrl.username;
@@ -148,7 +152,12 @@ function moveUrlCredentialsToFields(): { apiUrl: string; fallbackUrl: string } {
 }
 
 async function saveSettings(pruneTopicSettings = false): Promise<void> {
-  const { apiUrl, fallbackUrl } = moveUrlCredentialsToFields();
+  const urls = moveUrlCredentialsToFields();
+  if (!urls) {
+    showSettingsStatus('Enter a complete http:// or https:// server URL, or leave the field empty', 'error');
+    return;
+  }
+  const { apiUrl, fallbackUrl } = urls;
   const accessToken = elements.tokenInput.value;
   const typed: Credentials = { username: elements.usernameInput.value, password: elements.passwordInput.value };
   const credentials = typed.username || typed.password ? typed : null;
