@@ -490,7 +490,7 @@ body:has(#settings-view.active) #back-btn {
    ======================================== */
 
 .file-section {
-  margin-bottom: 11px;
+  margin-bottom: 13px;
   margin-top: 10px;
 }
 
@@ -1295,8 +1295,13 @@ body:not(.page-mode) .send-footer {
   padding-bottom: 8px;
 }
 
+/* Fit the wider section gaps within the toolbar popup's height. */
+body:not(.page-mode) .send-section :is(.form-input, .form-select, .form-textarea) {
+  padding-bottom: 6px;
+}
+
 .send-section > .main-content > .form-group {
-  margin-bottom: 11px;
+  margin-bottom: 13px;
 }
 
 .pane-divider {
