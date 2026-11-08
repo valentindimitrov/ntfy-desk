@@ -234,6 +234,9 @@ test.describe('sending', () => {
     await expect(message).toBeHidden();
     await expect(inbox).toBeVisible();
     expect((await inbox.boundingBox())!.width).toBeGreaterThan(openWidth);
+    const rail = (await summary.boundingBox())!;
+    expect(rail.width).toBeLessThanOrEqual(44);
+    expect(rail.x + rail.width).toBeCloseTo(800);
     await summary.press('Space');
     await expect(message).toBeVisible();
     await popup.getByRole('button', { name: 'All topics', exact: true }).click();

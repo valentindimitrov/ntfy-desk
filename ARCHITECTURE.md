@@ -156,7 +156,7 @@ The receiver writes its state to `storage.session` (`utils/status.ts`): connecti
 
 ## Sending
 
-The popup and extension tab share one inbox and Send form. The Send form opens on the right and uses a native disclosure so collapsing it leaves the draft in place and gives the inbox more width. The extension tab stacks the sections in a narrow window. A specific inbox filter sets the send destination. All topics restores the independent choice stored in `lastTopic` or the draft. The filter stays local to each open view so a change in another view cannot redirect a send.
+The popup and extension tab share one inbox and Send form. The Send form uses a native disclosure and collapses to a rail on the right, leaving the draft in place. A narrow extension tab stacks the sections and collapses Send in place. A specific inbox filter sets the send destination. All topics restores the independent choice stored in `lastTopic` or the draft. The filter stays local to each open view so a change in another view cannot redirect a send.
 
 The toolbar popup uses a fixed content width of 800 px so the browser can size its action popup before the viewport is known. Its main and settings views scroll inside the popup. The full-page view uses up to 1280 px. The topic settings table stages deletion modes and notification rules until Apply writes both to synced storage.
 
