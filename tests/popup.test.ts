@@ -501,7 +501,7 @@ describe('settings', () => {
     await openPopup();
     $('#settings-btn').click();
     await flush();
-    const selects = [...document.querySelectorAll<HTMLSelectElement>('#notify-rules select')];
+    const selects = [...document.querySelectorAll<HTMLSelectElement>('#topic-settings-rows td:nth-child(3) select')];
     expect(selects.map((select) => select.getAttribute('aria-label'))).toEqual([
       'Desktop notifications for alerts',
       'Desktop notifications for coolify',
@@ -513,6 +513,9 @@ describe('settings', () => {
     selects[1]!.dispatchEvent(new Event('change'));
     selects[0]!.value = 'high';
     selects[0]!.dispatchEvent(new Event('change'));
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({});
+    $('#apply-topic-settings').click();
     await flush();
     expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({
       notifyRules: [
@@ -531,7 +534,7 @@ describe('settings', () => {
     await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['coolify'] });
     await openPopup();
     $('#settings-btn').click();
-    const selects = [...document.querySelectorAll<HTMLSelectElement>('#sync-modes select')];
+    const selects = [...document.querySelectorAll<HTMLSelectElement>('#topic-settings-rows td:nth-child(2) select')];
     expect(selects.map((select) => [select.getAttribute('aria-label'), select.value])).toEqual([
       ['Message sync for alerts', 'keep'],
       ['Message sync for coolify', 'sync'],
@@ -541,7 +544,10 @@ describe('settings', () => {
     selects[0]!.value = 'sync';
     selects[0]!.dispatchEvent(new Event('change'));
     await flush();
-    expect(await fakeBrowser.storage.sync.get('syncDeletionTopics')).toEqual({ syncDeletionTopics: ['alerts', 'coolify'] });
+    expect(await fakeBrowser.storage.sync.get('syncDeletionTopics')).toEqual({ syncDeletionTopics: ['coolify'] });
+    $('#apply-topic-settings').click();
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('syncDeletionTopics')).toEqual({ syncDeletionTopics: ['coolify', 'alerts'] });
 
     $('.topic-remove').click();
     await flush();

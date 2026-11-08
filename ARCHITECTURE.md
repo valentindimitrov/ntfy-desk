@@ -134,6 +134,8 @@ Each topic has a sync state in `topicSync`:
 
 Polls use time watermarks per topic, never one global `since=<message id>`: ids are global across topics, and an expired id makes ntfy replay its whole cache.
 
+Enabling deletion sync schedules a one-time replay from the oldest saved message for the topic on the configured server. The replay applies cached delete events and recovers sequence IDs for existing rows. Ordinary message delivery and its watermark use the regular catch-up poll. The pending replay survives worker restarts and retries after failures. A new generation invalidates a replay started before a mode change.
+
 Deletion sync is opt-in per topic. A `message_delete` event names a `sequence_id`. It removes matching messages in that topic up to the event's timestamp, using message IDs for notifications without sequence IDs. Polls can recover custom sequence IDs for older saved messages that the server replays. A poll applies events in time order, preserving the server's order within a second. This allows a republish after a deletion to revive a sequence and suppresses desktop alerts for messages already deleted in the same poll. Cache expiry leaves local history intact. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
 
 ### History and the single writer
@@ -156,7 +158,7 @@ The receiver writes its state to `storage.session` (`utils/status.ts`): connecti
 
 The popup and extension tab share one inbox and Send form. Both place the Send form to the right of the inbox. The extension tab stacks the sections in a narrow window. A specific inbox filter sets the send destination. All topics restores the independent choice stored in `lastTopic` or the draft. The filter stays local to each open view so a change in another view cannot redirect a send.
 
-The toolbar popup uses a fixed content width of 768 px so the browser can size its action popup before the viewport is known. The toolbar view keeps overflow inside the popup to keep the native width stable.
+The toolbar popup uses a fixed content width of 800 px so the browser can size its action popup before the viewport is known. Its main and settings views scroll inside the popup. The full-page view uses up to 1280 px. The topic settings table stages deletion modes and notification rules until Apply writes both to synced storage.
 
 The Send form publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 

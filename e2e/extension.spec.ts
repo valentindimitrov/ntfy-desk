@@ -2,6 +2,42 @@ import type { Browser } from 'wxt/browser';
 import { expect, test } from './fixtures';
 
 test.describe('receiving', () => {
+  test('applies the topic table and replays cached deletions for existing messages', async ({
+    ntfy,
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
+    await configure({ topics: 'alerts' });
+    const popup = await openPopup();
+    const old = ntfy.publish('alerts', { title: 'Old alert' });
+    await expect(popup.locator('.notification-title')).toHaveText('Old alert');
+    const deletion = ntfy.deleteNotification('alerts', old.id);
+    ntfy.publish('alerts', { title: 'Current alert', time: deletion.time + 1 });
+    await popup.evaluate(() => chrome.runtime.sendMessage({ action: 'sync' }));
+    await expect
+      .poll(() =>
+        serviceWorker.evaluate(async () => {
+          const { topicSync } = await chrome.storage.local.get('topicSync');
+          return (topicSync as { since: number }[] | undefined)?.[0]?.since;
+        }),
+      )
+      .toBe(deletion.time + 1);
+    await expect(popup.locator('.notification-title')).toHaveCount(2);
+
+    await popup.locator('#settings-btn').click();
+    const table = popup.getByRole('table', { name: 'Topic settings' });
+    await expect(table.getByRole('columnheader')).toHaveText(['Topic', 'Message sync', 'Desktop notifications']);
+    await table.getByLabel('Message sync for alerts').selectOption('sync');
+    await table.getByLabel('Desktop notifications for alerts').selectOption('off');
+    expect(await serviceWorker.evaluate(() => chrome.storage.sync.get('syncDeletionTopics'))).toEqual({});
+    await popup.getByRole('button', { name: 'Apply', exact: true }).click();
+    await expect(popup.locator('#topic-settings-status')).toContainText('Applied');
+    await popup.locator('#back-btn').click();
+    await expect(popup.locator('.notification-title')).toHaveText(['Current alert']);
+    await expect(popup.locator('.topic-muted')).toBeVisible();
+  });
+
   test('syncs server deletions only for topics opted in through settings', async ({ ntfy, configure, openPopup, serviceWorker }) => {
     await configure({ topics: 'alerts,backups' });
     await expect.poll(() => ntfy.subscriptions).toEqual([['alerts', 'backups']]);
@@ -13,6 +49,7 @@ test.describe('receiving', () => {
     await expect(alertsMode).toHaveValue('keep');
     await expect(backupsMode).toHaveValue('keep');
     await alertsMode.selectOption('sync');
+    await popup.getByRole('button', { name: 'Apply', exact: true }).click();
     await expect
       .poll(() => serviceWorker.evaluate(() => chrome.storage.sync.get('syncDeletionTopics')))
       .toEqual({ syncDeletionTopics: ['alerts'] });
@@ -170,7 +207,7 @@ test.describe('sending', () => {
     await configure({ topics: 'alerts,backups' });
     await serviceWorker.evaluate(() => chrome.storage.local.set({ receiveTopicFilter: { topic: 'backups' } }));
     const popup = await openPopup();
-    await popup.setViewportSize({ width: 768, height: 496 });
+    await popup.setViewportSize({ width: 800, height: 580 });
     const message = popup.getByLabel('Message', { exact: true });
     const destination = popup.getByLabel('Send to');
     await expect(message).toBeVisible();
@@ -214,6 +251,7 @@ test.describe('sending', () => {
         );
         return {
           width: popup.innerWidth,
+          taller: popup.innerHeight >= 550,
           documentFits: document.documentElement.scrollWidth === popup.innerWidth,
           sideBySide: Boolean(topics && inbox && composer && topics.right <= inbox.left && inbox.right <= composer.left),
           connectionInHeader: document.querySelector('header #header-connection')?.textContent?.startsWith('Connected to '),
@@ -221,7 +259,7 @@ test.describe('sending', () => {
           message: card?.querySelector('.notification-message')?.textContent,
         };
       });
-    const fitted = { width: 768, documentFits: true, sideBySide: true, connectionInHeader: true, message };
+    const fitted = { width: 800, taller: true, documentFits: true, sideBySide: true, connectionInHeader: true, message };
     await expect.poll(measurePopup).toEqual({ ...fitted, advancedOpen: false });
     await tab.evaluate(() => {
       const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];

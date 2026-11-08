@@ -1034,7 +1034,7 @@ body.filepicker-page {
 }
 
 .notifications-list {
-  max-height: 330px;
+  max-height: 420px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1219,9 +1219,13 @@ body.filepicker-page {
 }
 
 /* Keep the scrollbar inside the toolbar view so the browser can size the popup to its contents. */
-body:not(.page-mode) #main-view {
-  max-height: 450px;
+body:not(.page-mode) :is(#main-view, #settings-view) {
+  max-height: 535px;
   overflow-y: auto;
+}
+
+body:not(.page-mode) #main-view.active {
+  min-height: 510px;
 }
 
 .send-section {
@@ -1305,7 +1309,7 @@ body:not(.page-mode) #main-view {
   flex: 0 0 120px;
   flex-direction: column;
   gap: 2px;
-  max-height: 390px;
+  max-height: 480px;
   overflow-y: auto;
   padding-inline-end: 8px;
   border-inline-end: 1px solid var(--border-color);
@@ -1359,7 +1363,7 @@ body:not(.page-mode) #main-view {
 }
 
 .page-mode .notifications-list {
-  max-height: max(250px, calc(100vh - 170px));
+  max-height: max(250px, calc(100vh - 140px));
 }
 
 .page-mode .topic-sidebar {
@@ -1474,28 +1478,35 @@ body:not(.page-mode) #main-view {
    Settings: Per-topic options
    ======================================== */
 
-.topic-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.topic-settings-scroll {
+  overflow-x: auto;
 }
 
-.topic-setting {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.topic-settings {
+  width: 100%;
+  min-width: 490px;
+  border-collapse: collapse;
   font-size: 14px;
 }
 
-.topic-setting-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.topic-settings :is(th, td) {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: start;
+}
+
+.topic-settings thead {
+  color: var(--text-secondary);
+}
+
+.topic-settings th[scope='row'] {
+  width: 34%;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .topic-setting-select {
-  flex: none;
+  width: 100%;
   padding: 4px 6px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -1503,6 +1514,18 @@ body:not(.page-mode) #main-view {
   color: var(--text-primary);
   font: inherit;
   font-size: 13px;
+}
+
+.topic-settings-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+#apply-topic-settings:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .topic-muted {

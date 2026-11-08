@@ -2,7 +2,15 @@
 // missed while the stream was down or the browser closed.
 
 import { browser } from 'wxt/browser';
-import { getTopicSyncStates, pruneTopicSyncStates, recordMessage, recordPoll } from './history';
+import {
+  getHistoryState,
+  getTopicSyncStates,
+  invalidateDeletionReplays,
+  pruneTopicSyncStates,
+  recordDeletionReplay,
+  recordMessage,
+  recordPoll,
+} from './history';
 import { pickServer } from './servers';
 import { INITIAL_STATUS, writeReceiverStatus, type ReceiverStatus } from './status';
 import {
@@ -14,9 +22,11 @@ import {
   isNoResponse,
   openMessageStream,
   parseMessageJson,
+  serverOrigins,
   type NtfyConfig,
   type NtfyMessage,
 } from './ntfy';
+import { getSyncDeletionTopics } from './sync-modes';
 
 const INITIAL_RECONNECT_DELAY = 5000;
 const MAX_RECONNECT_DELAY = 60000;
@@ -317,29 +327,62 @@ export function createReceiver(events: ReceiverEvents) {
         : (await pickServer(configured)).apiUrl;
     const config = { ...configured, apiUrl };
 
-    const states = await getTopicSyncStates();
-    const topics = await getReadableTopics(config);
-    const syncErrors: [topic: string, error: string][] = [];
+    const [states, topics, syncDeletions] = await Promise.all([getTopicSyncStates(), getReadableTopics(config), getSyncDeletionTopics()]);
+    const needsReplay = new Set(topics.filter((topic) => syncDeletions.has(topic) && !states.get(topic)?.deletionReplay?.complete));
+    const origins = serverOrigins(configured.apiUrl, configured.fallbackUrl);
+    const oldest = new Map<string, number>();
+    if (needsReplay.size > 0) {
+      const { receivedNotifications } = await getHistoryState();
+      for (const message of receivedNotifications) {
+        if (needsReplay.has(message.topic) && (!message.serverOrigin || origins.includes(message.serverOrigin))) {
+          oldest.set(message.topic, Math.min(oldest.get(message.topic) ?? Infinity, message.time));
+        }
+      }
+    }
+    const syncErrors = new Map<string, string>();
     let unreachable = false;
 
+    function reportSyncError(topic: string, error: unknown, prefix = ''): boolean {
+      const message = error instanceof Error ? error.message : '';
+      const httpStatus = /^HTTP [1-5]\d\d\b/.exec(message)?.[0];
+      const noResponse = isNoResponse(error);
+      const detail = noResponse ? 'no response' : (httpStatus ?? (message === 'Response too large' ? message : 'request failed'));
+      console.error(`Failed to sync topic ${topic}:`, detail);
+      syncErrors.set(topic, prefix + detail);
+      return noResponse || httpStatus?.startsWith('HTTP 5') === true;
+    }
+
     for (const topic of topics) {
-      const since = states.get(topic)?.since ?? INITIAL_SYNC_SINCE;
+      const state = states.get(topic);
+      if (needsReplay.has(topic)) {
+        try {
+          const time = oldest.get(topic);
+          const replay =
+            time === undefined
+              ? { events: [], serverOrigin: new URL(apiUrl).origin }
+              : await getNotifications(config, topic, Math.max(1, Math.floor(time)), { includeDeletions: true });
+          if (!origins.includes(replay.serverOrigin)) throw new Error('Unexpected server origin');
+          await recordDeletionReplay(topic, replay.events, replay.serverOrigin, {
+            generation: state?.deletionReplay?.generation ?? 0,
+            origins,
+          });
+        } catch (error) {
+          // The next sync retries the replay. A large or failed replay must not stop regular catch-up.
+          unreachable = reportSyncError(topic, error, 'deletion replay: ') || unreachable;
+        }
+      }
 
       try {
+        const since = state?.since ?? INITIAL_SYNC_SINCE;
         const { events: replay, serverOrigin } = await getNotifications(config, topic, since, { includeDeletions: true });
         const messages = await recordPoll(topic, replay, serverOrigin);
         for (const message of messages) events.onNewMessage(message);
       } catch (error) {
-        const message = (error as Error).message;
-        console.error(`Failed to sync missed messages for topic ${topic}:`, message);
-        // No response (network error or timeout) or a 5xx: the server didn't answer
-        const noResponse = isNoResponse(error);
-        unreachable ||= noResponse || /^HTTP 5\d\d/.test(message);
-        syncErrors.push([topic, noResponse ? 'no response' : message.replace(/:\s*$/, '')]);
+        unreachable = reportSyncError(topic, error) || unreachable;
       }
     }
 
-    setStatus({ syncErrors, lastSyncAt: Date.now(), ...(unreachable && { unreachable: true }) });
+    setStatus({ syncErrors: [...syncErrors], lastSyncAt: Date.now(), ...(unreachable && { unreachable: true }) });
     // The topics configured now: they may have changed during the poll
     await pruneTopicSyncStates((await getConfig()).topics);
   }
@@ -354,5 +397,12 @@ export function createReceiver(events: ReceiverEvents) {
     return syncInFlight;
   }
 
-  return { connect, sync, close };
+  async function replayDeletions(topics: string[]): Promise<void> {
+    await invalidateDeletionReplays(topics);
+    // A poll already in flight may have captured the old mode. Follow it with a fresh one.
+    await syncInFlight?.catch(() => {});
+    await sync();
+  }
+
+  return { connect, sync, close, replayDeletions };
 }

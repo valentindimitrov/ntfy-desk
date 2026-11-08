@@ -114,6 +114,39 @@ describe('sync and live messages', () => {
 });
 
 describe('server deletions', () => {
+  it('checks saved messages for deletions before the watermark after enabling sync during a poll', async () => {
+    await configure('alerts');
+    const receiver = newReceiver();
+    const old = server.publish('alerts', 9900, { sequence_id: 'old-alert' });
+    await receiver.sync();
+    server.publish('alerts', 9910, { event: 'message_delete', sequence_id: 'old-alert' });
+    const kept = server.publish('alerts', 9920);
+    await receiver.sync();
+    // A replay may contain older publishes too. They should not reappear as new messages.
+    server.publish('alerts', 9905);
+    expect((await getTopicSyncStates()).get('alerts')?.since).toBe(9920);
+    expect((await getHistoryState()).receivedNotifications.map((message) => message.id)).toContain(old.id);
+    notified = [];
+
+    const { promise, resolve } = Promise.withResolvers<void>();
+    server.pollGate = promise;
+    const requests = server.requests.length;
+    const pending = receiver.sync();
+    await vi.waitFor(() => expect(server.requests.slice(requests).some(({ url }) => url.includes('since=9920'))).toBe(true));
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    const replay = receiver.replayDeletions(['alerts']);
+    resolve();
+    await Promise.all([pending, replay]);
+
+    expect((await getHistoryState()).receivedNotifications.map((message) => message.id)).toEqual([kept.id]);
+    expect(notified).toEqual([]);
+    expect((await getTopicSyncStates()).get('alerts')?.since).toBe(9920);
+    const backfills = () => server.requests.slice(requests).filter(({ url }) => url.includes('since=9900')).length;
+    expect(backfills()).toBe(1);
+    await receiver.sync();
+    expect(backfills()).toBe(1);
+  });
+
   it('follows live deletions only for the matching topic when opted in', async () => {
     await configure('alerts,backups');
     await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });

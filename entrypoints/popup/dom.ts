@@ -72,10 +72,10 @@ export function getElements() {
     topicsContainer: byId('topics-container'),
     newTopicInput: byId<HTMLInputElement>('new-topic-input'),
     topicInputHint: byId('topic-input-hint'),
-    notifyRulesGroup: byId('notify-rules-group'),
-    notifyRules: byId('notify-rules'),
-    syncModesGroup: byId('sync-modes-group'),
-    syncModes: byId('sync-modes'),
+    topicSettingsGroup: byId('topic-settings-group'),
+    topicSettingsRows: byId('topic-settings-rows'),
+    applyTopicSettings: byId<HTMLButtonElement>('apply-topic-settings'),
+    topicSettingsStatus: byId('topic-settings-status'),
 
     // Inbox
     notificationsList: byId('notifications-list'),

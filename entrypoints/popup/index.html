@@ -7,13 +7,13 @@
     <style>
       /* The toolbar popup sizes to its contents, so its width must not depend on its viewport. */
       body {
-        width: 768px;
+        width: 800px;
       }
 
       /* Opened in a browser tab: follow the tab's width, up to a readable maximum */
       body.page-mode {
         width: auto;
-        max-width: 1100px;
+        max-width: 1280px;
         margin: 0 auto;
       }
 
@@ -245,19 +245,29 @@
           </div>
         </div>
 
-        <div class="form-group" id="notify-rules-group">
-          <div class="form-label">Desktop notifications</div>
-          <div class="topic-settings" id="notify-rules"></div>
-          <p class="form-hint">Messages below the level are still listed and counted, without a pop-up</p>
-        </div>
-
-        <div class="form-group" id="sync-modes-group">
-          <div class="form-label">Message sync</div>
-          <div class="topic-settings" id="sync-modes"></div>
+        <section class="form-group" id="topic-settings-group" aria-labelledby="topic-settings-heading" hidden>
+          <h2 class="section-title" id="topic-settings-heading">Topic settings</h2>
+          <div class="topic-settings-scroll">
+            <table class="topic-settings" aria-labelledby="topic-settings-heading">
+              <thead>
+                <tr>
+                  <th scope="col">Topic</th>
+                  <th scope="col">Message sync</th>
+                  <th scope="col">Desktop notifications</th>
+                </tr>
+              </thead>
+              <tbody id="topic-settings-rows"></tbody>
+            </table>
+          </div>
           <p class="form-hint">
-            Sync server deletions applies both ways. Deleting here also deletes on the server when your credentials allow it.
+            Sync server deletions checks saved messages for cached deletions and applies future deletions both ways when permissions allow.
           </p>
-        </div>
+          <p class="form-hint">Messages below the desktop notification level still appear in the inbox.</p>
+          <div class="topic-settings-footer">
+            <button type="button" class="chip" id="apply-topic-settings" disabled>Apply</button>
+            <span class="form-hint" id="topic-settings-status" role="status"></span>
+          </div>
+        </section>
 
         <div class="form-group">
           <div class="checkbox-group">

@@ -1,5 +1,5 @@
 // Settings view: server and fallback URL, token or username and password, topics, notification rules,
-// include-URL option and theme. Changes save as you type.
+// include-URL option and theme. Per-topic options are staged until Apply.
 
 import { browser } from 'wxt/browser';
 import {
@@ -12,8 +12,17 @@ import {
   splitCredentials,
   type Credentials,
 } from '@/utils/ntfy';
-import { NOTIFY_RULES, NOTIFY_RULES_KEY, RULE_LABELS, isNotifyRule, ruleFor, storedTopicRules, type TopicRules } from '@/utils/rules';
-import { SYNC_DELETION_TOPICS_KEY } from '@/utils/sync-modes';
+import {
+  NOTIFY_RULES,
+  NOTIFY_RULES_KEY,
+  RULE_LABELS,
+  getTopicRules,
+  isNotifyRule,
+  ruleFor,
+  storedTopicRules,
+  type NotifyRule,
+} from '@/utils/rules';
+import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics } from '@/utils/sync-modes';
 import { updateTopicOptions } from './send';
 import { elements, isConfigured, saveReceiveFilter, saveSync, state, type Theme } from './state';
 import { debounce, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
@@ -138,7 +147,7 @@ function moveUrlCredentialsToFields(): { apiUrl: string; fallbackUrl: string } {
   return { apiUrl: main.url, fallbackUrl: fallback.url };
 }
 
-async function saveSettings(): Promise<void> {
+async function saveSettings(pruneTopicSettings = false): Promise<void> {
   const { apiUrl, fallbackUrl } = moveUrlCredentialsToFields();
   const accessToken = elements.tokenInput.value;
   const typed: Credentials = { username: elements.usernameInput.value, password: elements.passwordInput.value };
@@ -151,6 +160,10 @@ async function saveSettings(): Promise<void> {
       theme: state.theme,
       includeUrl: elements.includeUrlCheckbox.checked,
       sendAsZipEnabled: state.sendAsZipEnabled,
+      ...(pruneTopicSettings && {
+        [NOTIFY_RULES_KEY]: storedTopicRules(state.notifyRules),
+        [SYNC_DELETION_TOPICS_KEY]: [...state.syncDeletionTopics],
+      }),
     });
     // The token and the credentials stay in storage.local, so browser sync doesn't copy them
     await setAccessToken(accessToken);
@@ -161,7 +174,6 @@ async function saveSettings(): Promise<void> {
     if (state.heldBackFrom.length === 0 || urlsEdited) {
       await setAuthOrigins(serverOrigins(apiUrl, fallbackUrl));
     }
-    await saveNotifyRules();
     state.apiUrl = apiUrl;
     state.fallbackUrl = fallbackUrl;
     state.accessToken = accessToken;
@@ -181,89 +193,114 @@ async function saveSettings(): Promise<void> {
   }
 }
 
-/** One rule per configured topic; rules of removed topics are dropped */
-function saveNotifyRules(): Promise<void> {
-  const rules: TopicRules = new Map();
-  for (const topic of state.topics) {
-    const rule = state.notifyRules.get(topic);
-    if (rule) rules.set(topic, rule);
+const pendingModes = new Map<string, boolean>();
+const pendingRules = new Map<string, NotifyRule>();
+let applyingTopicSettings = false;
+
+function updateApplyButton(): void {
+  elements.applyTopicSettings.disabled = applyingTopicSettings || (pendingModes.size === 0 && pendingRules.size === 0);
+}
+
+function topicSelect(label: string, options: [string, string][], value: string, onChange: (value: string) => void): HTMLTableCellElement {
+  const cell = document.createElement('td');
+  const select = document.createElement('select');
+  select.className = 'topic-setting-select';
+  select.setAttribute('aria-label', label);
+  for (const [value, text] of options) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    select.appendChild(option);
   }
-  state.notifyRules = rules;
-  return saveSync({ [NOTIFY_RULES_KEY]: storedTopicRules(rules) });
+  select.value = value;
+  select.addEventListener('change', () => {
+    onChange(select.value);
+    elements.topicSettingsStatus.textContent = '';
+    updateApplyButton();
+  });
+  cell.append(select);
+  return cell;
 }
 
-function saveSyncModes(): Promise<void> {
-  const topics = state.topics.filter((topic) => state.syncDeletionTopics.has(topic));
-  state.syncDeletionTopics = new Set(topics);
-  return saveSync({ [SYNC_DELETION_TOPICS_KEY]: topics });
-}
-
-function renderTopicSelects(
-  group: HTMLElement,
-  container: HTMLElement,
-  label: string,
-  options: [value: string, label: string][],
-  valueFor: (topic: string) => string,
-  onChange: (topic: string, value: string) => Promise<void>,
-): void {
-  group.style.display = state.topics.length > 0 ? '' : 'none';
-  container.replaceChildren(
+function renderTopicSettings(): void {
+  elements.topicSettingsGroup.hidden = state.topics.length === 0;
+  elements.topicSettingsRows.replaceChildren(
     ...state.topics.map((topic) => {
-      const row = document.createElement('label');
-      row.className = 'topic-setting';
-
-      const name = document.createElement('span');
-      name.className = 'topic-setting-name';
+      const row = document.createElement('tr');
+      const name = document.createElement('th');
+      name.scope = 'row';
       name.textContent = topic;
-
-      const select = document.createElement('select');
-      select.className = 'topic-setting-select';
-      select.setAttribute('aria-label', `${label} for ${topic}`);
-      for (const [value, text] of options) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = text;
-        select.appendChild(option);
-      }
-      select.value = valueFor(topic);
-      select.addEventListener('change', () => {
-        onChange(topic, select.value).catch(() => showSettingsStatus('Failed to save settings', 'error'));
-      });
-
-      row.append(name, select);
+      const enabled = state.syncDeletionTopics.has(topic);
+      const rule = ruleFor(state.notifyRules, topic);
+      row.append(
+        name,
+        topicSelect(
+          `Message sync for ${topic}`,
+          [
+            ['keep', 'Keep received messages'],
+            ['sync', 'Sync server deletions'],
+          ],
+          (pendingModes.get(topic) ?? enabled) ? 'sync' : 'keep',
+          (value) => {
+            const sync = value === 'sync';
+            if (sync === enabled) pendingModes.delete(topic);
+            else pendingModes.set(topic, sync);
+          },
+        ),
+        topicSelect(
+          `Desktop notifications for ${topic}`,
+          NOTIFY_RULES.map((value) => [value, RULE_LABELS[value]]),
+          pendingRules.get(topic) ?? rule,
+          (value) => {
+            if (!isNotifyRule(value)) return;
+            if (value === rule) pendingRules.delete(topic);
+            else pendingRules.set(topic, value);
+          },
+        ),
+      );
       return row;
     }),
   );
+  updateApplyButton();
+}
+
+async function applyTopicSettings(): Promise<void> {
+  applyingTopicSettings = true;
+  updateApplyButton();
+  elements.topicSettingsRows.inert = true;
+  try {
+    // Merge only edited fields so applying a draft cannot overwrite unrelated synced settings.
+    const [modes, rules] = await Promise.all([getSyncDeletionTopics(), getTopicRules()]);
+    let enabledDeletions = false;
+    for (const topic of state.topics) {
+      const mode = pendingModes.get(topic);
+      if (mode === true) {
+        enabledDeletions ||= !modes.has(topic);
+        modes.add(topic);
+      } else if (mode === false) {
+        modes.delete(topic);
+      }
+      const rule = pendingRules.get(topic);
+      if (rule !== undefined) rules.set(topic, rule);
+    }
+    await saveSync({ [SYNC_DELETION_TOPICS_KEY]: [...modes], [NOTIFY_RULES_KEY]: storedTopicRules(rules) });
+    state.syncDeletionTopics = modes;
+    state.notifyRules = rules;
+    pendingModes.clear();
+    pendingRules.clear();
+    renderTopicSettings();
+    elements.topicSettingsStatus.textContent = enabledDeletions ? 'Applied. Cached deletion check requested.' : 'Applied.';
+  } catch {
+    elements.topicSettingsStatus.textContent = 'Could not apply topic settings. Try again.';
+  } finally {
+    applyingTopicSettings = false;
+    elements.topicSettingsRows.inert = false;
+    updateApplyButton();
+  }
 }
 
 function renderTopics(): void {
-  renderTopicSelects(
-    elements.notifyRulesGroup,
-    elements.notifyRules,
-    'Desktop notifications',
-    NOTIFY_RULES.map((rule) => [rule, RULE_LABELS[rule]]),
-    (topic) => ruleFor(state.notifyRules, topic),
-    async (topic, value) => {
-      if (!isNotifyRule(value)) return;
-      state.notifyRules.set(topic, value);
-      await saveNotifyRules();
-    },
-  );
-  renderTopicSelects(
-    elements.syncModesGroup,
-    elements.syncModes,
-    'Message sync',
-    [
-      ['keep', 'Keep received messages'],
-      ['sync', 'Sync server deletions'],
-    ],
-    (topic) => (state.syncDeletionTopics.has(topic) ? 'sync' : 'keep'),
-    (topic, value) => {
-      if (value === 'sync') state.syncDeletionTopics.add(topic);
-      else state.syncDeletionTopics.delete(topic);
-      return saveSyncModes();
-    },
-  );
+  renderTopicSettings();
   elements.topicsContainer.querySelectorAll('.topic-badge').forEach((badge) => badge.remove());
 
   state.topics.forEach((topic, index) => {
@@ -286,14 +323,16 @@ function renderTopics(): void {
 }
 
 function removeTopic(index: number): void {
+  if (applyingTopicSettings) return;
   const [topic] = state.topics.splice(index, 1);
   if (topic === undefined) return;
   if (state.receiveFilter === topic) void saveReceiveFilter(null).catch(() => {});
-  if (state.syncDeletionTopics.delete(topic)) {
-    saveSyncModes().catch(() => showSettingsStatus('Failed to save settings', 'error'));
-  }
+  state.syncDeletionTopics.delete(topic);
+  state.notifyRules.delete(topic);
+  pendingModes.delete(topic);
+  pendingRules.delete(topic);
   renderTopics();
-  void saveSettings();
+  void saveSettings(true);
 }
 
 function handleTopicKeydown(event: KeyboardEvent): void {
@@ -321,6 +360,9 @@ function updateTopicInputHint(): void {
 
 /** Fill the form from the current settings, when the view opens */
 export function populateSettings(): void {
+  pendingModes.clear();
+  pendingRules.clear();
+  elements.topicSettingsStatus.textContent = '';
   elements.urlInput.value = state.apiUrl;
   elements.fallbackUrlInput.value = state.fallbackUrl;
   elements.tokenInput.value = state.accessToken;
@@ -342,6 +384,7 @@ export function setupSettings(): void {
   elements.usernameInput.addEventListener('input', debouncedSave);
   elements.passwordInput.addEventListener('input', debouncedSave);
   elements.includeUrlCheckbox.addEventListener('change', () => void saveSettings());
+  elements.applyTopicSettings.addEventListener('click', () => void applyTopicSettings());
   elements.serverAccessBtn.addEventListener('click', requestServerAccess);
   elements.heldBackBtn.addEventListener('click', () => void approveServers());
   for (const input of [elements.urlInput, elements.fallbackUrlInput, elements.tokenInput, elements.usernameInput, elements.passwordInput]) {

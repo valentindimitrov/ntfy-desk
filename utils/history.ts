@@ -35,6 +35,8 @@ export interface TopicSyncState {
   seen: [id: string, time: number][];
   /** Latest server deletion per sequence, bounded so an overlapping replay cannot restore it */
   serverDeletions?: [sequenceId: string, time: number, eventId: string][];
+  /** A new generation needs a replay of cached deletions against the saved history. */
+  deletionReplay?: { generation: number; complete: boolean };
   /** The first poll (silent: it loads recent history without notifications) completed */
   synced: boolean;
 }
@@ -76,6 +78,7 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
           seen: Array.isArray(state.seen) ? state.seen : [],
           synced: state.synced === true,
           serverDeletions: Array.isArray(state.serverDeletions) ? state.serverDeletions : [],
+          deletionReplay: state.deletionReplay,
         });
       }
     }
@@ -155,12 +158,24 @@ function pruneSeen(state: TopicSyncState): void {
   state.seen = kept.slice(-MAX_SEEN_PER_TOPIC);
 }
 
-/** Apply one live event or a whole poll and return new messages eligible for a notification. */
-function recordEvents(topic: string, events: NtfyMessage[], poll: boolean, serverOrigin?: string): Promise<NtfyMessage[]> {
+interface DeletionReplay {
+  generation: number;
+  origins: string[];
+}
+
+/** Apply one live event or a replay and return new messages eligible for a notification. */
+function recordEvents(
+  topic: string,
+  events: NtfyMessage[],
+  poll: boolean,
+  serverOrigin?: string,
+  replay?: DeletionReplay,
+): Promise<NtfyMessage[]> {
   return serialized(async () => {
     const [states, history, syncDeletionTopics] = await Promise.all([getTopicSyncStates(), getHistoryState(), getSyncDeletionTopics()]);
     const syncDeletions = syncDeletionTopics.has(topic);
     const state = states.get(topic) ?? newState(topic);
+    if (replay && (!syncDeletions || replay.generation !== (state.deletionReplay?.generation ?? 0))) return [];
     const accepted = events.filter(
       (event) => event.event === 'message' || (syncDeletions && event.sequence_id && event.event === 'message_delete'),
     );
@@ -199,6 +214,8 @@ function recordEvents(topic: string, events: NtfyMessage[], poll: boolean, serve
         changed = true;
       }
 
+      // A deletion replay can recover metadata for existing rows but leaves ordinary delivery to catch-up.
+      if (replay && event.event === 'message') continue;
       if (seen.has(event.id)) continue;
       seen.add(event.id);
       state.seen.push([event.id, event.time]);
@@ -215,6 +232,7 @@ function recordEvents(topic: string, events: NtfyMessage[], poll: boolean, serve
         deletions.set(sequence, { time: event.time, id: event.id });
         for (const message of messages.values()) {
           if (message.topic !== topic || sequenceOf(message) !== sequence || message.time > event.time) continue;
+          if (replay && message.serverOrigin && !replay.origins.includes(message.serverOrigin)) continue;
           // For equal timestamps, a message later in this replay revives the sequence. It may
           // already be in history if the stream delivered it while the poll was in flight.
           if (message.time === event.time && (pollOrder.get(message.id) ?? -1) > index) continue;
@@ -231,7 +249,9 @@ function recordEvents(topic: string, events: NtfyMessage[], poll: boolean, serve
 
     if (!poll && !recorded && !changed) return [];
     const notify = !poll || state.synced;
-    if (poll) {
+    if (replay) {
+      state.deletionReplay = { generation: replay.generation, complete: true };
+    } else if (poll) {
       state.synced = true;
       const newestTime = ordered.at(-1)?.time;
       if (newestTime !== undefined && (state.since === null || newestTime > state.since)) state.since = newestTime;
@@ -263,6 +283,28 @@ export async function recordMessage(message: NtfyMessage, serverOrigin?: string)
 /** A completed poll advances the watermark and applies replayed messages and deletions together. */
 export function recordPoll(topic: string, events: NtfyMessage[], serverOrigin: string): Promise<NtfyMessage[]> {
   return recordEvents(topic, events, true, serverOrigin);
+}
+
+export async function recordDeletionReplay(
+  topic: string,
+  events: NtfyMessage[],
+  serverOrigin: string,
+  replay: DeletionReplay,
+): Promise<void> {
+  await recordEvents(topic, events, true, serverOrigin, replay);
+}
+
+/** Mark newly enabled topics pending, including when an older replay is still in flight. */
+export function invalidateDeletionReplays(topics: string[]): Promise<void> {
+  return serialized(async () => {
+    const states = await getTopicSyncStates();
+    for (const topic of topics) {
+      const state = states.get(topic) ?? newState(topic);
+      state.deletionReplay = { generation: (state.deletionReplay?.generation ?? 0) + 1, complete: false };
+      states.set(topic, state);
+    }
+    await browser.storage.local.set(storedStates(states));
+  });
 }
 
 /** Forget removed topics, so adding one back starts with a silent sync again */
