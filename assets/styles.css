@@ -133,7 +133,6 @@ body {
   gap: 8px;
 }
 
-.back-btn,
 .icon-btn {
   background: transparent;
   border: 1px solid transparent;
@@ -149,14 +148,12 @@ body {
   box-shadow: none;
 }
 
-.back-btn svg,
 .icon-btn svg {
   width: 24px;
   height: 24px;
   fill: currentColor;
 }
 
-.back-btn:hover,
 .icon-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.15);
   transform: none;
@@ -164,7 +161,6 @@ body {
   color: white;
 }
 
-.back-btn:active,
 .icon-btn:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.25);
   transform: none;
@@ -190,15 +186,6 @@ body {
   background: #f0f0f0;
 }
 
-/* Back button visibility */
-.back-btn {
-  display: none;
-}
-
-.back-btn.visible {
-  display: flex;
-}
-
 .desk-header {
   gap: 8px;
   min-height: var(--desk-header-height);
@@ -222,11 +209,11 @@ body {
   gap: 2px;
 }
 
-.desk-header :is(.back-btn, .icon-btn) {
+.desk-header .icon-btn {
   color: var(--text-secondary);
 }
 
-.desk-header :is(.back-btn, .icon-btn):hover:not(:disabled) {
+.desk-header .icon-btn:hover:not(:disabled) {
   background: var(--bg-main);
   color: var(--text-primary);
 }
@@ -259,8 +246,13 @@ body {
   vertical-align: middle;
 }
 
-body:has(#settings-view.active) .header-connection {
+#back-btn,
+body:has(#settings-view.active) #settings-btn {
   display: none;
+}
+
+body:has(#settings-view.active) #back-btn {
+  display: flex;
 }
 
 @keyframes pulse {
@@ -1201,7 +1193,12 @@ body.filepicker-page {
   --min-topic-width: 120px;
   --default-topics-width: 144px;
   --default-send-width: 32%;
+}
+
+.page-mode :is(#main-view, #settings-view) {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 #main-view.active {

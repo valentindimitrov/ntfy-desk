@@ -193,6 +193,40 @@ test.describe('receiving', () => {
 });
 
 test.describe('sending', () => {
+  test('keeps the header in place and swaps Settings and Back in the same slot', async ({ configure, ntfy, openPopup }) => {
+    await configure({ topics: Array.from({ length: 16 }, (_, index) => 'topic' + index).join(',') });
+    for (const mode of ['', '?mode=page']) {
+      const page = await openPopup(mode);
+      await page.setViewportSize({ width: mode ? 1100 : 800, height: mode ? 720 : 600 });
+      const header = page.getByRole('banner');
+      const connection = header.getByRole('status');
+      const connectedText = `Connected to ${new URL(ntfy.url).host}`;
+      const gear = header.getByRole('button', { name: 'Settings' });
+      const back = header.getByRole('button', { name: 'Back' });
+      const headerPositions = () =>
+        Promise.all(
+          ['.header-left', '#header-connection', '#popout-btn', '#open-url-btn'].map((selector) => header.locator(selector).boundingBox()),
+        );
+
+      await expect(connection).toHaveText(connectedText);
+      const positions = await headerPositions();
+      const buttonSlot = await gear.boundingBox();
+      await gear.press('Enter');
+      await expect(page.getByLabel('Server URL', { exact: true })).toBeVisible();
+      expect(await page.locator('#settings-view').evaluate((view) => view.scrollHeight > view.clientHeight)).toBe(true);
+      await expect(gear).toBeHidden();
+      await expect(back).toBeFocused();
+      await expect(header.getByText('ntfy Desk', { exact: true })).toBeVisible();
+      await expect(connection).toHaveText(connectedText);
+      expect(await headerPositions()).toEqual(positions);
+      expect(await back.boundingBox()).toEqual(buttonSlot);
+      await back.press('Enter');
+      await expect(gear).toBeFocused();
+      await expect(back).toBeHidden();
+      expect(await gear.boundingBox()).toEqual(buttonSlot);
+    }
+  });
+
   test('shows the inbox beside Send and switches between linked and independent destinations', async ({ ntfy, configure, openPopup }) => {
     await configure({ topics: 'alerts,backups' });
     const page = await openPopup('?mode=page');

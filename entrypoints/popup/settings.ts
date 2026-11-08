@@ -175,6 +175,7 @@ async function saveSettings(pruneTopicSettings = false): Promise<void> {
       await setAuthOrigins(serverOrigins(apiUrl, fallbackUrl));
     }
     state.apiUrl = apiUrl;
+    elements.openUrlBtn.disabled = !apiUrl;
     state.fallbackUrl = fallbackUrl;
     state.accessToken = accessToken;
     state.credentials = credentials;

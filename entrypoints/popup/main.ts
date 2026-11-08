@@ -44,19 +44,13 @@ function showSettingsView(): void {
   populateSettings();
   elements.mainView.classList.remove('active');
   elements.settingsView.classList.add('active');
-  elements.backBtn.classList.add('visible');
-  elements.settingsBtn.style.display = 'none';
-  elements.openUrlBtn.style.display = 'none';
-  elements.headerText.textContent = 'Settings';
+  elements.backBtn.focus();
 }
 
 function showMainView(): void {
   elements.settingsView.classList.remove('active');
   elements.mainView.classList.add('active');
-  elements.backBtn.classList.remove('visible');
-  elements.settingsBtn.style.display = '';
-  elements.openUrlBtn.style.display = '';
-  elements.headerText.textContent = appName;
+  elements.settingsBtn.focus();
   updateUI();
   void loadNotifications();
   applyPagePrefill();
