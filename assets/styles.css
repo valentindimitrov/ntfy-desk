@@ -47,6 +47,7 @@
   --border-color: #cdd5d2;
   --border-focus: #338574;
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --desk-header-height: 46px;
 }
 
 /* Dark theme - matching NTFY.sh web UI */
@@ -200,7 +201,7 @@ body {
 
 .desk-header {
   gap: 8px;
-  min-height: 46px;
+  min-height: var(--desk-header-height);
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
   box-shadow: none;
@@ -737,9 +738,8 @@ body:has(#settings-view.active) .header-connection {
   align-items: center;
   justify-content: space-between;
   margin-top: 10px;
-  margin-left: -16px;
-  margin-right: -16px;
-  padding: 8px 16px 12px;
+  margin-inline: calc(-1 * var(--pane-padding));
+  padding: 8px var(--pane-padding) 12px;
   background-color: var(--bg-main);
 }
 
@@ -990,7 +990,6 @@ body.filepicker-page {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-right: 4px; /* space for scrollbar */
 }
 
 .notification-item {
@@ -1166,6 +1165,7 @@ body.filepicker-page {
 #main-view {
   --divider-width: 10px;
   --pane-padding: 12px;
+  --inbox-start-inset: var(--pane-padding);
   --min-inbox-width: 260px;
   --min-send-width: 240px;
   --min-topic-width: 104px;
@@ -1174,7 +1174,7 @@ body.filepicker-page {
   --default-send-width: 260px;
   --send-space: var(--min-send-width);
   /* Include the inbox padding and the divider before Send. */
-  --inbox-space: calc(var(--min-inbox-width) + 2 * var(--pane-padding) + var(--divider-width));
+  --inbox-space: calc(var(--min-inbox-width) + 2 * var(--pane-padding) + var(--inbox-start-inset) + var(--divider-width));
   --topics-column: clamp(
     var(--min-topic-width),
     var(--topics-width, var(--default-topics-width)),
@@ -1207,14 +1207,14 @@ body.filepicker-page {
   --send-columns: var(--send-space);
 }
 
-/* Keep the scrollbar inside the toolbar view so the browser can size the popup to its contents. */
+/* The native action popup can be up to 600px tall, including the header. */
 body:not(.page-mode) :is(#main-view, #settings-view) {
-  max-height: 535px;
+  max-height: calc(600px - var(--desk-header-height));
   overflow-y: auto;
 }
 
 body:not(.page-mode) #main-view.active {
-  min-height: 510px;
+  height: calc(600px - var(--desk-header-height));
 }
 
 .send-section {
@@ -1394,12 +1394,13 @@ body:not(.page-mode) #main-view.active {
 .receive-layout .notifications-section {
   flex: 1;
   min-width: 0;
+  margin-inline-start: var(--inbox-start-inset);
 }
 
 .topic-sidebar {
   display: flex;
   /* The popup's internal scrollbar can reduce the space left by the outer grid. */
-  flex: 0 0 min(var(--topics-column), calc(100% - var(--min-inbox-width) - var(--divider-width)));
+  flex: 0 0 min(var(--topics-column), calc(100% - var(--min-inbox-width) - var(--divider-width) - var(--inbox-start-inset)));
   flex-direction: column;
   gap: 2px;
   max-height: 480px;
@@ -1464,6 +1465,7 @@ body:not(.page-mode) #main-view.active {
 
 @media (max-width: 959px) {
   .page-mode #main-view {
+    --inbox-start-inset: 0px;
     --receive-space: var(--inbox-space);
   }
 

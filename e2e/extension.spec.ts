@@ -230,7 +230,7 @@ test.describe('sending', () => {
     await configure({ topics: 'alerts,backups' });
     await serviceWorker.evaluate(() => chrome.storage.local.set({ receiveTopicFilter: { topic: 'backups' } }));
     const popup = await openPopup();
-    await popup.setViewportSize({ width: 800, height: 580 });
+    await popup.setViewportSize({ width: 800, height: 600 });
     const message = popup.getByLabel('Message', { exact: true });
     const destination = popup.getByLabel('Send to');
     await expect(message).toBeVisible();
@@ -350,8 +350,11 @@ test.describe('sending', () => {
         const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
         if (!popup) return null;
         const { document } = popup;
+        const mainView = document.querySelector('#main-view');
         const topics = document.querySelector('#topic-sidebar')?.getBoundingClientRect();
         const inbox = document.querySelector('#notifications-section')?.getBoundingClientRect();
+        const topicDivider = document.querySelector('#topic-divider')?.getBoundingClientRect();
+        const sendDivider = document.querySelector('#send-divider')?.getBoundingClientRect();
         const sendSection = document.querySelector<HTMLDetailsElement>('#send-section');
         const composer = sendSection?.getBoundingClientRect();
         const card = [...document.querySelectorAll('.notification-item')].find(
@@ -359,26 +362,36 @@ test.describe('sending', () => {
         );
         return {
           width: popup.innerWidth,
-          taller: popup.innerHeight >= 550,
-          documentFits: document.documentElement.scrollWidth === popup.innerWidth,
+          height: popup.innerHeight,
+          documentFits:
+            document.documentElement.scrollWidth === popup.innerWidth && document.documentElement.scrollHeight === popup.innerHeight,
+          viewFits: Boolean(mainView && mainView.scrollWidth === mainView.clientWidth && mainView.scrollHeight === mainView.clientHeight),
           sideBySide: Boolean(topics && inbox && composer && topics.right <= inbox.left && inbox.right <= composer.left),
+          inboxInsets:
+            inbox && topicDivider && composer
+              ? [inbox.left - topicDivider.right, (sendDivider?.width ? sendDivider.left : composer.left) - inbox.right]
+              : null,
           connectionInHeader: document.querySelector('header #header-connection')?.textContent?.startsWith('Connected to '),
           composerOpen: sendSection?.open,
           topicsWidth: topics?.width,
           sendWidth: composer?.width,
-          topicsDivider: Boolean(document.querySelector('#topic-divider')?.getBoundingClientRect().width),
-          sendDivider: Boolean(document.querySelector('#send-divider')?.getBoundingClientRect().width),
-          message: card?.querySelector('.notification-message')?.textContent,
+          topicsDivider: Boolean(topicDivider?.width),
+          sendDivider: Boolean(sendDivider?.width),
+          message: card?.querySelector('.notification-message')?.textContent ?? null,
+          emptyInbox: document.querySelector('.notifications-empty')?.textContent ?? null,
         };
       });
     const fitted = {
       width: 800,
-      taller: true,
+      height: 600,
       documentFits: true,
+      viewFits: true,
       sideBySide: true,
+      inboxInsets: [12, 12],
       connectionInHeader: true,
       topicsDivider: true,
       message,
+      emptyInbox: null,
     };
     await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, sendDivider: true, topicsWidth: 120, sendWidth: 260 });
     await tab.evaluate(() => {
@@ -398,12 +411,18 @@ test.describe('sending', () => {
     await expect.poll(measurePopup).toEqual({ ...resized, composerOpen: false, sendDivider: false, sendWidth: 44 });
     await toggleComposer();
     await expect.poll(measurePopup).toEqual(resized);
+    await tab.evaluate(() => {
+      const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
+      const topics = popup?.document.querySelectorAll<HTMLButtonElement>('#topic-sidebar button');
+      [...(topics ?? [])].find((button) => button.textContent === 'nightly-backups')?.click();
+    });
+    await expect.poll(measurePopup).toEqual({ ...resized, message: null, emptyInbox: 'No recent notifications' });
   });
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
     await configure({ topics: 'inbox' });
     const popup = await openPopup();
-    await popup.setViewportSize({ width: 800, height: 580 });
+    await popup.setViewportSize({ width: 800, height: 600 });
     const sendDivider = popup.getByRole('separator', { name: 'Resize Send' });
     await expect(sendDivider).toHaveAttribute('aria-valuenow', '260');
     await sendDivider.press('Home');
