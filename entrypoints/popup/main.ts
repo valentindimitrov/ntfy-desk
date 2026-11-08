@@ -3,6 +3,7 @@
 import '@/assets/styles.css';
 import { browser } from 'wxt/browser';
 import { openExtensionTab } from '@/utils/extension-tab';
+import { setupPaneDividers } from './pane-dividers';
 import { focusMessage, loadNotifications, setupReceive } from './receive';
 import {
   applyPagePrefill,
@@ -100,6 +101,7 @@ async function init(): Promise<void> {
     document.body.classList.add('page-mode');
     elements.popoutBtn.style.display = 'none';
     elements.tabUrlBtn.style.display = '';
+    await setupPaneDividers();
   }
 
   await loadSettings();

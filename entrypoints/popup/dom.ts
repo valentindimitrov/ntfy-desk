@@ -12,6 +12,8 @@ export function getElements() {
   return {
     // Views
     mainView: byId('main-view'),
+    topicDivider: byId('topic-divider'),
+    sendDivider: byId('send-divider'),
     sendSection: byId<HTMLDetailsElement>('send-section'),
     mainContent: byId('main-content'), // Send form
     settingsView: byId('settings-view'),
@@ -75,6 +77,7 @@ export function getElements() {
     topicSettingsStatus: byId('topic-settings-status'),
 
     // Inbox
+    notificationsSection: byId('notifications-section'),
     notificationsList: byId('notifications-list'),
     topicSidebar: byId('topic-sidebar'),
     notificationsControlBar: byId('notifications-control-bar'),

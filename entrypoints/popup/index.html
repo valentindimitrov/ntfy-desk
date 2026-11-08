@@ -13,8 +13,9 @@
       /* Opened in a browser tab: follow the tab's width, up to a readable maximum */
       body.page-mode {
         width: auto;
-        max-width: 1280px;
+        max-width: 1440px;
         margin: 0 auto;
+        container-type: inline-size;
       }
 
       .header {
@@ -71,6 +72,15 @@
         <div class="main-content receive-layout">
           <!-- Topic list: All topics, then each configured topic -->
           <nav class="topic-sidebar" id="topic-sidebar" aria-label="Topics"></nav>
+          <div
+            class="pane-divider topic-divider"
+            id="topic-divider"
+            role="separator"
+            aria-label="Resize topics"
+            aria-orientation="vertical"
+            aria-controls="topic-sidebar"
+            tabindex="0"
+          ></div>
           <!-- Notifications Section -->
           <div class="notifications-section" id="notifications-section">
             <div class="section-header">
@@ -96,6 +106,15 @@
         </div>
       </section>
 
+      <div
+        class="pane-divider send-divider"
+        id="send-divider"
+        role="separator"
+        aria-label="Resize Send"
+        aria-orientation="vertical"
+        aria-controls="send-section"
+        tabindex="0"
+      ></div>
       <details class="send-section" id="send-section" open>
         <summary class="send-summary">
           <h2 class="send-heading">Send notification</h2>

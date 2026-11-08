@@ -14,14 +14,15 @@ test.describe('receiving', () => {
     await expect(popup.locator('.notification-title')).toHaveText('Old alert');
     const deletion = ntfy.deleteNotification('alerts', old.id);
     ntfy.publish('alerts', { title: 'Current alert', time: deletion.time + 1 });
-    await popup.evaluate(() => chrome.runtime.sendMessage({ action: 'sync' }));
     await expect
-      .poll(() =>
-        serviceWorker.evaluate(async () => {
+      .poll(async () => {
+        // A sync request can join a startup poll that began before these events were published.
+        await popup.evaluate(() => chrome.runtime.sendMessage({ action: 'sync' }));
+        return serviceWorker.evaluate(async () => {
           const { topicSync } = await chrome.storage.local.get('topicSync');
           return (topicSync as { since: number }[] | undefined)?.[0]?.since;
-        }),
-      )
+        });
+      })
       .toBe(deletion.time + 1);
     await expect(popup.locator('.notification-title')).toHaveCount(2);
 
@@ -242,6 +243,65 @@ test.describe('sending', () => {
     await popup.getByRole('button', { name: 'All topics', exact: true }).click();
     await expect(destination).toBeEnabled();
     await expect(message).toHaveValue('Keep this draft');
+  });
+
+  test('resizes both tab dividers and restores pane widths after reload and viewport changes', async ({ configure, openPopup }) => {
+    await configure({ topics: 'alerts,backups' });
+    const page = await openPopup('?mode=page');
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const topicsDivider = page.getByRole('separator', { name: 'Resize topics' });
+    const sendDivider = page.getByRole('separator', { name: 'Resize Send' });
+    const topics = page.getByRole('navigation', { name: 'Topics' });
+    const send = page.locator('#send-section');
+    const inbox = page.locator('#notifications-section');
+    await expect(topicsDivider).toBeVisible();
+    await expect(sendDivider).toBeVisible();
+    expect((await page.locator('#main-view').boundingBox())!.width).toBe(1440);
+    const topicsWidth = (await topics.boundingBox())!.width;
+    const sendWidth = Math.round((await send.boundingBox())!.width);
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', String(topicsWidth));
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth));
+    const dragDivider = async (name: string, dx: number) => {
+      const { x, y, width } = (await page.getByRole('separator', { name }).boundingBox())!;
+      const center = x + width / 2;
+      await page.mouse.move(center, y + 20);
+      await page.mouse.down();
+      await page.mouse.move(center + dx, y + 20, { steps: 5 });
+      await page.mouse.up();
+    };
+    await dragDivider('Resize topics', 80);
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', String(topicsWidth + 80));
+    expect(Math.round((await send.boundingBox())!.width)).toBe(sendWidth);
+    await dragDivider('Resize Send', -80);
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 80));
+    expect((await topics.boundingBox())!.width).toBe(topicsWidth + 80);
+    await sendDivider.press('ArrowRight');
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 64));
+
+    const summary = send.locator('summary');
+    const openInboxWidth = (await inbox.boundingBox())!.width;
+    await summary.click();
+    await expect(sendDivider).toBeHidden();
+    expect((await inbox.boundingBox())!.width).toBeGreaterThan(openInboxWidth);
+    await summary.click();
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 64));
+
+    await page.reload();
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', String(topicsWidth + 80));
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 64));
+    await page.setViewportSize({ width: 960, height: 900 });
+    await expect(sendDivider).toBeVisible();
+    expect((await inbox.boundingBox())!.width).toBeGreaterThanOrEqual(300);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(960);
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect(topicsDivider).toBeHidden();
+    await expect(sendDivider).toBeVisible();
+    await page.setViewportSize({ width: 740, height: 900 });
+    await expect(sendDivider).toBeHidden();
+    expect((await inbox.boundingBox())!.y).toBeLessThan((await send.boundingBox())!.y);
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', String(topicsWidth + 80));
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 64));
   });
 
   test('the native toolbar popup opens wide with topics, inbox, and Send side by side', async ({

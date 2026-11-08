@@ -158,7 +158,7 @@ The receiver writes its state to `storage.session` (`utils/status.ts`): connecti
 
 The popup and extension tab share one inbox and Send form. The Send form uses a native disclosure and collapses to a rail on the right, leaving the draft in place. A narrow extension tab stacks the sections and collapses Send in place. A specific inbox filter sets the send destination. All topics restores the independent choice stored in `lastTopic` or the draft. The filter stays local to each open view so a change in another view cannot redirect a send.
 
-The toolbar popup uses a fixed content width of 800 px so the browser can size its action popup before the viewport is known. Its main and settings views scroll inside the popup. The full-page view uses up to 1280 px. The topic settings table stages deletion modes and notification rules until Apply writes both to synced storage.
+The toolbar popup uses a fixed content width of 800 px so the browser can size its action popup before the viewport is known. Its main and settings views scroll inside the popup. The full-page view uses up to 1440 px. Its dividers resize the Topics and Send panes while reserving space for the inbox. Each preferred width is saved separately in `storage.local`. The topic settings table stages deletion modes and notification rules until Apply writes both to synced storage.
 
 The Send form publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 

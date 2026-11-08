@@ -1229,6 +1229,58 @@ body:not(.page-mode) #main-view.active {
   padding-top: 0;
 }
 
+.page-mode #main-view {
+  --divider-width: 12px;
+  --min-inbox-width: 300px;
+  --min-send-width: 280px;
+  --min-topic-width: 120px;
+  --max-topic-width: 360px;
+  /* Include the inbox padding and the divider before Send. */
+  --inbox-space: calc(var(--min-inbox-width) + 32px + var(--divider-width));
+  --receive-space: var(--inbox-space);
+  --send-space: var(--min-send-width);
+}
+
+.page-mode #main-view:has(.send-section:not([open])) {
+  --send-space: var(--send-column);
+}
+
+.pane-divider {
+  display: none;
+  align-self: stretch;
+  width: var(--divider-width);
+  flex: none;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  background: linear-gradient(var(--border-color), var(--border-color)) center / 1px 100% no-repeat;
+}
+
+.pane-divider:is(:hover, :focus-visible, :active) {
+  background-image: linear-gradient(var(--border-focus), var(--border-focus));
+  background-size: 3px 100%;
+}
+
+.view.disabled .pane-divider {
+  visibility: hidden;
+}
+
+@media (min-width: 760px) {
+  .page-mode #main-view.active:has(.send-section[open]) {
+    grid-template-columns:
+      minmax(0, 1fr) var(--divider-width)
+      clamp(var(--min-send-width), var(--send-width, 32%), calc(100% - var(--receive-space)));
+  }
+
+  .page-mode #main-view:has(.send-section[open]) .send-divider {
+    display: block;
+  }
+
+  .page-mode .send-section[open] {
+    border-inline-start: 0;
+  }
+}
+
 @media (max-width: 759px) {
   .page-mode #main-view.active {
     grid-template-columns: minmax(0, 1fr);
@@ -1379,8 +1431,36 @@ body:not(.page-mode) #main-view.active {
 }
 
 .page-mode .topic-sidebar {
-  flex-basis: 144px;
   max-height: max(250px, calc(100vh - 170px));
+}
+
+@media (min-width: 960px) {
+  .page-mode #main-view {
+    --topics-column: clamp(
+      var(--min-topic-width),
+      var(--topics-width, 144px),
+      min(var(--max-topic-width), calc(100cqw - var(--send-space) - var(--inbox-space) - var(--divider-width)))
+    );
+    --receive-space: calc(var(--inbox-space) + var(--topics-column) + var(--divider-width));
+  }
+
+  .page-mode #inbox {
+    align-self: stretch;
+  }
+
+  .page-mode .receive-layout {
+    height: 100%;
+    gap: 0;
+  }
+
+  .page-mode .topic-sidebar {
+    flex-basis: var(--topics-column);
+    border-inline-end: 0;
+  }
+
+  .page-mode .topic-divider {
+    display: block;
+  }
 }
 
 @media (max-width: 959px) {

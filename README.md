@@ -16,7 +16,7 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
 - **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.
-- **Open in a tab**: the extension also opens as a page in its own browser tab, for a larger view.
+- **Open in a tab**: the extension also opens as a page in its own browser tab, for a larger view. Drag the dividers on either side of the inbox to resize the panes, or focus a divider and use the arrow keys. Pane widths are remembered on this browser.
 - **Keyboard**: Right Ctrl + Enter sends.
 - **Dark mode**, and no tracking.
 
