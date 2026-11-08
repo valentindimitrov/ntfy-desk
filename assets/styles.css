@@ -1227,6 +1227,10 @@ body:not(.page-mode) #main-view.active {
   min-width: 0;
 }
 
+#send-section .form-label {
+  color: var(--text-primary);
+}
+
 .send-summary {
   display: flex;
   align-items: center;
@@ -1377,7 +1381,7 @@ body:not(.page-mode) .send-footer {
   border-radius: 4px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -1387,7 +1391,6 @@ body:not(.page-mode) .send-footer {
 
 .control-btn:hover {
   background-color: var(--border-color);
-  color: var(--text-primary);
 }
 
 #mark-all-read-btn:hover {
@@ -1451,7 +1454,7 @@ body:not(.page-mode) .send-footer {
   border: none;
   border-radius: 6px;
   background: none;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font: inherit;
   font-size: 14px;
   text-align: left;
@@ -1460,12 +1463,10 @@ body:not(.page-mode) .send-footer {
 
 .topic-filter-btn:hover {
   background-color: var(--bg-input);
-  color: var(--text-primary);
 }
 
 .topic-filter-btn.active {
   background-color: var(--bg-input);
-  color: var(--primary-light);
   font-weight: 600;
 }
 
@@ -1595,10 +1596,6 @@ body:not(.page-mode) .send-footer {
 }
 
 /* A topic the credentials can't read: used for sending only */
-.topic-filter-btn.send-only .topic-filter-name {
-  opacity: 0.6;
-}
-
 .topic-send-only {
   flex: none;
   font-size: 10px;
