@@ -796,6 +796,14 @@ body:has(#settings-view.active) .header-connection {
   cursor: not-allowed;
 }
 
+#file-btn {
+  gap: 6px;
+}
+
+#file-btn svg {
+  flex: none;
+}
+
 /* ========================================
    Status Message
    ======================================== */
@@ -1286,7 +1294,12 @@ body:not(.page-mode) #main-view.active {
   background: linear-gradient(var(--border-color), var(--border-color)) center / 1px 100% no-repeat;
 }
 
-.pane-divider:is(:hover, :focus-visible, :active) {
+.pane-divider[aria-disabled='true'] {
+  cursor: default;
+  touch-action: auto;
+}
+
+.pane-divider:not([aria-disabled='true']):is(:hover, :focus-visible, :active) {
   background-image: linear-gradient(var(--border-focus), var(--border-focus));
   background-size: 3px 100%;
 }

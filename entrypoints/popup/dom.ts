@@ -39,6 +39,7 @@ export function getElements() {
     // Attachments
     fileInput: byId<HTMLInputElement>('file-input'),
     fileBtn: byId<HTMLButtonElement>('file-btn'),
+    fileBtnLabel: byId('file-btn-label'),
     filePreview: byId('file-preview'),
     zipToggle: byId('zip-toggle'),
     zipCheckbox: byId<HTMLInputElement>('zip-checkbox'),
@@ -68,6 +69,7 @@ export function getElements() {
     heldBackText: byId('held-back-text'),
     heldBackBtn: byId<HTMLButtonElement>('held-back-btn'),
     includeUrlCheckbox: byId<HTMLInputElement>('include-url-checkbox'),
+    freezeDividersCheckbox: byId<HTMLInputElement>('freeze-dividers-checkbox'),
     topicsContainer: byId('topics-container'),
     newTopicInput: byId<HTMLInputElement>('new-topic-input'),
     topicInputHint: byId('topic-input-hint'),

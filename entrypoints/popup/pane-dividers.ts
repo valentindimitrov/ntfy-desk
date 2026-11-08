@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
-import { elements, isPageMode, saveLocal } from './state';
+import { elements, isPageMode, saveLocal, saveSync } from './state';
+import { showSettingsStatus } from './ui';
 
 interface DividerOptions {
   divider: HTMLElement;
@@ -16,6 +17,7 @@ interface DividerOptions {
 function setupDivider({ divider, pane, property, key, stored, min, limit = Infinity, direction, minInbox }: DividerOptions): void {
   const { mainView, notificationsSection } = elements;
   const setWidth = (width: number) => mainView.style.setProperty(property, `${width}px`);
+  const isFrozen = () => divider.getAttribute('aria-disabled') === 'true';
   if (typeof stored === 'number' && Number.isFinite(stored)) {
     setWidth(Math.max(min, Math.min(limit, stored)));
   }
@@ -45,7 +47,7 @@ function setupDivider({ divider, pane, property, key, stored, min, limit = Infin
 
   let drag: { pointerId: number; startX: number; startWidth: number; width: number; max: number; previous: string } | undefined;
   divider.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || drag) return;
+    if (event.button !== 0 || drag || isFrozen()) return;
     event.preventDefault();
     divider.focus();
     divider.setPointerCapture(event.pointerId);
@@ -60,7 +62,7 @@ function setupDivider({ divider, pane, property, key, stored, min, limit = Infin
     };
   });
   divider.addEventListener('pointermove', (event) => {
-    if (drag?.pointerId !== event.pointerId) return;
+    if (drag?.pointerId !== event.pointerId || isFrozen()) return;
     const change = direction * (event.clientX - drag.startX);
     const width = Math.max(min, Math.min(drag.max, drag.startWidth + change));
     if (width === drag.width) return;
@@ -75,6 +77,7 @@ function setupDivider({ divider, pane, property, key, stored, min, limit = Infin
   });
 
   divider.addEventListener('keydown', (event) => {
+    if (isFrozen()) return;
     const { width, max } = bounds();
     let target: number;
     switch (event.key) {
@@ -101,11 +104,44 @@ function setupDivider({ divider, pane, property, key, stored, min, limit = Infin
   });
 }
 
+function setupDividerFreeze(initiallyFrozen: boolean): void {
+  const { topicDivider, sendDivider, freezeDividersCheckbox: checkbox } = elements;
+  const applyFrozen = (frozen: boolean) => {
+    checkbox.checked = frozen;
+    for (const divider of [topicDivider, sendDivider]) {
+      divider.setAttribute('aria-disabled', String(frozen));
+      divider.tabIndex = frozen ? -1 : 0;
+    }
+  };
+  applyFrozen(initiallyFrozen);
+
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.freezeDividers) applyFrozen(changes.freezeDividers.newValue === true);
+  });
+  checkbox.addEventListener('change', async () => {
+    const frozen = checkbox.checked;
+    checkbox.disabled = true;
+    try {
+      await saveSync({ freezeDividers: frozen });
+      applyFrozen(frozen);
+    } catch {
+      checkbox.checked = topicDivider.getAttribute('aria-disabled') === 'true';
+      showSettingsStatus('Failed to save settings', 'error');
+    } finally {
+      checkbox.disabled = false;
+    }
+  });
+}
+
 export async function setupPaneDividers(): Promise<void> {
   const { mainView, topicDivider, topicSidebar, sendDivider, sendSection } = elements;
   const topicsKey = isPageMode ? 'topicsPaneWidth' : 'popupTopicsPaneWidth';
   const sendKey = isPageMode ? 'sendPaneWidth' : 'popupSendPaneWidth';
-  const stored = await browser.storage.local.get([topicsKey, sendKey]).catch((): Record<string, unknown> => ({}));
+  const [stored, settings] = await Promise.all([
+    browser.storage.local.get([topicsKey, sendKey]).catch((): Record<string, unknown> => ({})),
+    browser.storage.sync.get('freezeDividers').catch((): Record<string, unknown> => ({})),
+  ]);
+  setupDividerFreeze(settings.freezeDividers === true);
   const style = getComputedStyle(mainView);
   const size = (property: string) => Number.parseFloat(style.getPropertyValue(property));
   const minInbox = size('--min-inbox-width');

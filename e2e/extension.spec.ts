@@ -327,6 +327,53 @@ test.describe('sending', () => {
     await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 64));
   });
 
+  test('freezes both dividers across views and restores resizing when unfrozen', async ({ configure, openPopup }) => {
+    await configure({ topics: 'alerts,backups' });
+    const popup = await openPopup();
+    await popup.setViewportSize({ width: 800, height: 600 });
+    const tab = await openPopup('?mode=page');
+    await tab.setViewportSize({ width: 1100, height: 720 });
+    const topicsDivider = popup.getByRole('separator', { name: 'Resize topics' });
+    const sendDivider = popup.getByRole('separator', { name: 'Resize Send' });
+    const tabDividers = tab.getByRole('separator');
+    const freeze = popup.getByRole('checkbox', { name: 'Freeze section dividers' });
+
+    await expect(tabDividers).toHaveCount(2);
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', '120');
+    await dragDivider(popup, 'Resize topics', 24);
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', '144');
+    await popup.locator('#settings-btn').click();
+    await expect(freeze).not.toBeChecked();
+    await freeze.check();
+    for (const divider of await tabDividers.all()) {
+      await expect(divider).toHaveAttribute('aria-disabled', 'true');
+    }
+    await popup.locator('#back-btn').click();
+    for (const divider of [topicsDivider, sendDivider]) {
+      await expect(divider).toHaveAttribute('aria-disabled', 'true');
+      await expect(divider).toHaveAttribute('tabindex', '-1');
+    }
+    await dragDivider(popup, 'Resize topics', 24);
+    await sendDivider.press('ArrowLeft');
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', '144');
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', '260');
+
+    await popup.reload();
+    await expect(topicsDivider).toHaveAttribute('aria-disabled', 'true');
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', '144');
+    await popup.locator('#settings-btn').click();
+    await expect(freeze).toBeChecked();
+    await freeze.uncheck();
+    for (const divider of await tabDividers.all()) {
+      await expect(divider).toHaveAttribute('aria-disabled', 'false');
+    }
+    await popup.locator('#back-btn').click();
+    await dragDivider(popup, 'Resize topics', 24);
+    await sendDivider.press('ArrowLeft');
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', '168');
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', '276');
+  });
+
   test('the native toolbar popup opens wide with topics, inbox, and Send side by side', async ({
     configure,
     ntfy,

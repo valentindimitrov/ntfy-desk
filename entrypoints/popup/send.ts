@@ -288,7 +288,7 @@ function renderAttachments(): void {
   const { attachments, isSending } = state;
   elements.filePreview.replaceChildren();
   elements.filePreview.classList.toggle('visible', attachments.length > 0);
-  elements.fileBtn.textContent = attachments.length > 0 ? `📎 Attach files (${attachments.length})` : '📎 Attach files';
+  elements.fileBtnLabel.textContent = attachments.length > 0 ? `Attach files (${attachments.length})` : 'Attach files';
 
   attachments.forEach((file, index) => {
     const preview = document.createElement('div');

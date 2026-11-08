@@ -16,7 +16,7 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
 - **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.
-- **Resizable panes**. Drag the dividers on either side of the inbox, or focus a divider and use the arrow keys. The toolbar popup and browser tab remember their pane widths separately.
+- **Resizable panes**. Drag the dividers on either side of the inbox, or focus a divider and use the arrow keys. The toolbar popup and browser tab remember their pane widths separately. Select **Freeze section dividers** in Settings to lock them in both views.
 - **Open in a tab**. Open ntfy Desk in its own browser tab to use the full viewport.
 - **Keyboard**: Right Ctrl + Enter sends.
 - **Dark mode**, and no tracking.
