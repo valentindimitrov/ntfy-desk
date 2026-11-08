@@ -42,7 +42,7 @@ function renderTopicSidebar(messages: NtfyMessage[], selected: string | null): v
       button.setAttribute('aria-pressed', String(topic === selected));
 
       const name = document.createElement('span');
-      name.className = 'topic-filter-name';
+      name.className = topic === null ? 'topic-filter-name all-topics-label' : 'topic-filter-name';
       name.textContent = topic ?? 'All topics';
       button.appendChild(name);
 
