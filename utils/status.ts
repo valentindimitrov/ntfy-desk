@@ -57,14 +57,13 @@ export interface StatusLine {
 }
 
 /** What the Receive tab shows for a status; null when there is nothing to show */
-export function describeStatus(status: ReceiverStatus | null, now = Date.now()): StatusLine[] {
+export function describeStatus(status: ReceiverStatus | null): StatusLine[] {
   if (!status || status.state === 'not-configured') {
     return [];
   }
 
   const lines: StatusLine[] = [];
   const host = (status.server || 'the server') + (status.usingFallback ? ' (fallback)' : '');
-  const retry = status.retryAt && status.retryAt > now ? ` in ${Math.ceil((status.retryAt - now) / 1000)} s` : '';
   switch (status.state) {
     case 'connected':
       lines.push({ text: `Connected to ${host}`, level: 'ok' });
@@ -75,8 +74,8 @@ export function describeStatus(status: ReceiverStatus | null, now = Date.now()):
     case 'reconnecting':
       lines.push(
         status.unreachable
-          ? { text: `Can't reach ${host}, retrying${retry || '…'}`, level: 'error' }
-          : { text: `Disconnected from ${host}, reconnecting${retry || '…'}`, level: 'warning' },
+          ? { text: `Can't reach ${host}, retrying`, level: 'error' }
+          : { text: `Disconnected from ${host}, reconnecting`, level: 'warning' },
       );
       break;
     case 'no-readable-topics':
@@ -97,4 +96,8 @@ export function describeStatus(status: ReceiverStatus | null, now = Date.now()):
     lines.push({ text: `Some cached events may have been skipped: ${status.truncatedTopics.join(', ')}`, level: 'warning' });
   }
   return lines;
+}
+
+export function retryCountdown(retryAt: number | null, now = Date.now()): string {
+  return retryAt && retryAt > now ? ` in ${Math.ceil((retryAt - now) / 1000)} s` : '…';
 }

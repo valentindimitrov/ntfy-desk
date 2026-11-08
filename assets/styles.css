@@ -37,6 +37,9 @@
   --primary: #338574;
   --primary-dark: #2a6e60;
   --primary-light: #2a7566; /* text accent: 5.5:1 on white */
+  --status-success: #215f52;
+  --status-warning: #8a4100;
+  --status-error: #a52121;
 
   /* Light theme */
   --bg-main: #f3f5f4;
@@ -61,6 +64,9 @@ body[data-theme='dark'] {
   --border-color: #4b5754;
   --border-focus: #4a9d8c;
   --primary-light: #66c0ac; /* text accent: 6.7:1 on the dark inputs */
+  --status-success: #66c0ac;
+  --status-warning: #ffba70;
+  --status-error: #ffa39f;
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
@@ -76,6 +82,9 @@ body[data-theme='dark'] {
     --border-color: #4b5754;
     --border-focus: #4a9d8c;
     --primary-light: #66c0ac; /* text accent: 6.7:1 on the dark inputs */
+    --status-success: #66c0ac;
+    --status-warning: #ffba70;
+    --status-error: #ffa39f;
     --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   }
 }
@@ -450,6 +459,10 @@ body:has(#settings-view.active) #back-btn {
 
 .topic-remove,
 .tag-remove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
   margin-left: 6px;
   cursor: pointer;
   opacity: 0.8;
@@ -812,19 +825,29 @@ body:has(#settings-view.active) #back-btn {
   display: block;
 }
 
+.status[role='status']:not(.visible) {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
 .status.success {
   background-color: rgba(51, 133, 116, 0.15);
-  color: var(--primary);
+  color: var(--status-success);
 }
 
 .status.error {
   background-color: rgba(229, 57, 53, 0.15);
-  color: #e53935;
+  color: var(--status-error);
 }
 
 .status.warning {
   background-color: rgba(255, 152, 0, 0.15);
-  color: #f57c00;
+  color: var(--status-warning);
 }
 
 /* ========================================
@@ -886,27 +909,6 @@ body:has(#settings-view.active) #back-btn {
 
 .tooltip.visible {
   opacity: 1;
-}
-
-/* ========================================
-   Filepicker-specific Styles
-   ======================================== */
-
-.filepicker-page html,
-.filepicker-page body,
-body.filepicker-page {
-  height: 100%;
-  overflow: hidden;
-}
-
-.filepicker-page .main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  text-align: center;
 }
 
 .subtitle {
@@ -1091,7 +1093,7 @@ body.filepicker-page {
 }
 
 .notifications-error {
-  color: #f44336;
+  color: var(--status-error);
 }
 
 /* Read state */
@@ -1593,7 +1595,7 @@ body:not(.page-mode) .send-section :is(.form-input, .form-select, .form-textarea
 }
 
 .status-line.error {
-  color: #f44336;
+  color: var(--status-error);
 }
 
 .status-line.error::before {

@@ -8,12 +8,12 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 ## Features
 
 - **Receive**. Live messages arrive over ntfy's JSON stream. The toolbar icon shows the unread count. When the browser starts, the extension catches up on messages still in the server's cache. High and urgent desktop notifications request to stay visible until dismissed.
-- **Notification rules per topic**: all, from a priority up, or off; the messages are still listed.
-- **Clickable notifications**. A click opens the message's link or highlights the message in the extension tab. Chromium can show up to two buttons for view actions and attachments.
+- **Notification rules per topic**: all, from a priority up, or off. The inbox still lists the messages. A catch-up with more than five eligible notifications for one topic shows one summary.
+- **Clickable notifications**. A click opens the message's link or highlights the message in the extension tab without reloading the composer. A summary opens its topic. Chromium can show up to two buttons for view actions and attachments.
 - **Connection state**. The header shows the active connection. The inbox shows reconnects, unreachable servers, send-only topics and failed fetches.
 - **Received messages**. The inbox shows full messages, topic filters, unread counts, search and per-topic deletion sync. Links open in a new tab, Markdown is rendered, and images hosted on your server can be previewed.
 - **Send and receive on one page**. The toolbar popup and wide extension tab put the inbox on the left and the Send form on the right. Select **Send notification** to collapse it into a slim rail on the right. Enable **Remember collapsed/expanded state of section Send notification** in Settings to reopen it as you left it. The Send form follows the selected inbox topic. Choose **All topics** to pick a different destination.
-- **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP. You can keep editing while a send finishes. If the server or selected topic changes in another view or through browser sync, reopen ntfy Desk and check the destination before sending.
+- **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP. You can keep editing while a send finishes. Files added during a send and files that failed to upload stay available for the next send. ZIPs rename duplicate entries so each file can be extracted. If the server or selected topic changes in another view or through browser sync, reopen ntfy Desk and check the destination before sending.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
 - **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.
 - **Resizable panes**. Drag the dividers on either side of the inbox, or focus a divider and use the arrow keys. The toolbar popup and browser tab remember their pane widths separately. Select **Freeze dividers between sections All topics, Inbox, and Send notification** in Settings to lock them in both views.
@@ -33,7 +33,7 @@ The current build version is **1.0.0**. Install from a local build or a CI build
 
 In the settings (gear icon):
 
-1. **Server URL**: `https://ntfy.sh`, or your own server. Settings keep the last saved addresses until both URL fields are empty or contain valid HTTP(S) URLs. Username and password in the URL move into local fields. Query strings and fragments are discarded. Enter any access token in the Access Token field.
+1. **Server URL**: `https://ntfy.sh`, or your own server. Choose **Save server settings** to commit the URLs and credentials together. Both URL fields accept a valid HTTP(S) address or an empty value. Username and password in the URL move into local fields. Query strings and fragments are discarded.
 2. **Fallback URL** (optional): another address of the same server, e.g. the public URL when the main one is a LAN address. Receiving switches to it while the main server doesn't answer (checked every minute) and back when it returns; sending retries on it when the main server gives no response.
 3. **Access Token**, or **Username and password**. Enter credentials in these fields so they are stored on this device only. The extension uses them only with server origins approved on this device. A server URL changed through browser sync requires confirmation before requests to it use your credentials. The settings warn if an `http://` connection would send credentials unencrypted.
 4. **Allow access to this server**: appears when a token or credentials are set. ntfy's CORS headers don't allow the `Authorization` header, so the extension needs permission for the server's site (both sites, with a fallback URL) to send authenticated requests.

@@ -4,8 +4,9 @@ import { getHistoryState, getTopicSyncStates } from '@/utils/history';
 import type { NtfyMessage } from '@/utils/ntfy';
 import { MAX_MESSAGE_JSON } from '@/utils/ntfy';
 import { KEEPALIVE_INTERVAL, STREAM_IDLE_TIMEOUT, createReceiver } from '@/utils/receiver';
+import { getReceiverStatus } from '@/utils/status';
 import { mockResolved } from './helpers/mock';
-import { FakeStream, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
+import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
 let notified: NtfyMessage[];
@@ -41,7 +42,6 @@ describe('sync and live messages', () => {
     const stream = lastStream();
     stream.accept();
     await receiver.sync();
-    await sleep(10);
     expect(notified).toEqual([]); // the first sync of a topic is silent
 
     // Live messages on both topics while polls run concurrently
@@ -51,13 +51,8 @@ describe('sync and live messages', () => {
       server.publish('backups', 10003),
       server.publish('alerts', 10003),
     ];
-    for (const message of live) {
-      void stream.deliver(message);
-      void receiver.sync();
-    }
-    await sleep(30);
+    await Promise.all(live.flatMap((message) => [stream.deliver(message), receiver.sync()]));
     for (let i = 0; i < 3; i++) await receiver.sync();
-    await sleep(30);
     expect(notified.map((m) => m.id).sort()).toEqual(live.map((m) => m.id).sort());
 
     // Published while the stream was down: the next sync delivers it once
@@ -77,6 +72,7 @@ describe('sync and live messages', () => {
     expect(states.get('backups')?.since).toBe(10003);
     expect(server.requests.every((r) => !/since=m\d/.test(r.url))).toBe(true);
     expect(server.requests.every((r) => r.auth === 'Bearer tk_test')).toBe(true);
+    receiver.close();
   });
 
   it('syncs a new topic silently and forgets removed topics', async () => {
@@ -101,6 +97,16 @@ describe('sync and live messages', () => {
     expect(notified.map((m) => m.id)).toEqual([first.id]);
   });
 
+  it('catches up from an empty poll after more than a day offline', async () => {
+    await configure('quiet');
+    const receiver = newReceiver();
+    await receiver.sync();
+    const first = server.publish('quiet', server.now + 1);
+    server.now += 2 * 24 * 3600;
+    await receiver.sync();
+    expect(notified.map(({ id }) => id)).toEqual([first.id]);
+  });
+
   it("doesn't re-add or notify a message deleted in the popup", async () => {
     await configure('alerts');
     const receiver = newReceiver();
@@ -114,6 +120,56 @@ describe('sync and live messages', () => {
 });
 
 describe('server deletions', () => {
+  it('rechecks a replay marked complete before older deletions were preserved', async () => {
+    await configure('alerts');
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    const row = server.publish('alerts', 9999, { sequence_id: 'cached' });
+    server.publish('alerts', 10000, { event: 'message_delete', sequence_id: 'cached' });
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [{ ...row, sequence_id: undefined }],
+      topicSync: [
+        {
+          topic: 'alerts',
+          since: 20000,
+          synced: true,
+          origins: ['https://ntfy.example'],
+          seen: [],
+          deletionReplay: { generation: 1, complete: true },
+        },
+      ],
+    });
+    await newReceiver().sync();
+    expect((await getHistoryState()).receivedNotifications).toEqual([]);
+    expect((await getTopicSyncStates()).get('alerts')?.deletionReplay?.complete).toBe(true);
+  });
+
+  it.each([false, true])('keeps older relevant deletions in a large poll (replay already complete: %s)', async (complete) => {
+    await configure('alerts');
+    const receiver = newReceiver();
+    const old = server.publish('alerts', 9999, { sequence_id: 'older' });
+    await receiver.sync();
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    if (complete) await receiver.sync();
+    server.publish('alerts', 10000, { event: 'message_delete', sequence_id: 'older' });
+    for (let i = 0; i < 1100; i++) server.publish('alerts', 10001 + i);
+    await receiver.sync();
+    expect((await getHistoryState()).receivedNotifications.some(({ id }) => id === old.id)).toBe(false);
+    // The old row would also be outside the 100-row history cap. Verify the delete was applied.
+    expect((await getTopicSyncStates()).get('alerts')?.serverDeletions?.some(([sequence]) => sequence === 'older')).toBe(true);
+  });
+
+  it('keeps deletion replay incomplete when the server truncated it', async () => {
+    await configure('alerts');
+    const receiver = newReceiver();
+    server.publish('alerts', 9999);
+    await receiver.sync();
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    server.pollTruncated = true;
+    await receiver.sync();
+    expect((await getTopicSyncStates()).get('alerts')?.deletionReplay?.complete).toBe(false);
+    expect((await getReceiverStatus())?.truncatedTopics).toEqual(['alerts']);
+  });
+
   it('checks saved messages for deletions before the watermark after enabling sync during a poll', async () => {
     await configure('alerts');
     const receiver = newReceiver();
@@ -297,19 +353,24 @@ describe('subscription stream', () => {
     receiver.close();
   });
 
-  it('never logs the credentials', async () => {
-    await configure('alerts', 'tk_secret');
+  it.each(['bearer', 'basic'])('never logs %s credentials on a failed subscription', async (kind) => {
+    const username = 'synthetic-user';
+    const password = 'synthetic-password';
+    const encoded = btoa(`${username}:${password}`);
+    await configure('alerts', kind === 'bearer' ? 'tk_secret' : '');
+    if (kind === 'basic') await fakeBrowser.storage.local.set({ serverCredentials: { username, password } });
     const logs: string[] = [];
     for (const method of ['log', 'error', 'warn'] as const) {
       vi.spyOn(console, method).mockImplementation((...args: unknown[]) => void logs.push(args.map(String).join(' ')));
     }
     const receiver = newReceiver();
     await receiver.connect();
+    expect(lastStream().auth).toBe(kind === 'bearer' ? 'Bearer tk_secret' : `Basic ${encoded}`);
     lastStream().refuse(401);
-    await sleep(10);
+    await vi.waitFor(async () => expect((await getReceiverStatus())?.state).toBe('reconnecting'));
     receiver.close();
     expect(logs.length).toBeGreaterThan(0);
-    expect(logs.some((line) => line.includes('tk_secret'))).toBe(false);
+    for (const value of ['tk_secret', username, password, encoded]) expect(logs.join('\n')).not.toContain(value);
   });
 
   it('reads messages split across chunks, and drops a line that is too long', async () => {
@@ -333,9 +394,9 @@ describe('subscription stream', () => {
     const receiver = newReceiver();
     await receiver.connect();
     lastStream().accept();
-    await sleep(5);
+    await vi.waitFor(async () => expect((await getReceiverStatus())?.state).toBe('connected'));
     lastStream().end();
-    await sleep(10);
+    await vi.waitFor(async () => expect((await getReceiverStatus())?.state).toBe('reconnecting'));
     await receiver.connect(); // the reconnect timer or the alarm
     expect(FakeStream.instances).toHaveLength(2);
     receiver.close();
@@ -350,7 +411,7 @@ describe('subscription stream', () => {
       const receiver = newReceiver();
       await receiver.connect();
       lastStream().accept();
-      await sleep(5);
+      await vi.waitFor(async () => expect((await getReceiverStatus())?.state).toBe('connected'));
       vi.advanceTimersByTime(KEEPALIVE_INTERVAL * 3);
       expect(ping).toHaveBeenCalledTimes(3);
 

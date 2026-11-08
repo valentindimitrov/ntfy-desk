@@ -42,10 +42,14 @@ const READABLE_TOPICS_TTL = 60 * 60 * 1000;
 // Window fetched silently the first time a topic is synced
 const INITIAL_SYNC_SINCE = '24h';
 const TRUNCATION_WARNING_TTL = 24 * 60 * 60 * 1000;
+const INCOMPLETE_REPLAY_RETRY = 15 * 60 * 1000;
+const EMPTY_POLL_OVERLAP = 60;
 
 export interface ReceiverEvents {
   /** A message new to the history (not during a topic's first, silent sync) */
   onNewMessage(message: NtfyMessage): void;
+  /** A completed catch-up delivers its saved messages together for notification grouping. */
+  onCatchUp?(messages: NtfyMessage[]): void;
   /** The subscription opened */
   onConnected?(): void;
 }
@@ -301,14 +305,14 @@ export function createReceiver(events: ReceiverEvents) {
     const [states, topics, syncDeletions] = await Promise.all([getTopicSyncStates(), getReadableTopics(config), getSyncDeletionTopics()]);
     const origins = serverOrigins(configured.apiUrl, configured.fallbackUrl);
     const topicState = (topic: string) => topicStateForServer(states.get(topic), origins);
-    const needsReplay = new Set(topics.filter((topic) => syncDeletions.has(topic) && !topicState(topic)?.deletionReplay?.complete));
-    const oldest = new Map<string, number>();
-    if (needsReplay.size > 0) {
+    const saved = new Map<string, NtfyMessage[]>();
+    if (topics.some((topic) => syncDeletions.has(topic))) {
       const { receivedNotifications } = await getHistoryState();
       for (const message of receivedNotifications) {
-        if (needsReplay.has(message.topic) && (!message.serverOrigin || origins.includes(message.serverOrigin))) {
-          oldest.set(message.topic, Math.min(oldest.get(message.topic) ?? Infinity, message.time));
-        }
+        if (!syncDeletions.has(message.topic) || (message.serverOrigin && !origins.includes(message.serverOrigin))) continue;
+        const rows = saved.get(message.topic) ?? [];
+        rows.push(message);
+        saved.set(message.topic, rows);
       }
     }
     const syncErrors = new Map<string, string>();
@@ -328,20 +332,31 @@ export function createReceiver(events: ReceiverEvents) {
 
     for (const topic of topics) {
       const state = topicState(topic);
-      if (needsReplay.has(topic)) {
+      const savedMessages = saved.get(topic) ?? [];
+      const includeDeletions = syncDeletions.has(topic);
+      const progress = state?.deletionReplay;
+      if (includeDeletions && !progress?.complete && (progress?.retryAt ?? 0) <= Date.now()) {
         try {
-          const time = oldest.get(topic);
-          const replay =
-            time === undefined
-              ? { events: [], serverOrigin: new URL(apiUrl).origin, truncated: false }
-              : await getNotifications(config, topic, Math.max(1, Math.floor(time)), { includeDeletions: true });
+          const oldest = Math.min(...savedMessages.map(({ time }) => time));
+          const since = Math.max(1, Math.floor(progress?.nextSince ?? oldest));
+          const replay = Number.isFinite(since)
+            ? await getNotifications(config, topic, since, { includeDeletions, savedMessages })
+            : { events: [], serverOrigin: new URL(apiUrl).origin, truncated: false, scanLimited: false, serverTruncated: false };
           if (!origins.includes(replay.serverOrigin)) throw new Error('Unexpected server origin');
+          const complete = !replay.scanLimited && !replay.serverTruncated;
+          const last = replay.events.at(-1)?.time ?? since;
+          const canContinue = replay.scanLimited && !replay.serverTruncated && last > since;
           await recordDeletionReplay(
             topic,
             replay.events,
             { origin: replay.serverOrigin, origins },
-            state?.deletionReplay?.generation ?? 0,
+            progress?.generation ?? 0,
             replay.truncated,
+            {
+              complete,
+              nextSince: canContinue ? last : progress?.nextSince,
+              retryAt: !complete && !canContinue ? Date.now() + INCOMPLETE_REPLAY_RETRY : undefined,
+            },
           );
           if (replay.truncated) truncatedTopics.add(topic);
         } catch (error) {
@@ -352,13 +367,18 @@ export function createReceiver(events: ReceiverEvents) {
 
       try {
         const since = state?.since ?? INITIAL_SYNC_SINCE;
-        const replay = await getNotifications(config, topic, since, { includeDeletions: syncDeletions.has(topic) });
+        const started = Date.now();
+        const replay = await getNotifications(config, topic, since, { includeDeletions, savedMessages });
         // A single second can fill even the scan limit. Skip that second only if the
         // bounded replay couldn't move the inclusive cursor forward.
+        const emptyStart =
+          typeof since === 'string' && replay.events.length === 0 && !replay.truncated
+            ? Math.max(1, Math.floor((replay.serverTime ?? started) / 1000) - EMPTY_POLL_OVERLAP)
+            : undefined;
         const advanceTo =
           replay.scanLimited && typeof since === 'number' && replay.events.every((event) => event.time <= since)
             ? Math.floor(since) + 1
-            : undefined;
+            : emptyStart;
         const messages = await recordPoll(
           topic,
           replay.events,
@@ -369,7 +389,8 @@ export function createReceiver(events: ReceiverEvents) {
           },
         );
         if (replay.truncated) truncatedTopics.add(topic);
-        for (const message of messages) events.onNewMessage(message);
+        if (messages.length > 0 && events.onCatchUp) events.onCatchUp(messages);
+        else for (const message of messages) events.onNewMessage(message);
       } catch (error) {
         unreachable = reportSyncError(topic, error) || unreachable;
       }

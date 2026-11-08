@@ -8,7 +8,7 @@ import { linkify, renderMarkdown } from '@/utils/markdown';
 import { sendToBackground } from '@/utils/messages';
 import type { DeletionSyncResult } from '@/utils/delete';
 import { ruleFor } from '@/utils/rules';
-import { STATUS_KEY, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
+import { STATUS_KEY, describeStatus, getReceiverStatus, retryCountdown, type ReceiverStatus } from '@/utils/status';
 import { updateSendTopic } from './send';
 import { elements, inboxTopic, isConfigured, saveReceiveFilter, state } from './state';
 import { showReceiveStatus } from './ui';
@@ -220,6 +220,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   readButton.className = 'notification-action-btn read-btn';
   readButton.textContent = '✓';
   readButton.title = isRead ? 'Mark as Unread' : 'Mark as Read';
+  readButton.setAttribute('aria-label', readButton.title);
   readButton.addEventListener('click', () => void toggleRead(message.id, item, readButton));
   actions.appendChild(readButton);
 
@@ -229,6 +230,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
     linkButton.className = 'notification-action-btn link-btn';
     linkButton.textContent = '🔗';
     linkButton.title = 'Copy Attachment Link';
+    linkButton.setAttribute('aria-label', linkButton.title);
     linkButton.addEventListener('click', () => void copyLink(attachmentUrl, linkButton));
     actions.appendChild(linkButton);
   }
@@ -237,6 +239,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   deleteButton.className = 'notification-action-btn delete-btn';
   deleteButton.textContent = '×';
   deleteButton.title = state.syncDeletionTopics.has(message.topic) ? 'Delete here and on the server (if allowed)' : 'Delete Notification';
+  deleteButton.setAttribute('aria-label', deleteButton.title);
   deleteButton.addEventListener('click', () => void deleteMessage(message.id, item));
   actions.appendChild(deleteButton);
 
@@ -312,6 +315,7 @@ async function toggleRead(id: string, item: HTMLElement, button: HTMLElement): P
   }
   item.classList.toggle('read', index === -1);
   button.title = index === -1 ? 'Mark as Unread' : 'Mark as Read';
+  button.setAttribute('aria-label', button.title);
   try {
     await sendToBackground({ action: 'setRead', ids: [id], read: index === -1 });
   } catch (error) {
@@ -406,10 +410,17 @@ function renderConnectionStatus(): void {
   elements.headerConnection.title = connected?.text ?? '';
   elements.headerConnection.setAttribute('aria-label', connected?.text ?? '');
   elements.connectionStatus.replaceChildren(
-    ...lines.map(({ text, level }) => {
+    ...lines.map(({ text, level }, index) => {
       const line = document.createElement('div');
       line.className = `status-line ${level}`;
       line.textContent = text;
+      if (index === 0 && state.receiverStatus?.state === 'reconnecting') {
+        const countdown = document.createElement('span');
+        countdown.className = 'retry-countdown';
+        countdown.setAttribute('aria-hidden', 'true');
+        countdown.textContent = retryCountdown(state.receiverStatus.retryAt);
+        line.append(countdown);
+      }
       return line;
     }),
   );
@@ -425,9 +436,8 @@ export function setupReceive(): void {
   void loadConnectionStatus();
   // The reconnect countdown
   setInterval(() => {
-    if (state.receiverStatus?.retryAt) {
-      renderConnectionStatus();
-    }
+    const countdown = elements.connectionStatus.querySelector('.retry-countdown');
+    if (countdown) countdown.textContent = retryCountdown(state.receiverStatus?.retryAt ?? null);
   }, 1000);
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === 'session' && changes[STATUS_KEY]) {

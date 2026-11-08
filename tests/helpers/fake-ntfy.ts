@@ -13,6 +13,7 @@ export interface FakeServer {
   authDown: boolean;
   /** HTTP status of polls (200 by default) */
   pollStatus: number;
+  pollTruncated: boolean;
   /** Hosts that don't answer: requests to them reject with a TypeError, like fetch does */
   downHosts: string[];
   /** While set, /auth answers wait for it */
@@ -137,6 +138,7 @@ export function installFakeNtfy(): FakeServer {
     unreadable: [],
     authDown: false,
     pollStatus: 200,
+    pollTruncated: false,
     downHosts: [],
     authGate: null,
     pollGate: null,
@@ -161,8 +163,6 @@ export function installFakeNtfy(): FakeServer {
       }
       return new FakeStream(url.toString(), headers.get('Authorization'), init?.signal ?? undefined).response;
     }
-    // Some latency, so concurrent calls interleave
-    await new Promise((resolve) => setTimeout(resolve, Math.random() * 3));
     if (server.downHosts.includes(url.host)) {
       throw new TypeError('Failed to fetch');
     }
@@ -191,12 +191,13 @@ export function installFakeNtfy(): FakeServer {
       const row = server.messages.findIndex((m) => m.id === since);
       messages = messages.filter((m) => server.messages.indexOf(m) > row);
     }
-    return new Response(messages.map((m) => JSON.stringify(m)).join('\n'), { status: 200 });
+    return new Response(messages.map((m) => JSON.stringify(m)).join('\n'), {
+      status: 200,
+      headers: { Date: new Date(server.now * 1000).toUTCString(), 'X-Messages-Truncated': server.pollTruncated ? '1' : '0' },
+    });
   });
 
   FakeStream.instances = [];
   vi.stubGlobal('fetch', fetchMock);
   return server;
 }
-
-export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

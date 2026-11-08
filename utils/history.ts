@@ -3,7 +3,7 @@
 // delete actions (sent as messages) all go through one queue, so no update overwrites another.
 
 import { browser } from 'wxt/browser';
-import { MAX_POLL_EVENTS, parseMessage, sequenceOf, type NtfyMessage } from './ntfy';
+import { parseMessage, sequenceOf, type NtfyMessage } from './ntfy';
 import { getSyncDeletionTopics } from './sync-modes';
 
 /** Received messages kept per topic, so a busy topic doesn't push the others out */
@@ -14,6 +14,7 @@ export const MAX_HISTORY_SIZE = 8 * 1024 * 1024;
 const MAX_SEEN_PER_TOPIC = 5000;
 /** Older deletions may still race with live delivery after a poll has moved the watermark. */
 const MAX_SERVER_DELETIONS_PER_TOPIC = 1000;
+const DELETION_REPLAY_VERSION = 2;
 /**
  * Deleted ids kept for replay suppression, newest last. Leave room for a single delete of the
  * entire 8 MiB history, even if it consists of the smallest possible stored messages.
@@ -28,7 +29,7 @@ export interface TopicSyncState {
   /**
    * Catch-up watermark: the newest message time that a completed poll covered, and the next poll's
    * since= (inclusive). Only polls move it, never live messages: a live message newer than messages
-   * missed while disconnected must not let the next poll skip them. null until a poll returns one.
+   * missed while disconnected must not let the next poll skip them. An empty first poll can seed it.
    */
   since: number | null;
   /** Id and time of every message recorded at or after `since`, to skip those a poll returns again */
@@ -36,7 +37,7 @@ export interface TopicSyncState {
   /** Latest server deletion per sequence, bounded so an overlapping replay cannot restore it */
   serverDeletions?: [sequenceId: string, time: number, eventId: string][];
   /** A new generation needs a replay of cached deletions against the saved history. */
-  deletionReplay?: { generation: number; complete: boolean };
+  deletionReplay?: { generation: number; complete: boolean; nextSince?: number; retryAt?: number; version?: number };
   /** The first poll (silent: it loads recent history without notifications) completed */
   synced: boolean;
   /** Last time a bounded replay skipped events, for the inbox warning. */
@@ -74,6 +75,7 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
   if (Array.isArray(stored)) {
     for (const state of stored as TopicSyncState[]) {
       if (state && typeof state.topic === 'string') {
+        const replay = state.deletionReplay;
         states.set(state.topic, {
           topic: state.topic,
           origins: Array.isArray(state.origins) ? state.origins : undefined,
@@ -82,7 +84,9 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
           synced: state.synced === true,
           truncatedAt: state.truncatedAt,
           serverDeletions: Array.isArray(state.serverDeletions) ? state.serverDeletions : [],
-          deletionReplay: state.deletionReplay,
+          // Old completed replays could have silently dropped relevant deletes.
+          deletionReplay:
+            replay?.version === DELETION_REPLAY_VERSION ? replay : replay && { generation: replay.generation, complete: false },
         });
       }
     }
@@ -187,8 +191,15 @@ function recordEvents(
     source,
     poll = false,
     replayGeneration,
+    replayProgress,
     coverage,
-  }: { source?: HistorySource; poll?: boolean; replayGeneration?: number; coverage?: PollCoverage },
+  }: {
+    source?: HistorySource;
+    poll?: boolean;
+    replayGeneration?: number;
+    replayProgress?: Pick<NonNullable<TopicSyncState['deletionReplay']>, 'complete' | 'nextSince' | 'retryAt'>;
+    coverage?: PollCoverage;
+  },
 ): Promise<NtfyMessage[]> {
   return serialized(async () => {
     const [states, history, syncDeletionTopics] = await Promise.all([getTopicSyncStates(), getHistoryState(), getSyncDeletionTopics()]);
@@ -203,7 +214,7 @@ function recordEvents(
     const accepted = events.filter(
       (event) => event.event === 'message' || (syncDeletions && event.sequence_id && event.event === 'message_delete'),
     );
-    const ordered = poll ? accepted.sort((a, b) => a.time - b.time).slice(-MAX_POLL_EVENTS) : accepted;
+    const ordered = poll ? accepted.sort((a, b) => a.time - b.time) : accepted;
     const seen = new Set(state.seen.map(([id]) => id));
     const localDeletes = new Set(history.deletedMessageIds);
     // Oldest first so that reversing the map before trimming preserves newest-first ties.
@@ -280,7 +291,7 @@ function recordEvents(
     const notify = !poll || state.synced;
     if (coverage?.truncated) state.truncatedAt = Date.now();
     if (replay) {
-      state.deletionReplay = { generation: replayGeneration, complete: true };
+      state.deletionReplay = { generation: replayGeneration, version: DELETION_REPLAY_VERSION, ...(replayProgress ?? { complete: true }) };
     } else if (poll) {
       state.synced = true;
       const newestTime = Math.max(ordered.at(-1)?.time ?? -Infinity, coverage?.advanceTo ?? -Infinity);
@@ -291,8 +302,10 @@ function recordEvents(
     states.set(topic, state);
 
     // Persist history and the watermark together, so a failed write never loses a notification.
+    let storedIds: Set<string> | undefined;
     if (changed) {
       const receivedNotifications = trimHistory([...messages.values()].reverse());
+      if (notify && added.length > 0) storedIds = new Set(receivedNotifications.map(({ id }) => id));
       await browser.storage.local.set({
         ...storedStates(states),
         receivedNotifications,
@@ -301,7 +314,7 @@ function recordEvents(
     } else {
       await browser.storage.local.set(storedStates(states));
     }
-    return notify ? added.filter((message) => messages.has(message.id)) : [];
+    return storedIds ? added.filter((message) => storedIds.has(message.id)) : [];
   });
 }
 
@@ -321,8 +334,15 @@ export async function recordDeletionReplay(
   source: HistorySource,
   generation: number,
   truncated = false,
+  progress?: Pick<NonNullable<TopicSyncState['deletionReplay']>, 'complete' | 'nextSince' | 'retryAt'>,
 ): Promise<void> {
-  await recordEvents(topic, events, { source, poll: true, replayGeneration: generation, coverage: { truncated } });
+  await recordEvents(topic, events, {
+    source,
+    poll: true,
+    replayGeneration: generation,
+    replayProgress: progress,
+    coverage: { truncated },
+  });
 }
 
 /** Mark newly enabled topics pending, including when an older replay is still in flight. */

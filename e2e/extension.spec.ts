@@ -205,8 +205,7 @@ test.describe('receiving', () => {
     await expect(popup.locator('header #header-connection')).toHaveText(`Connected to ${new URL(ntfy.url).host}`);
 
     // The poll after connecting must not notify it again
-    await serviceWorker.evaluate(() => chrome.runtime.sendMessage({ action: 'sync' }).catch(() => {}));
-    await popup.waitForTimeout(1000);
+    await popup.evaluate(() => chrome.runtime.sendMessage({ action: 'sync' }));
     expect(await notified()).toHaveLength(1);
   });
 
@@ -258,6 +257,107 @@ test.describe('receiving', () => {
 });
 
 test.describe('sending', () => {
+  test('preserves a file picked in another window during an attachment upload', async ({
+    configure,
+    ntfy,
+    openPopup,
+    context,
+    extensionId,
+  }) => {
+    await configure({ topics: 'alerts' });
+    const page = await openPopup('?mode=page');
+    await expect(page.locator('#topic-select')).toHaveValue('alerts');
+    const pick = async (name: string) => {
+      const picker = await context.newPage();
+      await picker.goto(`chrome-extension://${extensionId}/filepicker.html`);
+      await picker.locator('input[type=file]').setInputFiles({ name, mimeType: 'text/plain', buffer: Buffer.from(name) });
+    };
+    await pick('first.txt');
+    await expect(page.locator('#file-preview')).toContainText('first.txt');
+    let release!: () => void;
+    ntfy.publishGate = new Promise((resolve) => (release = resolve));
+    try {
+      await page.locator('#send-btn').click();
+      await expect.poll(() => ntfy.published.map(({ body }) => body)).toEqual(['first.txt']);
+      await pick('second.txt');
+      await expect(page.locator('#file-preview')).toContainText('second.txt');
+    } finally {
+      release();
+    }
+    await expect(page.locator('#status')).toHaveText('Notification sent!');
+    await expect(page.locator('#file-preview')).toContainText('second.txt');
+    await expect(page.locator('#file-preview')).not.toContainText('first.txt');
+  });
+
+  test('retains accessible icon names on hover and lets the keyboard remove tags and topics', async ({ configure, openPopup }) => {
+    await configure({ topics: 'alerts,backups' });
+    const page = await openPopup('?mode=page');
+    const settings = page.getByRole('button', { name: 'Settings', exact: true });
+    await settings.hover();
+    await expect(settings).toBeVisible();
+    const tags = page.locator('#new-tag-input');
+    await tags.fill('first');
+    await tags.press('Enter');
+    await tags.fill('second');
+    await tags.press('Enter');
+    await page.getByRole('button', { name: 'Remove tag first' }).press('Enter');
+    await expect(page.getByRole('button', { name: 'Remove tag first' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Remove tag second' })).toBeVisible();
+    await settings.click();
+    await page.getByRole('button', { name: 'Remove topic alerts' }).press('Enter');
+    await expect(page.getByRole('button', { name: 'Remove topic alerts' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Remove topic backups' })).toBeVisible();
+  });
+
+  test('keeps status text readable in light and dark themes', async ({ configure, openPopup }) => {
+    await configure({ topics: 'alerts' });
+    const page = await openPopup('?mode=page');
+    const ratios = await page.locator('#status').evaluate((status) => {
+      const rgb = (color: string) => color.match(/[\d.]+/g)!.map(Number);
+      const luminance = (color: number[]) =>
+        color.reduce((total, value, index) => {
+          const channel = value / 255;
+          const linear = channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+          return total + linear * [0.2126, 0.7152, 0.0722][index]!;
+        }, 0);
+      const result = [];
+      for (const theme of ['light', 'dark']) {
+        document.body.dataset.theme = theme;
+        for (const kind of ['success', 'warning', 'error']) {
+          status.setAttribute('class', `status visible ${kind}`);
+          const backgrounds = [];
+          for (let node: Element | null = status; node; node = node.parentElement) {
+            backgrounds.unshift(rgb(getComputedStyle(node).backgroundColor));
+          }
+          const background = backgrounds.reduce(
+            (base, color) => base.map((value, index) => value * (1 - (color[3] ?? 1)) + color[index]! * (color[3] ?? 1)),
+            [255, 255, 255],
+          );
+          const [low, high] = [luminance(background), luminance(rgb(getComputedStyle(status).color))].sort((a, b) => a - b);
+          result.push({ theme, kind, ratio: (high! + 0.05) / (low! + 0.05) });
+        }
+      }
+      return result;
+    });
+    for (const { theme, kind, ratio } of ratios) expect(ratio, `${theme} ${kind}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test('focuses a notification in the open inbox while preserving the composer', async ({ configure, ntfy, openPopup, serviceWorker }) => {
+    await configure({ topics: 'alerts' });
+    const page = await openPopup('?mode=page');
+    await waitForInitialSync(serviceWorker, ['alerts']);
+    const event = ntfy.publish('alerts', { title: 'Notification to focus' });
+    await expect(page.locator('.notification-title')).toHaveText('Notification to focus');
+    await page.locator('#message-input').fill('Unsent work');
+    await page.evaluate((id) => {
+      document.body.dataset.originalDocument = 'yes';
+      location.hash = new URLSearchParams({ message: id, focus: 'test' }).toString();
+    }, event.id);
+    await expect(page.locator('.notification-item.focused')).toHaveCount(1);
+    await expect(page.locator('body')).toHaveAttribute('data-original-document', 'yes');
+    await expect(page.locator('#message-input')).toHaveValue('Unsent work');
+  });
+
   test('blocks an open composer from publishing to a replacement server', async ({ configure, ntfy, openPopup, serviceWorker }) => {
     const next = await startNtfyServer();
     try {
@@ -727,6 +827,7 @@ test.describe('sending', () => {
     await popup.locator('#settings-btn').click();
     await popup.locator('#url-input').fill(ntfy.url);
     await popup.locator('#token-input').fill(ntfy.token);
+    await popup.getByRole('button', { name: 'Save server settings' }).click();
     await popup.locator('#new-topic-input').fill('alerts');
     await popup.locator('#new-topic-input').press('Enter');
 

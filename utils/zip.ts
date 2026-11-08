@@ -93,10 +93,18 @@ export async function createZip(files: ZipEntry[]): Promise<Blob> {
   const localParts: Uint8Array[] = [];
   const centralParts: Uint8Array[] = [];
   const timestamp = getDosDateTime(new Date());
+  const usedNames = new Set<string>();
   let localOffset = 0;
 
   for (const [index, file] of files.entries()) {
-    const nameBytes = textEncoder.encode(getEntryName(file.name, index));
+    const name = getEntryName(file.name, index);
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const extension = dot > 0 ? name.slice(dot) : '';
+    let unique = name;
+    for (let suffix = 2; usedNames.has(unique.toLowerCase()); suffix++) unique = `${stem} (${suffix})${extension}`;
+    usedNames.add(unique.toLowerCase());
+    const nameBytes = textEncoder.encode(unique);
     const dataBytes = toBytes(file.data);
 
     if (nameBytes.length > 0xffff) {

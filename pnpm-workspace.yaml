@@ -1,0 +1,2 @@
+# Keep the lockfile readable by GitHub's dependency graph. CI still installs the version in package.json.
+pmOnFail: ignore

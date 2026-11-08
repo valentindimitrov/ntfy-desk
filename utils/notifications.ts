@@ -13,6 +13,8 @@ const PRIORITY_LABELS: Record<number, string> = {
   4: '↑ High',
   5: '⇈ Urgent',
 };
+const CATCH_UP_PREFIX = 'catch-up:';
+const MAX_INDIVIDUAL_CATCH_UP = 5;
 
 export interface NotificationButton {
   title: string;
@@ -65,6 +67,23 @@ export async function notifyNewMessage(message: NtfyMessage): Promise<void> {
   }
 }
 
+/** Summarize bursts after the topic's priority rule has been applied. */
+export async function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
+  const rules = await getTopicRules();
+  const eligible = messages.filter((message) => shouldNotify(message, rules));
+  if (eligible.length <= MAX_INDIVIDUAL_CATCH_UP) {
+    eligible.forEach(showDesktopNotification);
+    return;
+  }
+  const topic = eligible[0]!.topic;
+  await browser.notifications.create(`${CATCH_UP_PREFIX}${topic}`, {
+    type: 'basic',
+    iconUrl: browser.runtime.getURL('/icon/128.png'),
+    title: `${eligible.length} new notifications`,
+    message: `Open the Inbox for ${topic}`,
+  });
+}
+
 async function findMessage(id: string): Promise<NtfyMessage | undefined> {
   const { receivedNotifications } = await getHistoryState();
   return receivedNotifications.find((message) => message.id === id);
@@ -84,6 +103,10 @@ export async function handleNotificationButton(notificationId: string, buttonInd
 /** A click on the notification: the message's click URL (http(s) only), else the message in the extension's tab */
 export async function handleNotificationClick(notificationId: string): Promise<void> {
   await browser.notifications.clear(notificationId);
+  if (notificationId.startsWith(CATCH_UP_PREFIX)) {
+    await openExtensionTab({ topic: notificationId.slice(CATCH_UP_PREFIX.length) });
+    return;
+  }
   const message = await findMessage(notificationId);
   if (message && isHttpUrl(message.click)) {
     await browser.tabs.create({ url: message.click });

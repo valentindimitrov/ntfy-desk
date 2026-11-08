@@ -14,3 +14,17 @@ export function mockResolved<T extends object, K extends keyof T>(target: T, met
 export function callsOf<A extends unknown[]>(spy: { mock: { calls: unknown[][] } }): A[] {
   return spy.mock.calls as A[];
 }
+
+/** Happy DOM has no Web Locks implementation. Preserve real per-name exclusivity in tests. */
+export function mockWebLocks(): void {
+  const queues = new Map<string, Promise<unknown>>();
+  const request = <T>(name: string, task: () => Promise<T>) => {
+    const result = (queues.get(name) ?? Promise.resolve()).then(task);
+    queues.set(
+      name,
+      result.catch(() => {}),
+    );
+    return result;
+  };
+  vi.spyOn(navigator, 'locks', 'get').mockReturnValue({ request } as LockManager);
+}

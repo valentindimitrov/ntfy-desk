@@ -64,7 +64,7 @@ The background owns the subscription, catch-up polls, received-message history, 
 | `storage.local` | `receivedNotifications`, `readMessageIds`, `deletedMessageIds`, `topicSync` | Received messages and the sync state, per device. |
 | `storage.local` | `storedFiles`, `draftState`, `receiveTopicFilter` | Attachments, draft and last inbox filter. `receiveTopicFilter` stores `{ topic }` for a specific topic or `null` for All topics. Legacy string values still load. |
 | `storage.local` | `popupTopicsPaneWidth`, `popupSendPaneWidth`, `topicsPaneWidth`, `sendPaneWidth`, `sendPanelOpen` | Pane widths are separate for the popup and tab. The remembered Send disclosure state is shared on this device. |
-| `storage.session` | `receiverStatus`, `sessionActive` | Gone after a browser restart: no stale connection state; a new session drops the old draft and attachments. |
+| `storage.session` | `receiverStatus` | Connection status is kept for the current extension session. |
 
 `getConfig()` in `utils/ntfy.ts` is the one place that assembles the configuration for requests. It:
 
@@ -130,7 +130,7 @@ Live messages alone would miss everything published while the browser was closed
 Each topic has a sync state in `topicSync`:
 
 - `origins` identifies the main and fallback aliases. An unrelated server, or a legacy cursor without origins, starts with a fresh poll.
-- `since` holds the newest event time a completed poll covered. The next poll asks for `since=<watermark>` (inclusive). Live events leave the watermark in place so the next poll can catch up on earlier events.
+- `since` holds the newest event time a completed poll covered. The next poll asks for `since=<watermark>` (inclusive). An empty first poll seeds the cursor one minute before the server's Date header, or before the local request start if the header is unavailable. Later empty polls leave it in place. Live events leave the watermark in place so the next poll can catch up on earlier events.
 - `seen` tracks the id and time of events at or after the watermark to deduplicate the inclusive replay.
 - `serverDeletions` tracks up to 1000 recent deletion events by sequence ID, so overlapping live delivery and polls can't reinsert an older version.
 - `synced`: whether the topic's first poll finished. The first poll loads the last 24 hours **silently** (no desktop notifications), so adding a topic doesn't flood the desktop.
@@ -139,7 +139,7 @@ Polls use time watermarks per topic, never one global `since=<message id>`: ids 
 
 Catch-up reads NDJSON incrementally and retains the newest 1,000 eligible events, up to 4 MiB of event JSON. If a response exceeds the 64 MiB scan limit, the next poll resumes from the saved prefix's watermark. If another bounded poll at that watermark cannot advance past the same second, it moves to the next second. The inbox warns for 24 hours when the extension drops events at a limit or detects ntfy's truncation header. [ntfy replay limits](https://docs.ntfy.sh/subscribe/api/#replay-limits)
 
-Enabling deletion sync schedules a one-time replay from the oldest saved message for the topic on the configured server. The replay applies cached delete events and recovers sequence IDs for existing rows. Ordinary message delivery and its watermark use the regular catch-up poll. The pending replay survives worker restarts and retries after failures. A new generation invalidates a replay started before a mode change.
+Enabling deletion sync schedules a replay from the oldest saved message for the topic on the configured server. Both replay and regular catch-up retain earlier deletes and matching publishes that affect existing rows outside the ordinary tail. The receiver keeps at most one matching publish per saved ID and one recent delete per relevant sequence, in server order. If a replay hits the scan cap it resumes from its own timestamp, separate from the ordinary catch-up watermark. Server truncation or a saturated second can leave the replay incomplete. The inbox warns and the receiver retries after a delay. A new generation invalidates a replay started before a mode change.
 
 Deletion sync is opt-in per topic. A `message_delete` event removes matching messages from that server's main or fallback origin, in the same topic and sequence, up to the event timestamp. The receiver uses message IDs for notifications without sequence IDs. A cached publish that matches an older message's ID, topic and time can recover its origin and sequence before deletion. Deletion markers share the topic cursor's server scope. A poll applies events in time order, preserving the server's order within a second. This allows a republish after a deletion to revive a sequence and suppresses desktop alerts for messages already deleted in the same poll. Cache expiry leaves local history intact. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
 
@@ -153,11 +153,11 @@ The history keeps the newest 100 messages per topic by server time, up to 8 MiB 
 
 ### Notifications and the badge
 
-A message new to the history triggers `notifyNewMessage` when the topic's rule allows it (`utils/rules.ts`). High and urgent priorities set `requireInteraction`. A click opens the message's `click` URL or highlights the message in the extension's tab. Chromium notification buttons open HTTP(S) view actions first, then the attachment if space remains. The unread badge is recomputed when history or the read and deleted ids change.
+A new message can trigger a desktop notification when it survives history trimming and the topic's rule allows it. High and urgent individual notifications set `requireInteraction`. Catch-up groups more than five eligible messages for one topic into a single summary. A click opens the message's `click` URL or highlights the message in the extension's tab. Summary clicks select their topic. The existing tab uses a URL fragment to focus the inbox in place. Chromium notification buttons open HTTP(S) view actions first, then the attachment if space remains. The unread badge is recomputed when history or the read and deleted ids change.
 
 ### Connection status
 
-The receiver writes its state to `storage.session` (`utils/status.ts`): connecting, connected, reconnecting (with the retry time), server unreachable, no readable topic, topics whose poll failed, the fallback in use, credentials held back. The header shows the active connection. The inbox shows warnings and errors above the list.
+The receiver writes its state to `storage.session` (`utils/status.ts`): connecting, connected, reconnecting (with the retry time), server unreachable, no readable topic, topics whose poll failed, the fallback in use, credentials held back. The header shows the active connection. The inbox shows warnings and errors above the list. The reconnect countdown updates visually in an aria-hidden span while the live region announces state changes.
 
 ## Sending
 
@@ -167,9 +167,10 @@ The toolbar popup requests 800 × 600 px for the main view, and the full-page vi
 
 The Send form publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 
-- The popup closes when a file dialog opens, so files are picked in a separate window (`entrypoints/filepicker/`) and wait in `storage.local` as data URLs until sent. Each edit immediately dispatches a draft save to the background. Sending and opening the file picker await that save. The background serializes writes and clears a draft only when its revision matches the successful send. Drafts and attachments are dropped when a new browser session starts.
+- The popup closes when a file dialog opens, so files are picked in a separate window (`entrypoints/filepicker/`) and wait in `storage.local` as data URLs. A shared Web Lock serializes file edits across the picker and both composer views. Files carry stable IDs and each successful upload removes only the IDs sent. Failed files and files added during a send stay attached. ZIP entry names are unique even on case-insensitive systems.
+- Each edit immediately dispatches a draft save to the background. Sending and opening the file picker await that save. The background serializes writes and clears only the sent draft revision. The browser's `runtime.onStartup` event clears drafts and attachments. They survive an extension reload, update or re-enable.
 - With "Fill in the current tab" (`includeUrl`), the page's title goes in the Title field and its URL in the Message field; a field the user typed in is left alone, and filled values aren't saved in the draft. Context menu sends put the page URL in the title. In the extension's own tab, "Use tab" asks once for the optional `tabs` permission to find the page used last.
-- The right-click menu sends the page, the selection, a link or an image (`utils/context-menu.ts`). An image is fetched and sent as an attachment, which asks for access to that image's site.
+- The right-click menu sends the page, the selection, a link or an image (`utils/context-menu.ts`). Menu rebuilds run in sequence. Each item carries its topic and server addresses and the handler verifies them before publishing. An image is fetched and sent as an attachment after requesting access to its site.
 - Before publishing, the composer verifies that its main and fallback URLs still match current settings and that the selected topic still exists. Sending retries on the fallback URL when the main server gives no response (network error or timeout). An HTTP error ends the attempt.
 
 Every request has a time limit (`TIMEOUTS` in `utils/ntfy.ts`).
@@ -180,7 +181,7 @@ The extension handles two kinds of untrusted input: the **server** (or anyone wh
 
 **Credentials**
 
-- Credentials entered in the access token or username and password fields live in `storage.local`. The settings editor saves only valid HTTP(S) URLs or empty fields. It uses `splitCredentials` to move userinfo to the local credentials fields and discard query strings and fragments before syncing the URLs.
+- Credentials entered in the access token or username and password fields live in `storage.local`. **Save server settings** commits the server fields explicitly and verifies that the connection settings still match the editor's baseline. While switching URLs it holds authentication until the new destination is committed. It uses `splitCredentials` to move userinfo to the local credentials fields and discard query strings and fragments before syncing the URLs. Other controls write only the preferences they change. Topic edits merge with current storage under a shared settings lock.
 - Credentials are bound to the server origins approved on this device (`authOrigins`). Saving server URLs in this browser's settings approves them. A URL changed elsewhere, such as browser sync from another browser, gets no credentials until the user confirms in the settings; `getConfig` enforces it (`heldBackFrom`), and every request takes its authentication from `getConfig`.
 - Credentials travel only in the `Authorization` header, never in a URL (see the next section). "Open in ntfy" opens the server without credentials in the address.
 - Authenticated requests refuse redirects (`redirect: 'error'`): the browser keeps the `Authorization` header on a same-origin redirect, which could point at any path, and ntfy publishes on GET.
@@ -249,4 +250,4 @@ The trade-offs accepted:
 - **Unit tests** (`tests/`, Vitest with WXT's fake browser): `tests/helpers/fake-ntfy.ts` is a fake ntfy server behind `fetch`, following ntfy v2.29's `since=` semantics, with `FakeStream` for subscriptions (accept, refuse, deliver, end; deliver resolves once the receiver has handled the line). Popup tests load the real `index.html` in happy-dom. `regressions.test.ts` and `security.test.ts` hold one test per review finding.
 - **End-to-end tests** (`e2e/`, Playwright Test): the built extension in Playwright's Chromium against `e2e/ntfy-server.ts`, a real HTTP server with the JSON stream. It accepts credentials only in the `Authorization` header, so the tests also prove they never go in a URL.
 - **Checks**: `pnpm check` (format, lint with type checking, unit tests), `pnpm test:e2e`, `pnpm lint:firefox` (Mozilla's add-on checks). CI runs all three.
-- **Build version**. WXT uses `package.json` as the source of the version in both manifests and ZIP filenames. CI attaches the ZIPs to workflow runs. The release job publishes the ZIPs for `v*` tags after the checks pass.
+- **Build version**. WXT uses `package.json` as the source of the version in both manifests and ZIP filenames. CI attaches the ZIPs to workflow runs. Tagged releases require `v` plus the package version. CI fails on a flaky Playwright result even if the retry passes. Dependabot checks npm packages and pinned GitHub Actions. CI installs the pnpm version declared in `package.json`. The workspace keeps a single-document lockfile so GitHub can read its dependency graph. [GitHub's pnpm support](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories#pnpm)

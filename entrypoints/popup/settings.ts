@@ -4,9 +4,11 @@
 import { browser } from 'wxt/browser';
 import {
   getConfig,
+  getStoredAuth,
   hasAuthentication,
   isHttpUrl,
   isNtfyPathPart,
+  parseTopics,
   serverOrigins,
   setAccessToken,
   setAuthOrigins,
@@ -27,7 +29,11 @@ import {
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics } from '@/utils/sync-modes';
 import { updateTopicOptions } from './send';
 import { elements, isConfigured, saveReceiveFilter, saveSync, state, type Theme } from './state';
-import { debounce, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
+import { moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
+
+async function editSettings<T>(task: () => Promise<T>): Promise<T> {
+  return navigator.locks.request('ntfy-settings', task);
+}
 
 export function applyTheme(): void {
   document.body.setAttribute('data-theme', state.theme);
@@ -109,19 +115,22 @@ function updateHeldBackUI(): void {
 /** The user confirms the current servers for the token and password */
 async function approveServers(): Promise<void> {
   try {
-    await setAuthOrigins(serverOrigins(state.apiUrl, state.fallbackUrl));
-    state.heldBackFrom = (await getConfig()).heldBackFrom;
+    await editSettings(async () => {
+      const saved = await getConfig();
+      if (saved.apiUrl !== state.apiUrl || saved.fallbackUrl !== state.fallbackUrl) throw new Error('Settings changed');
+      await setAuthOrigins(serverOrigins(saved.apiUrl, saved.fallbackUrl));
+      state.heldBackFrom = [];
+    });
     updateHeldBackUI();
     showSettingsStatus('Token and password are used with this server', 'success');
   } catch {
-    showSettingsStatus('Failed to save settings', 'error');
+    showSettingsStatus('Could not approve this server. Reopen Settings and try again.', 'error');
   }
 }
 
 function requestServerAccess(): void {
-  const apiUrl = splitCredentials(elements.urlInput.value.trim()).url;
-  const fallbackUrl = splitCredentials(elements.fallbackUrlInput.value.trim()).url;
-  const authenticated = typedAuth();
+  const { apiUrl, fallbackUrl } = state;
+  const authenticated = hasAuthentication(state);
   const patterns = authenticatedPatterns(apiUrl, fallbackUrl, authenticated);
   if (patterns.length === 0) return;
 
@@ -136,77 +145,80 @@ function requestServerAccess(): void {
  * user:password@ typed or pasted into a server URL goes into the username and password fields, and
  * query strings and fragments are discarded before the URL is synced
  */
-function moveUrlCredentialsToFields(): { apiUrl: string; fallbackUrl: string } | null {
+function readServerEdits(): Pick<typeof state, 'apiUrl' | 'fallbackUrl' | 'accessToken' | 'credentials'> | null {
   const apiUrl = elements.urlInput.value.trim();
   const fallbackUrl = elements.fallbackUrlInput.value.trim();
   if ((apiUrl && !isHttpUrl(apiUrl)) || (fallbackUrl && !isHttpUrl(fallbackUrl))) return null;
   const main = splitCredentials(apiUrl);
   const fallback = splitCredentials(fallbackUrl);
-  const fromUrl = main.credentials ?? fallback.credentials;
-  if (fromUrl) {
-    elements.usernameInput.value = fromUrl.username;
-    elements.passwordInput.value = fromUrl.password;
-  }
-  if (main.url !== apiUrl) elements.urlInput.value = main.url;
-  if (fallback.url !== fallbackUrl) elements.fallbackUrlInput.value = fallback.url;
-  return { apiUrl: main.url, fallbackUrl: fallback.url };
+  const typed: Credentials = { username: elements.usernameInput.value, password: elements.passwordInput.value };
+  return {
+    apiUrl: main.url,
+    fallbackUrl: fallback.url,
+    accessToken: elements.tokenInput.value,
+    credentials: main.credentials ?? fallback.credentials ?? (typed.username || typed.password ? typed : null),
+  };
 }
 
-async function saveSettings(pruneTopicSettings = false): Promise<void> {
-  const urls = moveUrlCredentialsToFields();
-  if (!urls) {
+const sameCredentials = (a: Credentials | null, b: Credentials | null) => a?.username === b?.username && a?.password === b?.password;
+
+async function saveServerSettings(): Promise<void> {
+  const draft = readServerEdits();
+  if (!draft) {
     showSettingsStatus('Enter a complete http:// or https:// server URL, or leave the field empty', 'error');
     return;
   }
-  const { apiUrl, fallbackUrl } = urls;
-  const accessToken = elements.tokenInput.value;
-  const typed: Credentials = { username: elements.usernameInput.value, password: elements.passwordInput.value };
-  const credentials = typed.username || typed.password ? typed : null;
+  const { apiUrl, fallbackUrl, accessToken, credentials } = draft;
+  elements.saveServerSettings.disabled = true;
   try {
-    await saveSync({
-      apiUrl,
-      fallbackUrl,
-      topics: state.topics.join(','),
-      theme: state.theme,
-      includeUrl: elements.includeUrlCheckbox.checked,
-      sendAsZipEnabled: state.sendAsZipEnabled,
-      ...(pruneTopicSettings && {
-        [NOTIFY_RULES_KEY]: storedTopicRules(state.notifyRules),
-        [SYNC_DELETION_TOPICS_KEY]: [...state.syncDeletionTopics],
-      }),
+    await editSettings(async () => {
+      const saved = await getConfig();
+      const auth = await getStoredAuth();
+      if (
+        saved.apiUrl !== state.apiUrl ||
+        saved.fallbackUrl !== state.fallbackUrl ||
+        auth.accessToken !== state.accessToken ||
+        !sameCredentials(auth.credentials, state.credentials)
+      ) {
+        showSettingsStatus('Server settings changed in another view. Reopen Settings before saving.', 'warning');
+        return;
+      }
+      const urlsEdited = apiUrl !== saved.apiUrl || fallbackUrl !== saved.fallbackUrl;
+      // Hold existing authentication while changing the destination.
+      if (urlsEdited) await setAuthOrigins([]);
+      if (accessToken !== auth.accessToken) await setAccessToken(accessToken);
+      if (!sameCredentials(credentials, auth.credentials)) await setCredentials(credentials);
+      if (urlsEdited) {
+        await saveSync({ apiUrl, fallbackUrl });
+        await setAuthOrigins(serverOrigins(apiUrl, fallbackUrl));
+      }
+      Object.assign(state, draft);
+      state.heldBackFrom = (await getConfig()).heldBackFrom;
+      fillServerFields();
+      updateHeldBackUI();
+      updateInsecureWarning();
+      void updateServerAccessUI();
+      showSettingsStatus('Server settings saved', 'success');
     });
-    // The token and the credentials stay in storage.local, so browser sync doesn't copy them
-    await setAccessToken(accessToken);
-    await setCredentials(credentials);
-    // Server URLs saved here are approved for them; a server changed elsewhere (held back) stays
-    // unapproved until confirmed, also when another setting is saved meanwhile
-    const urlsEdited = apiUrl !== state.apiUrl || fallbackUrl !== state.fallbackUrl;
-    if (state.heldBackFrom.length === 0 || urlsEdited) {
-      await setAuthOrigins(serverOrigins(apiUrl, fallbackUrl));
-    }
-    state.apiUrl = apiUrl;
-    elements.openUrlBtn.disabled = !apiUrl;
-    state.fallbackUrl = fallbackUrl;
-    state.accessToken = accessToken;
-    state.credentials = credentials;
-    state.includeUrl = elements.includeUrlCheckbox.checked;
-    state.heldBackFrom = (await getConfig()).heldBackFrom;
-
-    // Not a full refresh: that would disturb typing
-    updateTopicOptions();
-    renderTopics();
-    updateThemeChips();
-    updateHeldBackUI();
-    updateInsecureWarning();
-    void updateServerAccessUI();
   } catch {
     showSettingsStatus('Failed to save settings', 'error');
+  } finally {
+    elements.saveServerSettings.disabled = false;
   }
 }
 
 const pendingModes = new Map<string, boolean>();
 const pendingRules = new Map<string, NotifyRule>();
 let applyingTopicSettings = false;
+
+async function refreshTopics(): Promise<void> {
+  const [{ topics }, modes, rules] = await Promise.all([browser.storage.sync.get('topics'), getSyncDeletionTopics(), getTopicRules()]);
+  state.topics = parseTopics(topics);
+  state.syncDeletionTopics = modes;
+  state.notifyRules = rules;
+  renderTopics();
+  updateTopicOptions();
+}
 
 function updateApplyButton(): void {
   elements.applyTopicSettings.disabled = applyingTopicSettings || (pendingModes.size === 0 && pendingRules.size === 0);
@@ -281,25 +293,26 @@ async function applyTopicSettings(): Promise<void> {
   elements.topicSettingsRows.inert = true;
   try {
     // Merge only edited fields so applying a draft cannot overwrite unrelated synced settings.
-    const [modes, rules] = await Promise.all([getSyncDeletionTopics(), getTopicRules()]);
-    let enabledDeletions = false;
-    for (const topic of state.topics) {
-      const mode = pendingModes.get(topic);
-      if (mode === true) {
-        enabledDeletions ||= !modes.has(topic);
-        modes.add(topic);
-      } else if (mode === false) {
-        modes.delete(topic);
+    const enabledDeletions = await editSettings(async () => {
+      const [{ topics }, modes, rules] = await Promise.all([browser.storage.sync.get('topics'), getSyncDeletionTopics(), getTopicRules()]);
+      let enabled = false;
+      for (const topic of parseTopics(topics)) {
+        const mode = pendingModes.get(topic);
+        if (mode === true) {
+          enabled ||= !modes.has(topic);
+          modes.add(topic);
+        } else if (mode === false) {
+          modes.delete(topic);
+        }
+        const rule = pendingRules.get(topic);
+        if (rule !== undefined) rules.set(topic, rule);
       }
-      const rule = pendingRules.get(topic);
-      if (rule !== undefined) rules.set(topic, rule);
-    }
-    await saveSync({ [SYNC_DELETION_TOPICS_KEY]: [...modes], [NOTIFY_RULES_KEY]: storedTopicRules(rules) });
-    state.syncDeletionTopics = modes;
-    state.notifyRules = rules;
+      await saveSync({ [SYNC_DELETION_TOPICS_KEY]: [...modes], [NOTIFY_RULES_KEY]: storedTopicRules(rules) });
+      return enabled;
+    });
     pendingModes.clear();
     pendingRules.clear();
-    renderTopicSettings();
+    await refreshTopics();
     elements.topicSettingsStatus.textContent = enabledDeletions ? 'Applied. Cached deletion check requested.' : 'Applied.';
   } catch {
     elements.topicSettingsStatus.textContent = 'Could not apply topic settings. Try again.';
@@ -314,36 +327,55 @@ function renderTopics(): void {
   renderTopicSettings();
   elements.topicsContainer.querySelectorAll('.topic-badge').forEach((badge) => badge.remove());
 
-  state.topics.forEach((topic, index) => {
+  const shown = state.topics;
+  shown.forEach((topic, index) => {
     const badge = document.createElement('div');
     badge.className = 'topic-badge';
     badge.textContent = topic;
     setupDragAndDrop(badge, index, 'topic', (from, to) => {
-      moveItem(state.topics, from, to);
-      renderTopics();
-      void saveSettings();
+      void changeTopics((current) => moveItem(current, current.indexOf(shown[from] ?? ''), current.indexOf(shown[to] ?? '')));
     });
 
-    const remove = document.createElement('span');
+    const remove = document.createElement('button');
+    remove.type = 'button';
     remove.className = 'topic-remove';
-    remove.dataset.index = String(index);
     remove.textContent = '×';
+    remove.setAttribute('aria-label', `Remove topic ${topic}`);
+    remove.addEventListener('click', () => {
+      elements.newTopicInput.focus();
+      void removeTopic(topic);
+    });
     badge.appendChild(remove);
     elements.topicsContainer.insertBefore(badge, elements.newTopicInput);
   });
 }
 
-function removeTopic(index: number): void {
+async function changeTopics(edit: (topics: string[]) => void, removed?: string): Promise<void> {
+  try {
+    await editSettings(async () => {
+      const [{ topics }, modes, rules] = await Promise.all([browser.storage.sync.get('topics'), getSyncDeletionTopics(), getTopicRules()]);
+      const current = parseTopics(topics);
+      edit(current);
+      const updates: Record<string, unknown> = { topics: current.join(',') };
+      if (removed && modes.delete(removed)) updates[SYNC_DELETION_TOPICS_KEY] = [...modes];
+      if (removed && rules.delete(removed)) updates[NOTIFY_RULES_KEY] = storedTopicRules(rules);
+      await saveSync(updates);
+    });
+    await refreshTopics();
+  } catch {
+    showSettingsStatus('Failed to save topics', 'error');
+  }
+}
+
+async function removeTopic(topic: string): Promise<void> {
   if (applyingTopicSettings) return;
-  const [topic] = state.topics.splice(index, 1);
-  if (topic === undefined) return;
   if (state.receiveFilter === topic) void saveReceiveFilter(null).catch(() => {});
-  state.syncDeletionTopics.delete(topic);
-  state.notifyRules.delete(topic);
   pendingModes.delete(topic);
   pendingRules.delete(topic);
-  renderTopics();
-  void saveSettings(true);
+  await changeTopics((current) => {
+    const index = current.indexOf(topic);
+    if (index >= 0) current.splice(index, 1);
+  }, topic);
 }
 
 function handleTopicKeydown(event: KeyboardEvent): void {
@@ -355,17 +387,16 @@ function handleTopicKeydown(event: KeyboardEvent): void {
         showSettingsStatus('Use up to 64 letters, numbers, dashes or underscores for a topic', 'error');
         return;
       }
-      if (!state.topics.includes(value)) {
-        state.topics.push(value);
-        renderTopics();
-        void saveSettings();
-      }
+      void changeTopics((current) => {
+        if (!current.includes(value)) current.push(value);
+      });
       elements.newTopicInput.value = '';
       updateTopicInputHint();
     }
   } else if (event.key === 'Backspace' && !elements.newTopicInput.value && state.topics.length > 0) {
     // Empty input: Backspace removes the last topic
-    removeTopic(state.topics.length - 1);
+    const last = state.topics.at(-1);
+    if (last) void removeTopic(last);
   }
 }
 
@@ -373,32 +404,47 @@ function updateTopicInputHint(): void {
   elements.topicInputHint.classList.toggle('visible', elements.newTopicInput.value.length > 0);
 }
 
-/** Fill the form from the current settings, when the view opens */
-export function populateSettings(): void {
-  pendingModes.clear();
-  pendingRules.clear();
-  elements.topicSettingsStatus.textContent = '';
+function fillServerFields(): void {
   elements.urlInput.value = state.apiUrl;
   elements.fallbackUrlInput.value = state.fallbackUrl;
   elements.tokenInput.value = state.accessToken;
   elements.usernameInput.value = state.credentials?.username ?? '';
   elements.passwordInput.value = state.credentials?.password ?? '';
+}
+
+/** Refresh shared settings when opening the editor, leaving the draft untouched. */
+export async function populateSettings(): Promise<void> {
+  const [config, { theme }] = await Promise.all([getConfig(), browser.storage.sync.get('theme')]);
+  const auth = await getStoredAuth();
+  Object.assign(state, {
+    apiUrl: config.apiUrl,
+    fallbackUrl: config.fallbackUrl,
+    heldBackFrom: config.heldBackFrom,
+    includeUrl: config.includeUrl,
+    ...auth,
+    theme: theme === 'dark' || theme === 'light' ? theme : 'auto',
+  });
+  pendingModes.clear();
+  pendingRules.clear();
+  elements.topicSettingsStatus.textContent = '';
+  fillServerFields();
   elements.includeUrlCheckbox.checked = state.includeUrl;
-  renderTopics();
-  updateThemeChips();
+  await refreshTopics();
+  applyTheme();
   updateHeldBackUI();
   updateInsecureWarning();
   void updateServerAccessUI();
 }
 
 export function setupSettings(): void {
-  const debouncedSave = debounce(() => void saveSettings(), 1000);
-  elements.urlInput.addEventListener('input', debouncedSave);
-  elements.fallbackUrlInput.addEventListener('input', debouncedSave);
-  elements.tokenInput.addEventListener('input', debouncedSave);
-  elements.usernameInput.addEventListener('input', debouncedSave);
-  elements.passwordInput.addEventListener('input', debouncedSave);
-  elements.includeUrlCheckbox.addEventListener('change', () => void saveSettings());
+  const savePreference = (patch: Record<string, unknown>) => {
+    void saveSync(patch).catch(() => showSettingsStatus('Failed to save settings', 'error'));
+  };
+  elements.saveServerSettings.addEventListener('click', () => void saveServerSettings());
+  elements.includeUrlCheckbox.addEventListener('change', () => {
+    state.includeUrl = elements.includeUrlCheckbox.checked;
+    savePreference({ includeUrl: state.includeUrl });
+  });
   elements.applyTopicSettings.addEventListener('click', () => void applyTopicSettings());
   elements.serverAccessBtn.addEventListener('click', requestServerAccess);
   elements.heldBackBtn.addEventListener('click', () => void approveServers());
@@ -409,12 +455,8 @@ export function setupSettings(): void {
   elements.newTopicInput.addEventListener('keydown', handleTopicKeydown);
   elements.newTopicInput.addEventListener('input', updateTopicInputHint);
   elements.topicsContainer.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement;
-    if (target.classList.contains('topic-remove')) {
-      removeTopic(Number(target.dataset.index));
-    }
     // A click on the container focuses the input
-    if (target === elements.topicsContainer) {
+    if (event.target === elements.topicsContainer) {
       elements.newTopicInput.focus();
     }
   });
@@ -424,6 +466,15 @@ export function setupSettings(): void {
     if (theme !== 'light' && theme !== 'dark' && theme !== 'auto') return;
     state.theme = theme satisfies Theme;
     applyTheme();
-    void saveSettings();
+    savePreference({ theme });
+  });
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (
+      area === 'sync' &&
+      elements.settingsView.classList.contains('active') &&
+      (changes.topics || changes[SYNC_DELETION_TOPICS_KEY] || changes[NOTIFY_RULES_KEY])
+    ) {
+      void refreshTopics().catch(() => showSettingsStatus('Could not refresh topics', 'error'));
+    }
   });
 }

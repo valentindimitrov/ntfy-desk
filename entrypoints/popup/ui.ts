@@ -1,4 +1,4 @@
-// Small UI helpers: status lines, tooltips, drag-and-drop reordering of badges, debounce.
+// Small UI helpers: status lines, tooltips and drag-and-drop reordering of badges.
 
 import { elements } from './state';
 
@@ -7,7 +7,11 @@ export type StatusType = 'success' | 'error' | 'warning';
 function show(target: HTMLElement, message: string, type: StatusType): void {
   target.textContent = message;
   target.className = `status visible ${type}`;
-  setTimeout(() => target.classList.remove('visible'), 3000);
+  setTimeout(() => {
+    if (target.textContent !== message) return;
+    target.textContent = '';
+    target.classList.remove('visible');
+  }, 3000);
 }
 
 export function showStatus(message: string, type: StatusType): void {
@@ -20,14 +24,6 @@ export function showReceiveStatus(message: string, type: StatusType): void {
 
 export function showSettingsStatus(message: string, type: StatusType): void {
   show(elements.settingsStatus, message, type);
-}
-
-export function debounce<A extends unknown[]>(fn: (...args: A) => void, wait: number): (...args: A) => void {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  return (...args: A) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), wait);
-  };
 }
 
 /** Custom tooltips after 1 s: an element's title moves to data-tooltip to suppress the native one */
@@ -168,6 +164,7 @@ export function setupDragAndDrop(element: HTMLElement, index: number, type: stri
 
 /** Move an item of an array in place (remove, then insert at the target index) */
 export function moveItem<T>(items: T[], from: number, to: number): void {
+  if (from < 0 || to < 0 || from >= items.length || to >= items.length) return;
   const [item] = items.splice(from, 1);
   if (item !== undefined) {
     items.splice(to, 0, item);

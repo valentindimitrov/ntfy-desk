@@ -1,6 +1,10 @@
-# Updates for the pinned GitHub Actions in .github/workflows
+# Updates for npm dependencies and pinned GitHub Actions.
 version: 2
 updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

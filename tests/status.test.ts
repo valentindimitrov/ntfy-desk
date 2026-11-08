@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { createReceiver } from '@/utils/receiver';
-import { INITIAL_STATUS, describeStatus, getReceiverStatus, type ReceiverStatus } from '@/utils/status';
-import { FakeStream, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
+import { INITIAL_STATUS, describeStatus, getReceiverStatus, retryCountdown, type ReceiverStatus } from '@/utils/status';
+import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
 
@@ -13,10 +13,7 @@ beforeEach(async () => {
   await fakeBrowser.storage.local.set({ accessToken: 'tk_x' });
 });
 
-const status = async () => {
-  await sleep(5); // writes are fire-and-forget
-  return (await getReceiverStatus())!;
-};
+const status = async () => (await getReceiverStatus())!;
 
 describe('receiver status', () => {
   it('goes from connecting to connected, and to reconnecting with a retry time when the stream ends', async () => {
@@ -27,11 +24,15 @@ describe('receiver status', () => {
 
     const stream = FakeStream.instances.at(-1)!;
     stream.accept();
-    expect(await status()).toMatchObject({ state: 'connected', retryAt: null });
+    await vi.waitFor(async () => expect(await status()).toMatchObject({ state: 'connected', retryAt: null }));
 
     const before = Date.now();
     stream.end();
-    const closed = await status();
+    const closed = await vi.waitFor(async () => {
+      const closed = await status();
+      expect(closed.state).toBe('reconnecting');
+      return closed;
+    });
     expect(closed.state).toBe('reconnecting');
     expect(closed.retryAt).toBeGreaterThanOrEqual(before + 5000);
     receiver.close();
@@ -74,11 +75,13 @@ describe('status text', () => {
 
   it("counts down to the next attempt, and says when the server can't be reached", () => {
     const now = 1_000_000;
-    expect(describeStatus({ ...base, state: 'reconnecting', retryAt: now + 9500 }, now)[0]!.text).toBe(
-      'Disconnected from ntfy.example, reconnecting in 10 s',
+    expect(describeStatus({ ...base, state: 'reconnecting', retryAt: now + 9500 })[0]!.text).toBe(
+      'Disconnected from ntfy.example, reconnecting',
     );
-    expect(describeStatus({ ...base, state: 'reconnecting', retryAt: now - 1, unreachable: true }, now)[0]).toEqual({
-      text: "Can't reach ntfy.example, retrying…",
+    expect(retryCountdown(now + 9500, now)).toBe(' in 10 s');
+    expect(retryCountdown(now - 1, now)).toBe('…');
+    expect(describeStatus({ ...base, state: 'reconnecting', retryAt: now - 1, unreachable: true })[0]).toEqual({
+      text: "Can't reach ntfy.example, retrying",
       level: 'error',
     });
   });

@@ -37,12 +37,13 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 - Each topic's sync state carries the configured main and fallback origins, a catch-up watermark (`since=<unix time>`, inclusive), and the id and time of every message at or after it. An unrelated server starts a fresh poll.
 - Only a completed poll moves the watermark, never a live message: a live message newer than messages missed while disconnected must not let the next poll skip them. The sync state and the history are written in one storage write.
 - Deletion sync is opt-in per topic (`syncDeletionTopics`). Match inbound deletions by server origin, topic and sequence ID. Treat configured main and fallback addresses as aliases. A cached publish can establish the provenance of a legacy row by matching ID, topic and time. Preserve replay order for events in the same second so a later publish can revive a sequence. Popup deletes on opted-in topics also request deletion from the configured server when the message's origin is known or can be verified. Use `getConfig` for credentials and let ntfy enforce write access.
-- Validate both URL fields before saving settings. Move userinfo to local credentials and strip queries and fragments. Validate topic names in settings and again before making requests. Verify the composer's server and topic against current settings before publishing.
+- Commit server URLs and credentials only on **Save server settings**. Move userinfo to local credentials and strip queries and fragments. Other controls save only the preferences they edit. Validate topic names in settings and again before making requests. Verify the composer or context menu destination against current settings before publishing.
 - Dispatch draft saves from the edit handler so closing the popup cannot cancel a pending save timer. The background serializes saves and compares the revision before clearing the sent draft.
+- Serialize attachment edits with the shared Web Lock in `utils/stored-files.ts`. Remove sent IDs without replacing the file list. Clear drafts and attachments on `runtime.onStartup`, including after a browser crash.
 - Local deletes remove rows and save replay-suppression IDs in one write. Polls read NDJSON incrementally, keeping a bounded batch. If the scan limit is reached, continue from the stored prefix and report the gap.
 - History is ordered by server time before the per-topic limit applies; a connect() that an await made stale (settings changed meanwhile) stops; a subscription refused before it opened discards the cached read-access check.
 - Image previews only load the server's attachment route (`/file/<name>`, no query): other same-origin URLs can be API calls (ntfy publishes on GET).
-- A topic's first sync is silent; afterwards a desktop notification is shown only for messages new to the history.
+- A topic's first sync is silent. Later catch-up only notifies about newly retained history and summarizes bursts per topic. An empty first poll seeds a timestamp with overlap. Deletion replay keeps relevant older events outside the ordinary catch-up batch and marks completion only after a full scan.
 - Chrome stops an idle service worker after 30 s, and data arriving on a fetch stream doesn't count as activity (tested: stopped after ~30 s with data every 20 s), but an extension API call does: the receiver calls `runtime.getPlatformInfo` every 20 s while subscribed (tested: alive for 8+ minutes). A stream has no close event when the connection dies silently, so it is given up after `STREAM_IDLE_TIMEOUT` without data (ntfy's keepalive is 45 s by default).
 
 ## Roadmap
@@ -52,7 +53,7 @@ Open items; remove a row when it lands (the design goes to `ARCHITECTURE.md` if 
 | # | Improvement | Status |
 |---|---|---|
 | 7 | Run-test the Firefox build in Firefox | Open: `web-ext lint` passes; `web-ext run` can't attach while another Firefox instance is running. Close Firefox, then `pnpm dev:firefox` |
-| 8 | Validate the release pipeline after the Firefox runtime check (#7) | CI builds both ZIPs. The untried `release` job publishes them on a `v*` tag. Keep version bumps separate from tagging and publishing. |
+| 8 | Validate the release pipeline after the Firefox runtime check (#7) | CI builds both ZIPs. The untried `release` job publishes them when a tag matches the package version. Keep version bumps separate from tagging and publishing. |
 
 ## Skills
 

@@ -63,6 +63,7 @@ export function getElements() {
     usernameInput: byId<HTMLInputElement>('username-input'),
     passwordInput: byId<HTMLInputElement>('password-input'),
     serverAccessBtn: byId<HTMLButtonElement>('server-access-btn'),
+    saveServerSettings: byId<HTMLButtonElement>('save-server-settings'),
     serverAccessHint: byId('server-access-hint'),
     insecureWarning: byId('insecure-warning'),
     heldBackBox: byId('held-back-box'),

@@ -26,6 +26,17 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Check release tag against package version
+        if: github.ref_type == 'tag'
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const { version } = JSON.parse(readFileSync("package.json", "utf8"));
+            if (process.env.GITHUB_REF_NAME !== "v" + version) {
+              console.error("The release tag must be v" + version);
+              process.exitCode = 1;
+            }
+          '
       # Format, lint with type checking (Vite+), tests
       - run: pnpm check
       - run: pnpm zip
@@ -51,7 +62,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Playwright's own Chromium: branded Chrome doesn't load unpacked extensions from the command line
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e --fail-on-flaky-tests
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

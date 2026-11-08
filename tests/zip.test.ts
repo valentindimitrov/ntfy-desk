@@ -46,6 +46,15 @@ describe('createZip', () => {
     await expect(createZip([{ name: 'a', data: new Uint8Array(1) }])).rejects.toThrow('At least two files');
   });
 
+  it('keeps same-named attachments as distinct entries on case-insensitive filesystems', async () => {
+    const zip = await createZip(
+      ['a/notes.txt', 'b/NOTES.txt', 'notes (2).txt'].map((name, index) => ({ name, data: new Uint8Array([index]) })),
+    );
+    const entries = readZip(new Uint8Array(await zip.arrayBuffer()));
+    expect(entries.map(({ name }) => name)).toEqual(['notes.txt', 'NOTES (2).txt', 'notes (2) (2).txt']);
+    expect(entries.map(({ data }) => data[0])).toEqual([0, 1, 2]);
+  });
+
   it('cleans entry names', () => {
     expect(getEntryName('a/b/c.txt', 0)).toBe('c.txt');
     expect(getEntryName('', 2)).toBe('file-3');

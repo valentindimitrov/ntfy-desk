@@ -27,6 +27,7 @@ interface Fixtures {
     topics: string;
     token?: string;
     notifyRules?: Record<string, string>;
+    approveOrigins?: boolean;
   }) => Promise<void>;
   /** Desktop notifications the extension created (recorded in the service worker) */
   notified: () => Promise<Notified[]>;
@@ -72,6 +73,8 @@ export const test = base.extend<Fixtures>({
       }) as typeof chrome.notifications.create;
     });
     await use(worker);
+    const failed = await worker.evaluate(() => (globalThis as unknown as { __notifyFailed: string[] }).__notifyFailed);
+    expect(failed).toEqual([]);
   },
 
   extensionId: async ({ serviceWorker }, use) => {
@@ -79,23 +82,22 @@ export const test = base.extend<Fixtures>({
   },
 
   configure: async ({ serviceWorker, ntfy }, use) => {
-    await use(async ({ apiUrl = ntfy.url, fallbackUrl = '', topics, token = ntfy.token, notifyRules = {} }) => {
+    await use(async ({ apiUrl = ntfy.url, fallbackUrl = '', topics, token = ntfy.token, notifyRules = {}, approveOrigins = true }) => {
+      const authOrigins = [...new Set([apiUrl, fallbackUrl].filter(Boolean).map((url) => new URL(url).origin))];
       await serviceWorker.evaluate(
-        async ({ apiUrl, fallbackUrl, topics, token, notifyRules }) => {
-          await chrome.storage.local.set({ accessToken: token });
+        async ({ apiUrl, fallbackUrl, topics, token, notifyRules, authOrigins, approveOrigins }) => {
+          await chrome.storage.local.set({ accessToken: token, ...(approveOrigins ? { authOrigins: [] } : {}) });
           // Rules are stored as a list of [topic, rule]
           await chrome.storage.sync.set({ apiUrl, fallbackUrl, topics, notifyRules: Object.entries(notifyRules) });
+          if (approveOrigins) await chrome.storage.local.set({ authOrigins });
         },
-        { apiUrl, fallbackUrl, topics, token, notifyRules },
+        { apiUrl, fallbackUrl, topics, token, notifyRules, authOrigins, approveOrigins },
       );
     });
   },
 
   notified: async ({ serviceWorker }, use) => {
     await use(() => serviceWorker.evaluate(() => (globalThis as unknown as { __notified: Notified[] }).__notified));
-    // Every test: no notification failed to show
-    const failed = await serviceWorker.evaluate(() => (globalThis as unknown as { __notifyFailed: string[] }).__notifyFailed);
-    expect(failed).toEqual([]);
   },
 
   openPopup: async ({ context, extensionId }, use) => {

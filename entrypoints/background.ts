@@ -3,8 +3,14 @@
 
 import { browser } from 'wxt/browser';
 import { handleContextMenuClick, updateContextMenu } from '@/utils/context-menu';
-import { handleNotificationButton, handleNotificationClick, notifyNewMessage, updateUnreadBadge } from '@/utils/notifications';
-import { handlePopupRequest } from '@/utils/messages';
+import {
+  handleNotificationButton,
+  handleNotificationClick,
+  notifyCatchUp,
+  notifyNewMessage,
+  updateUnreadBadge,
+} from '@/utils/notifications';
+import { clearComposerOnStartup, handlePopupRequest } from '@/utils/messages';
 import { AUTH_ORIGINS_KEY, CREDENTIALS_KEY } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 import { SYNC_DELETION_TOPICS_KEY, parseSyncDeletionTopics } from '@/utils/sync-modes';
@@ -16,6 +22,7 @@ const OLD_ALARM_NAME = 'ws-keepalive';
 export default defineBackground(() => {
   const receiver = createReceiver({
     onNewMessage: (message) => void notifyNewMessage(message),
+    onCatchUp: (messages) => void notifyCatchUp(messages),
     onConnected: () => void updateUnreadBadge(),
   });
 
@@ -30,7 +37,10 @@ export default defineBackground(() => {
   }
 
   browser.runtime.onInstalled.addListener(setUp);
-  browser.runtime.onStartup.addListener(setUp);
+  browser.runtime.onStartup.addListener(() => {
+    void clearComposerOnStartup().catch(() => console.error('Could not reset the composer on browser startup'));
+    setUp();
+  });
 
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === 'sync' && (changes.topics || changes.apiUrl || changes.fallbackUrl)) {

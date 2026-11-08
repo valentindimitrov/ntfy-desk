@@ -4,12 +4,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { MAX_HISTORY_PER_TOPIC, getHistoryState, getTopicSyncStates, recordMessage } from '@/utils/history';
-import { handlePopupRequest } from '@/utils/messages';
-import { encodeHeaderValue, isNoResponse, sendAttachment, type NtfyMessage } from '@/utils/ntfy';
+import { clearComposerOnStartup, handlePopupRequest } from '@/utils/messages';
+import { isNoResponse, sendAttachment, type NtfyMessage } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 import { parseTopicRules, ruleFor, storedTopicRules } from '@/utils/rules';
 import { withFallback } from '@/utils/servers';
-import { FakeStream, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
+import { getReceiverStatus } from '@/utils/status';
+import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
 let notified: string[];
@@ -65,14 +66,14 @@ describe('#4 sync state and history are written together', () => {
 });
 
 describe('#5 many messages in the same second', () => {
-  it('notifies each of 250 messages with one timestamp once, however often it polls', async () => {
+  it('notifies only the saved messages of a burst with one timestamp, once each', async () => {
     await configure('alerts');
     const receiver = newReceiver();
     await receiver.sync(); // first, silent sync
-    const burst = Array.from({ length: 250 }, () => server.publish('alerts', 5000));
+    const burst = Array.from({ length: 250 }, () => server.publish('alerts', 10001));
     for (let i = 0; i < 4; i++) await receiver.sync();
-    expect(notified).toHaveLength(250);
-    expect(new Set(notified)).toEqual(new Set(burst.map((m) => m.id)));
+    expect(notified).toHaveLength(MAX_HISTORY_PER_TOPIC);
+    expect(new Set(notified)).toEqual(new Set(burst.slice(-MAX_HISTORY_PER_TOPIC).map((m) => m.id)));
   });
 });
 
@@ -101,7 +102,7 @@ describe('#7 read access revoked for one topic', () => {
 
     server.unreadable = ['inbox'];
     lastStream().refuse(403); // refused before it opened
-    await sleep(10);
+    await vi.waitFor(async () => expect((await getReceiverStatus())?.state).toBe('reconnecting'));
     await receiver.connect();
     expect(path(lastStream().url)).toBe('/alerts/json');
     receiver.close();
@@ -123,7 +124,6 @@ describe('#8 the history limit keeps the newest messages by time', () => {
 
 describe('#9 multi-line text in headers', () => {
   it('sends an attachment with a multi-line message (RFC 2047-encoded)', async () => {
-    expect(Buffer.from(encodeHeaderValue('line 1\nline 2').slice(10, -2), 'base64').toString()).toBe('line 1\nline 2');
     await expect(
       sendAttachment({ apiUrl: 'https://ntfy.example', accessToken: 'tk_x' }, 'inbox', {
         data: new Uint8Array(1),
@@ -131,6 +131,9 @@ describe('#9 multi-line text in headers', () => {
         message: 'line 1\nline 2',
       }),
     ).resolves.toBeDefined();
+    const header = new Headers(vi.mocked(fetch).mock.calls[0]?.[1]?.headers).get('X-Message');
+    const encoded = /^=\?utf-8\?B\?(.+)\?=$/.exec(header ?? '')?.[1];
+    expect(Buffer.from(encoded ?? '', 'base64').toString()).toBe('line 1\nline 2');
   });
 });
 
@@ -171,6 +174,11 @@ describe('#12 read and delete actions from several views', () => {
 });
 
 describe('draft cleanup from several views', () => {
+  it('clears the draft and files on browser startup', async () => {
+    await fakeBrowser.storage.local.set({ draftState: { message: 'Old draft' }, storedFiles: [{ name: 'old.txt' }] });
+    await clearComposerOnStartup();
+    expect(await fakeBrowser.storage.local.get(['draftState', 'storedFiles'])).toEqual({});
+  });
   it('clears the sent revision only if it is still current', async () => {
     const sync = async () => {};
     const draft = { title: '', message: 'Sending this', topic: 'alerts', tags: [], priority: 3, revision: 'first' };

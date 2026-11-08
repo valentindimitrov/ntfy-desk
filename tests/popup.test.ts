@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { mockResolved } from './helpers/mock';
+import { mockResolved, mockWebLocks } from './helpers/mock';
 import { handlePopupRequest } from '@/utils/messages';
 import type { NtfyMessage } from '@/utils/ntfy';
 
@@ -36,9 +36,15 @@ async function openPopup(search = ''): Promise<void> {
   await flush();
 }
 
+async function openSettings(): Promise<void> {
+  $('#settings-btn').click();
+  await vi.waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true));
+}
+
 beforeEach(async () => {
   vi.resetModules();
   fakeBrowser.reset();
+  mockWebLocks();
   document.body.innerHTML = body;
   document.body.className = '';
   requests = [];
@@ -65,7 +71,6 @@ beforeEach(async () => {
 
   await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: 'alerts,coolify,inbox', lastTopic: 'inbox' });
   await fakeBrowser.storage.local.set({ accessToken: 'tk_x' });
-  await fakeBrowser.storage.session.set({ sessionActive: true });
 });
 
 describe('Inbox', () => {
@@ -261,6 +266,56 @@ describe('Inbox', () => {
 });
 
 describe('Send form', () => {
+  it('keeps failed attachments and the draft after a partial send, then retries only the failed file', async () => {
+    const file = (name: string) => ({ name, type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' });
+    await fakeBrowser.storage.local.set({ storedFiles: [file('sent.txt'), file('retry.txt')] });
+    await openPopup();
+    const sent: string[] = [];
+    let fail = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const name = new Headers(init.headers).get('X-Filename') ?? '';
+        sent.push(name);
+        return fail && name === 'retry.txt' ? new Response('', { status: 503 }) : new Response('');
+      }),
+    );
+    $<HTMLTextAreaElement>('#message-input').value = 'My draft';
+    const { send } = await import('@/entrypoints/popup/send');
+    await send();
+    expect(sent).toEqual(['sent.txt', 'retry.txt']);
+    expect(await fakeBrowser.storage.local.get(['storedFiles', 'draftState'])).toMatchObject({
+      storedFiles: [{ name: 'retry.txt' }],
+      draftState: { message: 'My draft' },
+    });
+    expect($('#status').textContent).toContain('1 of 2 attachments sent');
+    expect($<HTMLButtonElement>('#send-btn').disabled).toBe(false);
+    expect(closed).toBe(false);
+    fail = false;
+    await send();
+    expect(sent).toEqual(['sent.txt', 'retry.txt', 'retry.txt']);
+    expect(await fakeBrowser.storage.local.get(['storedFiles', 'draftState'])).toEqual({});
+    await vi.waitFor(() => expect(closed).toBe(true));
+  });
+
+  it('sends the saved attachment on the fallback after a network failure on the main server', async () => {
+    await fakeBrowser.storage.sync.set({ fallbackUrl: 'https://fallback.example' });
+    await fakeBrowser.storage.local.set({
+      storedFiles: [{ name: 'a.txt', type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' }],
+    });
+    await openPopup('?mode=page');
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.startsWith('https://ntfy.example/')) throw new TypeError('network error');
+      return new Response('');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { send } = await import('@/entrypoints/popup/send');
+    await send();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['https://ntfy.example/inbox', 'https://fallback.example/inbox']);
+    expect($('#status').textContent).toBe('Notification sent!');
+    expect(await fakeBrowser.storage.local.get('storedFiles')).toEqual({});
+  });
+
   it.each([
     ['fallbackUrl', 'https://new-fallback.example'],
     ['topics', 'alerts'],
@@ -315,6 +370,17 @@ describe('Send form', () => {
     await openPopup();
     expect($<HTMLInputElement>('#title-input').value).toBe('The story');
     expect($<HTMLTextAreaElement>('#message-input').value).toBe('typed before');
+  });
+
+  it('restores unsent work when extension session storage was cleared', async () => {
+    await fakeBrowser.storage.session.clear();
+    await fakeBrowser.storage.local.set({
+      draftState: { title: 'Unsent draft' },
+      storedFiles: [{ name: 'saved.txt', type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' }],
+    });
+    await openPopup();
+    expect($<HTMLInputElement>('#title-input').value).toBe('Unsent draft');
+    expect($('#file-preview').textContent).toContain('saved.txt');
   });
 
   it('sends two attachments as one ZIP when that option is on', async () => {
@@ -385,11 +451,43 @@ describe('Send form', () => {
 });
 
 describe('settings', () => {
+  it('saves a theme change without restoring stale topics or authentication', async () => {
+    await openPopup('?mode=page');
+    await openSettings();
+    await fakeBrowser.storage.sync.set({ topics: 'alerts,inbox,new-topic' });
+    await fakeBrowser.storage.local.set({ accessToken: 'tk_synthetic_rotated' });
+    $('.chip[data-theme="dark"]').click();
+    await vi.waitFor(async () =>
+      expect(await fakeBrowser.storage.sync.get(['theme', 'topics'])).toEqual({
+        theme: 'dark',
+        topics: 'alerts,inbox,new-topic',
+      }),
+    );
+    expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_synthetic_rotated' });
+  });
+
+  it('requires an explicit server save and refuses to overwrite a newer connection', async () => {
+    await openPopup();
+    await openSettings();
+    const input = $<HTMLInputElement>('#url-input');
+    input.value = 'https://partial.example';
+    input.dispatchEvent(new Event('input'));
+    $('.chip[data-theme="dark"]').click();
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.example' });
+    expect(await fakeBrowser.storage.local.get('authOrigins')).toEqual({ authOrigins: ['https://ntfy.example'] });
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://changed.example' });
+    $('#save-server-settings').click();
+    await vi.waitFor(() => expect($('#settings-status').textContent).toContain('changed in another view'));
+    expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://changed.example' });
+    expect(await fakeBrowser.storage.local.get('authOrigins')).toEqual({ authOrigins: ['https://ntfy.example'] });
+  });
+
   it('asks for access to the server when a token is set and access is missing', async () => {
     mockResolved(fakeBrowser.permissions, 'contains', false);
     await openPopup();
     expect($('#settings-btn').classList.contains('highlight')).toBe(true);
-    $('#settings-btn').click();
+    await openSettings();
     await flush();
     expect($('#server-access-btn').style.display).toBe('');
 
@@ -403,7 +501,7 @@ describe('settings', () => {
     await fakeBrowser.storage.sync.set({ fallbackUrl: 'https://ntfy.lan:8080' });
     mockResolved(fakeBrowser.permissions, 'contains', false);
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     await flush();
     expect($<HTMLInputElement>('#fallback-url-input').value).toBe('https://ntfy.lan:8080');
     const request = mockResolved(fakeBrowser.permissions, 'request', true);
@@ -414,11 +512,12 @@ describe('settings', () => {
 
   it('moves user:password@ from a typed URL into the username and password, kept locally', async () => {
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     await flush();
     const url = $<HTMLInputElement>('#url-input');
     url.value = 'https://alice:s%40cret@ntfy.lan';
     url.dispatchEvent(new Event('input'));
+    $('#save-server-settings').click();
     await vi.waitFor(async () => expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.lan' }), {
       timeout: 3000,
     });
@@ -438,11 +537,12 @@ describe('settings', () => {
     ['#fallback-url-input', 'example-user:dummy-text@ntfy.example'],
   ])('keeps an invalid URL edit in %s out of sync storage', async (selector, value) => {
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     const before = await fakeBrowser.storage.sync.get(null);
     const input = $<HTMLInputElement>(selector);
     input.value = value;
     input.dispatchEvent(new Event('input'));
+    $('#save-server-settings').click();
     await vi.waitFor(() => expect($('#settings-status').textContent).toContain('Enter a complete'), { timeout: 3000 });
     expect(await fakeBrowser.storage.sync.get(null)).toEqual(before);
   });
@@ -451,7 +551,7 @@ describe('settings', () => {
     await fakeBrowser.storage.local.set({ accessToken: '', serverCredentials: { username: 'alice', password: 'secret' } });
     mockResolved(fakeBrowser.permissions, 'contains', false);
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     await flush();
     expect($<HTMLInputElement>('#username-input').value).toBe('alice');
     expect($('#server-access-btn').style.display).toBe('');
@@ -468,10 +568,11 @@ describe('settings', () => {
 
   it('drops the query from a server URL typed in settings before syncing it', async () => {
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     const input = $<HTMLInputElement>('#url-input');
     input.value = 'https://ntfy.lan?auth=synthetic#synthetic';
     input.dispatchEvent(new Event('input'));
+    $('#save-server-settings').click();
     await vi.waitFor(async () => expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.lan' }), {
       timeout: 3000,
     });
@@ -480,7 +581,7 @@ describe('settings', () => {
 
   it('rejects a malformed topic typed in settings', async () => {
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     const input = $<HTMLInputElement>('#new-topic-input');
     input.value = 'alerts/publish?message=synthetic#';
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
@@ -492,7 +593,7 @@ describe('settings', () => {
     await import('@/utils/ntfy').then((ntfy) => ntfy.getConfig()); // approves https://ntfy.example
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://evil.example' });
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     await flush();
     expect($('#held-back-box').style.display).toBe('');
     expect($('#held-back-text').textContent).toContain('https://evil.example');
@@ -520,7 +621,7 @@ describe('settings', () => {
 
   it('warns when credentials would go over http:// (security review #5)', async () => {
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     await flush();
     const url = $<HTMLInputElement>('#url-input');
     expect($('#insecure-warning').style.display).toBe('none');
@@ -536,11 +637,12 @@ describe('settings', () => {
 
   it('saves the token to local storage, not sync', async () => {
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     await flush();
     const token = $<HTMLInputElement>('#token-input');
     token.value = 'tk_new';
     token.dispatchEvent(new Event('input'));
+    $('#save-server-settings').click();
     await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' }), {
       timeout: 3000,
     });
@@ -549,7 +651,7 @@ describe('settings', () => {
 
   it('sets a desktop notification rule per topic, and drops the rule of a removed topic', async () => {
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     await flush();
     const selects = [...document.querySelectorAll<HTMLSelectElement>('#topic-settings-rows td:nth-child(3) select')];
     expect(selects.map((select) => select.getAttribute('aria-label'))).toEqual([
@@ -583,7 +685,7 @@ describe('settings', () => {
   it('loads and saves message sync modes per topic', async () => {
     await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['coolify'] });
     await openPopup();
-    $('#settings-btn').click();
+    await openSettings();
     const selects = [...document.querySelectorAll<HTMLSelectElement>('#topic-settings-rows td:nth-child(2) select')];
     expect(selects.map((select) => [select.getAttribute('aria-label'), select.value])).toEqual([
       ['Message sync for alerts', 'keep'],

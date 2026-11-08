@@ -606,8 +606,9 @@ export async function getNotifications(
     includeDeletions = false,
     signal = AbortSignal.timeout(TIMEOUTS.poll),
     messageIds,
-  }: { includeDeletions?: boolean; signal?: AbortSignal; messageIds?: ReadonlySet<string> } = {},
-): Promise<{ events: NtfyMessage[]; serverOrigin: string; truncated: boolean; scanLimited: boolean }> {
+    savedMessages = [],
+  }: { includeDeletions?: boolean; signal?: AbortSignal; messageIds?: ReadonlySet<string>; savedMessages?: NtfyMessage[] } = {},
+) {
   if (!server.apiUrl) {
     throw new Error('API URL is not configured');
   }
@@ -624,9 +625,18 @@ export async function getNotifications(
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  const retained = new Map<NtfyMessage, number>();
+  const retained = new Map<NtfyMessage, { length: number; order: number }>();
+  const saved = new Map(savedMessages.map((message) => [message.id, message]));
+  const sequences = new Set(savedMessages.map(sequenceOf));
+  // A bounded tail is enough for new publishes. Keep older deletions and provenance
+  // that can still affect saved rows, in the same order as the tail.
+  const protectedEvents = new Map<string, { event: NtfyMessage; order: number }>();
+  let order = 0;
   let buffered = 0;
-  let truncated = response.headers.get('X-Messages-Truncated') === '1';
+  const serverTruncated = response.headers.get('X-Messages-Truncated') === '1';
+  let truncated = serverTruncated;
+  const date = response.headers.get('Date');
+  const serverTime = date ? Date.parse(date) : NaN;
   const complete =
     !response.body ||
     (await readLines(
@@ -641,11 +651,24 @@ export async function getNotifications(
         )
           return;
 
-        retained.set(message, line.length);
+        const position = order++;
+        if (includeDeletions && saved.size > 0) {
+          const existing = saved.get(message.id);
+          const sequence = sequenceOf(message);
+          if (message.event === 'message' && existing?.time === message.time && !protectedEvents.has(`publish:${message.id}`)) {
+            sequences.add(sequence);
+            const { id, topic, time, event, sequence_id } = message;
+            protectedEvents.set(`publish:${id}`, { event: { id, topic, time, event, sequence_id }, order: position });
+          } else if (message.event === 'message_delete' && sequences.has(sequence)) {
+            const { id, topic, time, event, sequence_id } = message;
+            protectedEvents.set(`delete:${sequence}`, { event: { id, topic, time, event, sequence_id }, order: position });
+          }
+        }
+        retained.set(message, { length: line.length, order: position });
         buffered += line.length;
         // ntfy sends a topic's replay in time order, with publishes ordered within a second.
         while (retained.size > MAX_POLL_EVENTS || buffered > MAX_POLL_BUFFER) {
-          const [oldest, length] = retained.entries().next().value!;
+          const [oldest, { length }] = retained.entries().next().value!;
           retained.delete(oldest);
           buffered -= length;
           truncated = true;
@@ -654,10 +677,14 @@ export async function getNotifications(
       { maxBytes: MAX_POLL_BYTES },
     ));
   if (!complete && retained.size === 0) throw new Error('Response too large');
+  const byPosition = new Map([...protectedEvents.values()].map(({ event, order }) => [order, event]));
+  for (const [event, position] of retained) byPosition.set(position.order, event);
   return {
-    events: [...retained.keys()],
+    events: [...byPosition].sort(([a], [b]) => a - b).map(([, event]) => event),
     serverOrigin: new URL(response.url || url).origin,
     truncated: truncated || !complete,
     scanLimited: !complete,
+    serverTruncated,
+    serverTime: Number.isFinite(serverTime) ? serverTime : undefined,
   };
 }

@@ -5,7 +5,7 @@
 import { browser } from 'wxt/browser';
 import { deleteReceivedMessages, type DeletionSyncResult } from './delete';
 import { setRead } from './history';
-import { STORED_FILES_KEY } from './stored-files';
+import { clearStoredFiles } from './stored-files';
 
 export interface Draft {
   revision: string;
@@ -20,7 +20,6 @@ export type PopupRequest =
   | { action: 'sync' }
   | { action: 'setRead'; ids: string[]; read: boolean }
   | { action: 'delete'; ids: string[] }
-  | { action: 'prepareDraft' }
   | { action: 'saveDraft'; draft: Draft }
   | { action: 'clearDraft'; revision: string };
 
@@ -47,6 +46,14 @@ function updateDraft(task: () => Promise<void>): Promise<void> {
   return write;
 }
 
+/** Clear unsent work only when the browser profile starts, including after a crash. */
+export function clearComposerOnStartup(): Promise<void> {
+  return updateDraft(async () => {
+    await browser.storage.local.remove('draftState');
+    await clearStoredFiles();
+  });
+}
+
 /** The background's handling of a request; null if it isn't one */
 export function handlePopupRequest(request: unknown, sync: () => Promise<void>): Promise<void | DeletionSyncResult> | null {
   const { action, ids, read, draft, revision } = (request ?? {}) as Partial<
@@ -55,14 +62,6 @@ export function handlePopupRequest(request: unknown, sync: () => Promise<void>):
   if (action === 'sync') return sync();
   if (action === 'setRead' && isStringList(ids) && typeof read === 'boolean') return setRead(ids, read);
   if (action === 'delete' && isStringList(ids)) return deleteReceivedMessages(ids);
-  if (action === 'prepareDraft') {
-    return updateDraft(async () => {
-      const { sessionActive } = await browser.storage.session.get('sessionActive');
-      if (sessionActive) return;
-      await browser.storage.local.remove([STORED_FILES_KEY, 'draftState']);
-      await browser.storage.session.set({ sessionActive: true });
-    });
-  }
   if (action === 'saveDraft' && isDraft(draft)) {
     return updateDraft(() => browser.storage.local.set({ draftState: draft }));
   }

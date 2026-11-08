@@ -2,7 +2,7 @@
 // added to the stored attachments, which the popup shows.
 
 import '@/assets/styles.css';
-import { persistStoredFiles, readFileAsDataUrl, readStoredFiles } from '@/utils/stored-files';
+import { addStoredFiles, readFileAsDataUrl } from '@/utils/stored-files';
 
 function byId<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -29,7 +29,7 @@ async function processFiles(files: File[]): Promise<void> {
   try {
     // Read the whole selection before writing, so a read error doesn't append part of it
     const newFiles = await Promise.all(files.map(readFileAsDataUrl));
-    await persistStoredFiles([...(await readStoredFiles()), ...newFiles]);
+    await addStoredFiles(newFiles);
 
     status.textContent = `✓ ${files.length} file${files.length === 1 ? '' : 's'} attached!`;
     status.className = 'status visible success';

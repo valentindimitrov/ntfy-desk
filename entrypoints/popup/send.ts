@@ -5,11 +5,12 @@ import { sendToBackground, type Draft } from '@/utils/messages';
 import { getConfig, isHttpUrl, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
 import {
   STORED_FILES_KEY,
+  addStoredFiles,
   decodeDataUrl,
   formatFileSize,
-  persistStoredFiles,
   readFileAsDataUrl,
   readStoredFiles,
+  removeStoredFiles,
   type StoredFile,
 } from '@/utils/stored-files';
 import { withFallback } from '@/utils/servers';
@@ -122,10 +123,12 @@ export function renderTags(): void {
       saveTags();
     });
 
-    const remove = document.createElement('span');
+    const remove = document.createElement('button');
+    remove.type = 'button';
     remove.className = 'tag-remove';
     remove.dataset.index = String(index);
     remove.textContent = '×';
+    remove.setAttribute('aria-label', `Remove tag ${tag}`);
     badge.appendChild(remove);
     elements.tagsContainer.insertBefore(badge, elements.newTagInput);
   });
@@ -278,15 +281,6 @@ export async function restoreDraft(): Promise<void> {
   if (draft.topic) state.lastTopic = draft.topic;
 }
 
-/** A new browser session starts without the previous session's attachments and draft */
-export async function cleanUpAfterBrowserRestart(): Promise<void> {
-  try {
-    await sendToBackground({ action: 'prepareDraft' });
-  } catch (error) {
-    console.error('Error checking session state:', error);
-  }
-}
-
 // ==================
 // Attachments
 // ==================
@@ -307,7 +301,7 @@ function renderAttachments(): void {
   elements.filePreview.classList.toggle('visible', attachments.length > 0);
   elements.fileBtnLabel.textContent = attachments.length > 0 ? `Attach files (${attachments.length})` : 'Attach files';
 
-  attachments.forEach((file, index) => {
+  attachments.forEach((file) => {
     const preview = document.createElement('div');
     preview.className = 'file-preview-item';
 
@@ -327,7 +321,7 @@ function renderAttachments(): void {
 
     const remove = document.createElement('button');
     remove.className = 'file-remove';
-    remove.dataset.index = String(index);
+    remove.dataset.id = file.id;
     remove.title = `Remove ${file.name}`;
     remove.setAttribute('aria-label', `Remove ${file.name}`);
     remove.textContent = '×';
@@ -357,12 +351,6 @@ function handleZipToggleChange(): void {
   }
   state.sendAsZipEnabled = elements.zipCheckbox.checked;
   saveSync({ sendAsZipEnabled: state.sendAsZipEnabled }).catch((error) => console.error('Error saving ZIP preference:', error));
-}
-
-async function setAttachments(files: StoredFile[]): Promise<void> {
-  await persistStoredFiles(files);
-  state.attachments = files;
-  renderAttachments();
 }
 
 /** The file dialog would close the popup, so files are picked in a small window of their own */
@@ -395,7 +383,8 @@ async function handleFileSelect(event: Event): Promise<void> {
   try {
     // Read the whole selection before writing, so a read error doesn't append part of it
     const records = await Promise.all(files.map(readFileAsDataUrl));
-    await setAttachments([...(await readStoredFiles()), ...records]);
+    await addStoredFiles(records);
+    await loadAttachments();
   } catch (error) {
     console.error('Error storing files:', error);
     showStatus(`Failed to attach files: ${(error as Error).message}`, 'error');
@@ -406,11 +395,12 @@ async function handleAttachmentRemove(event: Event): Promise<void> {
   const button = (event.target as Element).closest<HTMLElement>('.file-remove');
   if (!button || state.isSending) return;
 
-  const index = Number(button.dataset.index);
-  if (!Number.isInteger(index) || index < 0 || index >= state.attachments.length) return;
+  const id = button.dataset.id;
+  if (!id) return;
 
   try {
-    await setAttachments(state.attachments.filter((_, i) => i !== index));
+    await removeStoredFiles([id]);
+    await loadAttachments();
   } catch (error) {
     console.error('Error removing file:', error);
     showStatus(`Failed to remove file: ${(error as Error).message}`, 'error');
@@ -431,7 +421,7 @@ function getZipFilename(date = new Date()): string {
 async function finishSuccessfulSend(revision: string, attachmentCount: number, successMessage?: string): Promise<void> {
   if (attachmentCount > 0) {
     elements.fileInput.value = '';
-    await setAttachments([]);
+    await loadAttachments();
   }
   await sendToBackground({ action: 'clearDraft', revision });
   const edited = revision !== draftRevision;
@@ -522,13 +512,13 @@ async function sendNow(): Promise<void> {
       await withFallback(servers, (server) =>
         sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
       );
+      await removeStoredFiles(files.map((file) => file.id));
       await finishSuccessfulSend(revision, files.length, 'ZIP sent!');
       return;
     }
 
     // One message per attachment, one at a time
     const failures: { file: StoredFile; error: Error }[] = [];
-    let remaining = [...files];
     for (const file of files) {
       try {
         const data = decodeDataUrl(file.data) as BodyInit;
@@ -539,8 +529,7 @@ async function sendNow(): Promise<void> {
         failures.push({ file, error: error as Error });
         continue;
       }
-      remaining = remaining.filter((other) => other !== file);
-      await setAttachments(remaining);
+      await removeStoredFiles([file.id]);
     }
 
     if (failures.length > 0) {
@@ -601,6 +590,7 @@ export function setupSend(): void {
     if (target.classList.contains('tag-remove')) {
       state.tags.splice(Number(target.dataset.index), 1);
       renderTags();
+      elements.newTagInput.focus();
       saveTags();
     }
     // A click on the container focuses the input

@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { sendNotification } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 import { isServerUp, pickServer, withFallback } from '@/utils/servers';
 import { getReceiverStatus } from '@/utils/status';
-import { FakeStream, installFakeNtfy, sleep, type FakeServer } from './helpers/fake-ntfy';
+import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
 const main = 'https://ntfy.lan';
@@ -73,8 +73,9 @@ describe('receiving', () => {
     await receiver.connect();
     expect(new URL(FakeStream.instances.at(-1)!.url).host).toBe('ntfy.example.com');
     FakeStream.instances.at(-1)!.accept();
-    await sleep(5);
-    expect(await getReceiverStatus()).toMatchObject({ state: 'connected', server: 'ntfy.example.com', usingFallback: true });
+    await vi.waitFor(async () =>
+      expect(await getReceiverStatus()).toMatchObject({ state: 'connected', server: 'ntfy.example.com', usingFallback: true }),
+    );
 
     // Polls go to the server in use
     await receiver.sync();
