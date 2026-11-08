@@ -17,15 +17,20 @@ async function findExtensionTab(): Promise<{ tabId: number; windowId: number; ur
 /**
  * Switch to the extension's tab, or open it. With a message, the inbox highlights it.
  */
-export async function openExtensionTab({ message, topic }: { message?: string; topic?: string } = {}): Promise<void> {
+export async function openExtensionTab({
+  message,
+  topic,
+  allTopics,
+}: { message?: string; topic?: string; allTopics?: boolean } = {}): Promise<void> {
   const open = await findExtensionTab();
   const url = new URL(open?.url ?? pageUrl());
-  if (message || topic) {
+  const focusInbox = Boolean(message || topic || allTopics);
+  if (focusInbox) {
     // A new fragment focuses the Inbox without reloading the composer, even on a repeated click.
-    url.hash = new URLSearchParams({ ...(message ? { message } : { topic: topic! }), focus: crypto.randomUUID() }).toString();
+    url.hash = new URLSearchParams({ ...(message ? { message } : { topic: topic ?? '' }), focus: crypto.randomUUID() }).toString();
   }
   if (open) {
-    await browser.tabs.update(open.tabId, message || topic ? { active: true, url: url.href } : { active: true });
+    await browser.tabs.update(open.tabId, focusInbox ? { active: true, url: url.href } : { active: true });
     await browser.windows.update(open.windowId, { focused: true });
     return;
   }

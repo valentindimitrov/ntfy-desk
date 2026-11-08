@@ -3,15 +3,25 @@
 import { elements } from './state';
 
 export type StatusType = 'success' | 'error' | 'warning';
+const hideTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+export function clearStatus(target: HTMLElement): void {
+  clearTimeout(hideTimers.get(target));
+  hideTimers.delete(target);
+  target.textContent = '';
+  target.classList.remove('visible');
+}
 
 function show(target: HTMLElement, message: string, type: StatusType): void {
+  clearTimeout(hideTimers.get(target));
   target.textContent = message;
   target.className = `status visible ${type}`;
-  setTimeout(() => {
-    if (target.textContent !== message) return;
-    target.textContent = '';
-    target.classList.remove('visible');
-  }, 3000);
+  if (type === 'success')
+    hideTimers.set(
+      target,
+      setTimeout(() => clearStatus(target), 3000),
+    );
+  else hideTimers.delete(target);
 }
 
 export function showStatus(message: string, type: StatusType): void {

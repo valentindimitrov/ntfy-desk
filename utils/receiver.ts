@@ -45,6 +45,12 @@ const TRUNCATION_WARNING_TTL = 24 * 60 * 60 * 1000;
 const INCOMPLETE_REPLAY_RETRY = 15 * 60 * 1000;
 const EMPTY_POLL_OVERLAP = 60;
 
+function sinceEmptyPoll(started: number, emptyPollAt?: number): string {
+  if (emptyPollAt === undefined) return INITIAL_SYNC_SINCE;
+  const elapsed = Math.ceil((started - emptyPollAt) / 1000);
+  return elapsed < 0 ? 'all' : `${elapsed + EMPTY_POLL_OVERLAP}s`;
+}
+
 export interface ReceiverEvents {
   /** A message new to the history (not during a topic's first, silent sync) */
   onNewMessage(message: NtfyMessage): void;
@@ -318,6 +324,8 @@ export function createReceiver(events: ReceiverEvents) {
     const syncErrors = new Map<string, string>();
     const cutoff = Date.now() - TRUNCATION_WARNING_TTL;
     const truncatedTopics = new Set(topics.filter((topic) => (topicState(topic)?.truncatedAt ?? 0) > cutoff));
+    const unverifiedDeletionTopics = new Set<string>();
+    const catchUpMessages: NtfyMessage[] = [];
     let unreachable = false;
 
     function reportSyncError(topic: string, error: unknown, prefix = ''): boolean {
@@ -341,9 +349,16 @@ export function createReceiver(events: ReceiverEvents) {
           const since = Math.max(1, Math.floor(progress?.nextSince ?? oldest));
           const replay = Number.isFinite(since)
             ? await getNotifications(config, topic, since, { includeDeletions, savedMessages })
-            : { events: [], serverOrigin: new URL(apiUrl).origin, truncated: false, scanLimited: false, serverTruncated: false };
+            : {
+                events: [],
+                serverOrigin: new URL(apiUrl).origin,
+                truncated: false,
+                scanLimited: false,
+                serverTruncated: false,
+                truncationKnown: true,
+              };
           if (!origins.includes(replay.serverOrigin)) throw new Error('Unexpected server origin');
-          const complete = !replay.scanLimited && !replay.serverTruncated;
+          const complete = !replay.scanLimited && !replay.serverTruncated && replay.truncationKnown;
           const last = replay.events.at(-1)?.time ?? since;
           const canContinue = replay.scanLimited && !replay.serverTruncated && last > since;
           await recordDeletionReplay(
@@ -359,6 +374,7 @@ export function createReceiver(events: ReceiverEvents) {
             },
           );
           if (replay.truncated) truncatedTopics.add(topic);
+          if (!replay.truncationKnown) unverifiedDeletionTopics.add(topic);
         } catch (error) {
           // The next sync retries the replay. A large or failed replay must not stop regular catch-up.
           unreachable = reportSyncError(topic, error, 'deletion replay: ') || unreachable;
@@ -366,15 +382,31 @@ export function createReceiver(events: ReceiverEvents) {
       }
 
       try {
-        const since = state?.since ?? INITIAL_SYNC_SINCE;
         const started = Date.now();
-        const replay = await getNotifications(config, topic, since, { includeDeletions, savedMessages });
+        const watermark = state?.since ?? null;
+        let emptyPollAt = state?.emptyPollAt;
+        let since = watermark ?? sinceEmptyPoll(started, emptyPollAt);
+        const options = { includeDeletions, savedMessages };
+        let replay = await getNotifications(config, topic, since, options);
+        // Older versions could seed an empty topic with the browser's clock. Recover a cursor
+        // without a matching event if we can't verify its time and the replay wasn't limited.
+        const legacyEmpty =
+          watermark !== null &&
+          emptyPollAt === undefined &&
+          state?.truncatedAt === undefined &&
+          state?.seen.every(([, time]) => time > watermark) &&
+          !replay.truncated &&
+          (replay.serverTime === undefined || watermark * 1000 > replay.serverTime);
+        if (legacyEmpty) {
+          emptyPollAt = (watermark + EMPTY_POLL_OVERLAP) * 1000;
+          since = sinceEmptyPoll(started, emptyPollAt);
+          replay = await getNotifications(config, topic, since, options);
+        }
         // A single second can fill even the scan limit. Skip that second only if the
         // bounded replay couldn't move the inclusive cursor forward.
+        const empty = (watermark === null || legacyEmpty) && replay.events.length === 0 && !replay.truncated;
         const emptyStart =
-          typeof since === 'string' && replay.events.length === 0 && !replay.truncated
-            ? Math.max(1, Math.floor((replay.serverTime ?? started) / 1000) - EMPTY_POLL_OVERLAP)
-            : undefined;
+          empty && replay.serverTime !== undefined ? Math.max(1, Math.floor(replay.serverTime / 1000) - EMPTY_POLL_OVERLAP) : undefined;
         const advanceTo =
           replay.scanLimited && typeof since === 'number' && replay.events.every((event) => event.time <= since)
             ? Math.floor(since) + 1
@@ -386,19 +418,28 @@ export function createReceiver(events: ReceiverEvents) {
           {
             truncated: replay.truncated,
             advanceTo,
+            emptyPollAt: empty ? (emptyPollAt ?? started) : emptyPollAt,
+            resetWatermark: legacyEmpty,
           },
         );
         if (replay.truncated) truncatedTopics.add(topic);
-        if (messages.length > 0 && events.onCatchUp) events.onCatchUp(messages);
+        if (includeDeletions && !replay.truncationKnown) unverifiedDeletionTopics.add(topic);
+        if (events.onCatchUp) catchUpMessages.push(...messages);
         else for (const message of messages) events.onNewMessage(message);
       } catch (error) {
         unreachable = reportSyncError(topic, error) || unreachable;
       }
     }
+    if (catchUpMessages.length) {
+      const { receivedNotifications } = await getHistoryState();
+      const retained = new Set(receivedNotifications.map(({ id }) => id));
+      events.onCatchUp?.(catchUpMessages.filter(({ id }) => retained.has(id)));
+    }
 
     setStatus({
       syncErrors: [...syncErrors],
       truncatedTopics: [...truncatedTopics],
+      unverifiedDeletionTopics: [...unverifiedDeletionTopics],
       lastSyncAt: Date.now(),
       ...(unreachable && { unreachable: true }),
     });

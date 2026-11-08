@@ -16,7 +16,7 @@ import {
   updatePriorityUI,
   updateTopicOptions,
 } from './send';
-import { applyTheme, populateSettings, setupSettings, updateServerAccessUI } from './settings';
+import { applyTheme, hasUnsavedServerEdits, populateSettings, setupSettings, updateServerAccessUI } from './settings';
 import { elements, isConfigured, isPageMode, loadReceiveFilter, loadSettings, pageParams, saveReceiveFilter, state } from './state';
 import { setupTooltips, showStatus } from './ui';
 
@@ -47,6 +47,8 @@ async function showSettingsView(): Promise<void> {
 }
 
 function showMainView(): void {
+  if (elements.saveServerSettings.disabled) return;
+  if (hasUnsavedServerEdits() && !confirm('Discard unsaved server settings?')) return;
   elements.settingsView.classList.remove('active');
   elements.mainView.classList.add('active');
   elements.settingsBtn.focus();
@@ -58,7 +60,7 @@ function showMainView(): void {
 async function focusInboxFromLink(params: URLSearchParams): Promise<void> {
   const message = params.get('message');
   const topic = params.get('topic');
-  if (!message && !topic) return;
+  if (!message && topic === null) return;
   elements.notificationsSearch.value = '';
   if (message) focusMessage(message);
   await saveReceiveFilter(message || !state.topics.includes(topic ?? '') ? null : topic);

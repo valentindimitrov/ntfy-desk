@@ -53,15 +53,15 @@
     <div class="main-content">
       <p class="subtitle">Select or drop files to attach to your notifications</p>
 
-      <div class="drop-zone" id="drop-zone">
-        <div class="drop-zone-icon">📎</div>
-        <div class="drop-zone-text">Drop files here</div>
-        <div class="drop-zone-hint">or click to browse</div>
-      </div>
+      <button class="drop-zone" id="drop-zone" type="button" aria-label="Browse for files">
+        <span class="drop-zone-icon" aria-hidden="true">📎</span>
+        <span class="drop-zone-text">Drop files here</span>
+        <span class="drop-zone-hint">or browse for files</span>
+      </button>
 
       <input type="file" id="file-input" class="file-input" multiple />
 
-      <div class="status" id="status"></div>
+      <div class="status" id="status" role="status"></div>
     </div>
 
     <script type="module" src="./main.ts"></script>

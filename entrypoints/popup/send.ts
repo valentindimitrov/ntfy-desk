@@ -7,6 +7,7 @@ import {
   STORED_FILES_KEY,
   addStoredFiles,
   decodeDataUrl,
+  dispatchStoredUpload,
   formatFileSize,
   readFileAsDataUrl,
   readStoredFiles,
@@ -16,7 +17,7 @@ import {
 import { withFallback } from '@/utils/servers';
 import { createZip } from '@/utils/zip';
 import { elements, inboxTopic, isConfigured, isPageMode, saveLocal, saveSync, state, type PageInfo } from './state';
-import { moveItem, setupDragAndDrop, showSettingsStatus, showStatus } from './ui';
+import { clearStatus, moveItem, setupDragAndDrop, showSettingsStatus, showStatus } from './ui';
 
 export async function setupSendPanel(): Promise<void> {
   const { sendSection, rememberSendPanelCheckbox: checkbox } = elements;
@@ -418,12 +419,25 @@ function getZipFilename(date = new Date()): string {
   return `ntfy-files-${datePart}-${timePart}.zip`;
 }
 
-async function finishSuccessfulSend(revision: string, attachmentCount: number, successMessage?: string): Promise<void> {
+async function finishSuccessfulSend(
+  revision: string,
+  attachmentCount: number,
+  successMessage?: string,
+  filesNotCleared = false,
+): Promise<void> {
   if (attachmentCount > 0) {
     elements.fileInput.value = '';
     await loadAttachments();
   }
-  await sendToBackground({ action: 'clearDraft', revision });
+  try {
+    await sendToBackground({ action: 'clearDraft', revision });
+  } catch {
+    showStatus(
+      filesNotCleared ? 'Sent, but the sent files and draft could not be cleared.' : 'Sent, but the draft could not be cleared.',
+      'warning',
+    );
+    return;
+  }
   const edited = revision !== draftRevision;
   if (!edited) {
     elements.messageInput.value = '';
@@ -433,8 +447,9 @@ async function finishSuccessfulSend(revision: string, attachmentCount: number, s
     applyPagePrefill();
   }
 
-  // Close the popup unless "Send another" is checked (the extension's tab stays open)
-  if (!edited && !elements.sendAnotherCheckbox.checked && !isPageMode) {
+  if (filesNotCleared) {
+    showStatus('Sent, but some uploaded files could not be cleared.', 'warning');
+  } else if (!edited && !elements.sendAnotherCheckbox.checked && !isPageMode) {
     setTimeout(() => {
       if (draftRevision === revision) window.close();
     }, 100);
@@ -446,6 +461,7 @@ async function finishSuccessfulSend(revision: string, attachmentCount: number, s
 export async function send(): Promise<void> {
   // Taken before the first await, so a second click can't start a second send
   if (state.isSending) return;
+  clearStatus(elements.status);
   state.isSending = true;
   elements.sendBtn.disabled = true;
   try {
@@ -456,6 +472,15 @@ export async function send(): Promise<void> {
     state.isSending = false;
     elements.sendBtn.disabled = false;
     renderAttachments();
+  }
+}
+
+async function clearSentFiles(ids: string[]): Promise<boolean> {
+  try {
+    await removeStoredFiles(ids);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -507,41 +532,59 @@ async function sendNow(): Promise<void> {
     }
 
     if (files.length > 1 && elements.zipCheckbox.checked) {
-      const zip = await createZip(files.map((file) => ({ name: file.name, data: decodeDataUrl(file.data) })));
-      const filename = getZipFilename();
-      await withFallback(servers, (server) =>
-        sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
-      );
-      await removeStoredFiles(files.map((file) => file.id));
-      await finishSuccessfulSend(revision, files.length, 'ZIP sent!');
-      return;
+      while (files.length > 1) {
+        const ids = files.map(({ id }) => id);
+        const zip = await createZip(files.map((file) => ({ name: file.name, data: decodeDataUrl(file.data) })));
+        const filename = getZipFilename();
+        const sent = await dispatchStoredUpload(ids, () =>
+          withFallback(servers, (server) =>
+            sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
+          ),
+        );
+        if (sent) {
+          await finishSuccessfulSend(revision, files.length, 'ZIP sent!', !(await clearSentFiles(ids)));
+          return;
+        }
+        // A file disappeared during compression. Rebuild using only the original IDs still queued.
+        const current = new Set((await readStoredFiles()).map(({ id }) => id));
+        files = files.filter(({ id }) => current.has(id));
+      }
     }
 
     // One message per attachment, one at a time
     const failures: { file: StoredFile; error: Error }[] = [];
+    let sent = 0;
+    let filesNotCleared = false;
     for (const file of files) {
       try {
         const data = decodeDataUrl(file.data) as BodyInit;
-        await withFallback(servers, (server) =>
-          sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags }),
+        const dispatched = await dispatchStoredUpload([file.id], () =>
+          withFallback(servers, (server) => sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags })),
         );
+        if (!dispatched) continue;
       } catch (error) {
         failures.push({ file, error: error as Error });
         continue;
       }
-      await removeStoredFiles([file.id]);
+      sent++;
+      if (!(await clearSentFiles([file.id]))) filesNotCleared = true;
     }
 
     if (failures.length > 0) {
       // Failed files stay attached and the form stays as it is, for a retry
       const details = failures.map(({ file, error }) => `${file.name}: ${error.message}`).join('; ');
       showStatus(
-        `${files.length - failures.length} of ${files.length} attachment${files.length === 1 ? '' : 's'} sent. Failed: ${details}`,
+        `${sent} of ${files.length} attachment${files.length === 1 ? '' : 's'} sent. Failed: ${details}${filesNotCleared ? '. Some uploaded files could not be cleared.' : ''}`,
         'error',
       );
       return;
     }
-    await finishSuccessfulSend(revision, files.length);
+    if (sent === 0) {
+      await loadAttachments();
+      showStatus('All selected attachments were removed before sending.', 'warning');
+      return;
+    }
+    await finishSuccessfulSend(revision, sent, undefined, filesNotCleared);
   } catch (error) {
     showStatus(`Error: ${(error as Error).message}`, 'error');
   }

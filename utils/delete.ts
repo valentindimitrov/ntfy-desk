@@ -6,6 +6,14 @@ import { getSyncDeletionTopics } from './sync-modes';
 export interface DeletionSyncResult {
   denied: number;
   failed: number;
+  skipped?: number;
+}
+
+/** The IDs and destination the inbox showed as server deletions before the user acted. */
+export interface ServerDeletionIntent {
+  ids: string[];
+  apiUrl: string;
+  fallbackUrl: string;
 }
 
 /** Verify older messages whose source origin was not saved. One bounded replay per topic. */
@@ -38,18 +46,20 @@ async function verifyLegacyMessages(server: NtfyServer, messages: StoredMessage[
 }
 
 /** Apply the local delete first, then ask ntfy to delete eligible sequences. */
-export async function deleteReceivedMessages(ids: string[]): Promise<DeletionSyncResult> {
+export async function deleteReceivedMessages(ids: string[], intent?: ServerDeletionIntent): Promise<DeletionSyncResult> {
   const messages = await deleteMessages(ids);
   const result: DeletionSyncResult = { denied: 0, failed: 0 };
-  if (messages.length === 0) return result;
+  if (!intent || messages.length === 0) return result;
 
-  const syncedTopics = await getSyncDeletionTopics();
-  const selected = messages.filter((message) => syncedTopics.has(message.topic));
+  const approved = new Set(intent.ids);
+  const selected = messages.filter((message) => approved.has(message.id));
   if (selected.length === 0) return result;
 
-  const config = await getConfig();
+  const [config, syncedTopics] = await Promise.all([getConfig(), getSyncDeletionTopics()]);
+  if (config.apiUrl !== intent.apiUrl || config.fallbackUrl !== intent.fallbackUrl) return { ...result, skipped: selected.length };
   const origins = serverOrigins(config.apiUrl, config.fallbackUrl);
-  const eligible = selected.filter((message) => config.topics.includes(message.topic));
+  const eligible = selected.filter((message) => syncedTopics.has(message.topic) && config.topics.includes(message.topic));
+  if (eligible.length !== selected.length) result.skipped = selected.length - eligible.length;
   if (eligible.length === 0) return result;
   if (!config.apiUrl || config.heldBackFrom.length > 0) return { ...result, failed: eligible.length };
 

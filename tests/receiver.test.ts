@@ -107,6 +107,53 @@ describe('sync and live messages', () => {
     expect(notified.map(({ id }) => id)).toEqual([first.id]);
   });
 
+  it('uses elapsed time when CORS hides Date and the browser clock is ahead of the server', async () => {
+    await configure('quiet', '');
+    server.hidePollHeaders = true;
+    const clientNow = 200000 * 1000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(clientNow);
+    const receiver = newReceiver();
+    await receiver.sync();
+    expect((await getTopicSyncStates()).get('quiet')).toMatchObject({ since: null, emptyPollAt: clientNow });
+
+    const missed = server.publish('quiet', server.now + 1);
+    server.now += 86400;
+    clock.mockReturnValue(clientNow + 86400 * 1000);
+    await receiver.sync();
+    expect(new URL(server.requests.at(-1)!.url).searchParams.get('since')).toBe('86460s');
+    expect(notified.map(({ id }) => id)).toEqual([missed.id]);
+    expect((await getTopicSyncStates()).get('quiet')?.emptyPollAt).toBeUndefined();
+  });
+
+  it('repairs a legacy empty watermark seeded ahead of the server', async () => {
+    await configure('quiet', '');
+    server.hidePollHeaders = true;
+    const clientAtEmptyPoll = 200000;
+    vi.spyOn(Date, 'now').mockReturnValue((clientAtEmptyPoll + 120) * 1000);
+    await fakeBrowser.storage.local.set({
+      topicSync: [{ topic: 'quiet', since: clientAtEmptyPoll - 60, origins: ['https://ntfy.example'], seen: [], synced: true }],
+    });
+    const missed = server.publish('quiet', server.now - 100);
+    const receiver = newReceiver();
+    await receiver.sync();
+    expect(new URL(server.requests.at(-1)!.url).searchParams.get('since')).toBe('180s');
+    expect((await getTopicSyncStates()).get('quiet')?.since).toBe(missed.time);
+    expect(notified.map(({ id }) => id)).toEqual([missed.id]);
+    await receiver.sync();
+    expect(notified).toHaveLength(1);
+  });
+
+  it('reports newly caught-up messages from every topic as one batch', async () => {
+    await configure('alerts,backups');
+    const onCatchUp = vi.fn();
+    const receiver = createReceiver({ onNewMessage: vi.fn(), onCatchUp });
+    await receiver.sync();
+    const alert = server.publish('alerts', server.now + 1);
+    const backup = server.publish('backups', server.now + 2);
+    await receiver.sync();
+    expect(onCatchUp).toHaveBeenCalledExactlyOnceWith([alert, backup]);
+  });
+
   it("doesn't re-add or notify a message deleted in the popup", async () => {
     await configure('alerts');
     const receiver = newReceiver();
@@ -134,7 +181,7 @@ describe('server deletions', () => {
           synced: true,
           origins: ['https://ntfy.example'],
           seen: [],
-          deletionReplay: { generation: 1, complete: true },
+          deletionReplay: { generation: 1, version: 2, complete: true },
         },
       ],
     });
@@ -168,6 +215,26 @@ describe('server deletions', () => {
     await receiver.sync();
     expect((await getTopicSyncStates()).get('alerts')?.deletionReplay?.complete).toBe(false);
     expect((await getReceiverStatus())?.truncatedTopics).toEqual(['alerts']);
+  });
+
+  it('applies visible deletes and keeps replay pending until truncation can be verified', async () => {
+    await configure('alerts', '');
+    const receiver = newReceiver();
+    server.publish('alerts', 9998, { sequence_id: 'deleted' });
+    const kept = server.publish('alerts', 9999);
+    await receiver.sync();
+    await fakeBrowser.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+    server.publish('alerts', 10000, { event: 'message_delete', sequence_id: 'deleted' });
+    server.hidePollHeaders = true;
+    await receiver.sync();
+    expect((await getHistoryState()).receivedNotifications.map(({ id }) => id)).toEqual([kept.id]);
+    expect((await getTopicSyncStates()).get('alerts')?.deletionReplay?.complete).toBe(false);
+    expect((await getReceiverStatus())?.unverifiedDeletionTopics).toEqual(['alerts']);
+
+    server.hidePollHeaders = false;
+    await receiver.replayDeletions(['alerts']);
+    expect((await getTopicSyncStates()).get('alerts')?.deletionReplay?.complete).toBe(true);
+    expect((await getReceiverStatus())?.unverifiedDeletionTopics).toEqual([]);
   });
 
   it('checks saved messages for deletions before the watermark after enabling sync during a poll', async () => {

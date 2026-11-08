@@ -9,7 +9,7 @@ function byId<T extends HTMLElement>(id: string): T {
 }
 
 const fileInput = byId<HTMLInputElement>('file-input');
-const dropZone = byId<HTMLElement>('drop-zone');
+const dropZone = byId<HTMLButtonElement>('drop-zone');
 const status = byId<HTMLElement>('status');
 
 document.body.setAttribute('data-theme', new URLSearchParams(location.search).get('theme') ?? 'auto');
@@ -17,14 +17,14 @@ document.body.setAttribute('data-theme', new URLSearchParams(location.search).ge
 function showError(message: string): void {
   status.textContent = message;
   status.className = 'status visible error';
-  dropZone.style.pointerEvents = '';
+  dropZone.disabled = false;
   dropZone.style.opacity = '';
 }
 
 async function processFiles(files: File[]): Promise<void> {
-  if (files.length === 0) return;
+  if (files.length === 0 || dropZone.disabled) return;
 
-  dropZone.style.pointerEvents = 'none';
+  dropZone.disabled = true;
   dropZone.style.opacity = '0.6';
   try {
     // Read the whole selection before writing, so a read error doesn't append part of it

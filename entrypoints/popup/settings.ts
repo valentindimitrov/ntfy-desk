@@ -10,6 +10,7 @@ import {
   isNtfyPathPart,
   parseTopics,
   serverOrigins,
+  serverPermissionPattern,
   setAccessToken,
   setAuthOrigins,
   setCredentials,
@@ -29,7 +30,7 @@ import {
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics } from '@/utils/sync-modes';
 import { updateTopicOptions } from './send';
 import { elements, isConfigured, saveReceiveFilter, saveSync, state, type Theme } from './state';
-import { moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
+import { clearStatus, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
 
 async function editSettings<T>(task: () => Promise<T>): Promise<T> {
   return navigator.locks.request('ntfy-settings', task);
@@ -46,27 +47,14 @@ function updateThemeChips(): void {
   });
 }
 
-// ntfy answers CORS preflights with Access-Control-Allow-Headers: *, which doesn't cover
-// Authorization, so authenticated requests need a host permission for the server.
-function serverOriginPattern(apiUrl: string): string | null {
-  try {
-    const url = new URL(apiUrl);
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-      return null;
-    }
-    // Match patterns have no port and match every port
-    return `${url.protocol}//${url.hostname}/*`;
-  } catch {
-    return null;
-  }
-}
+const verifiesDeletions = () => state.topics.some((topic) => state.syncDeletionTopics.has(topic));
 
-/** Sites of the main and fallback servers, when requests to them send credentials */
-function authenticatedPatterns(apiUrl: string, fallbackUrl: string, authenticated: boolean): string[] {
-  if (!authenticated) return [];
+/** Access can be needed for credentials or for the server's replay metadata. */
+function serverAccessPatterns(apiUrl: string, fallbackUrl: string, authenticated: boolean): string[] {
+  if (!authenticated && !verifiesDeletions()) return [];
   const patterns = [apiUrl, fallbackUrl]
     .filter(Boolean)
-    .map(serverOriginPattern)
+    .map(serverPermissionPattern)
     .filter((pattern): pattern is string => pattern !== null);
   return [...new Set(patterns)];
 }
@@ -77,7 +65,7 @@ export async function updateServerAccessUI(
   fallbackUrl = state.fallbackUrl,
   authenticated = hasAuthentication(state),
 ): Promise<void> {
-  const patterns = authenticatedPatterns(apiUrl, fallbackUrl, authenticated);
+  const patterns = serverAccessPatterns(apiUrl, fallbackUrl, authenticated);
   let missing = false;
   if (patterns.length > 0) {
     try {
@@ -90,6 +78,9 @@ export async function updateServerAccessUI(
   state.serverAccessMissing = missing;
   elements.serverAccessBtn.style.display = missing ? '' : 'none';
   elements.serverAccessHint.style.display = missing ? '' : 'none';
+  elements.serverAccessHint.textContent = verifiesDeletions()
+    ? 'Allows ntfy Desk to verify cached deletions'
+    : 'Needed to send and receive with authentication';
   elements.settingsBtn.classList.toggle('highlight', !isConfigured() || missing || state.heldBackFrom.length > 0);
 }
 
@@ -131,7 +122,7 @@ async function approveServers(): Promise<void> {
 function requestServerAccess(): void {
   const { apiUrl, fallbackUrl } = state;
   const authenticated = hasAuthentication(state);
-  const patterns = authenticatedPatterns(apiUrl, fallbackUrl, authenticated);
+  const patterns = serverAccessPatterns(apiUrl, fallbackUrl, authenticated);
   if (patterns.length === 0) return;
 
   // Called directly from the click: permissions.request needs a user gesture
@@ -162,7 +153,18 @@ function readServerEdits(): Pick<typeof state, 'apiUrl' | 'fallbackUrl' | 'acces
 
 const sameCredentials = (a: Credentials | null, b: Credentials | null) => a?.username === b?.username && a?.password === b?.password;
 
+export function hasUnsavedServerEdits(): boolean {
+  return (
+    elements.urlInput.value.trim() !== state.apiUrl ||
+    elements.fallbackUrlInput.value.trim() !== state.fallbackUrl ||
+    elements.tokenInput.value !== state.accessToken ||
+    elements.usernameInput.value !== (state.credentials?.username ?? '') ||
+    elements.passwordInput.value !== (state.credentials?.password ?? '')
+  );
+}
+
 async function saveServerSettings(): Promise<void> {
+  clearStatus(elements.settingsStatus);
   const draft = readServerEdits();
   if (!draft) {
     showSettingsStatus('Enter a complete http:// or https:// server URL, or leave the field empty', 'error');
@@ -313,6 +315,7 @@ async function applyTopicSettings(): Promise<void> {
     pendingModes.clear();
     pendingRules.clear();
     await refreshTopics();
+    void updateServerAccessUI();
     elements.topicSettingsStatus.textContent = enabledDeletions ? 'Applied. Cached deletion check requested.' : 'Applied.';
   } catch {
     elements.topicSettingsStatus.textContent = 'Could not apply topic settings. Try again.';
@@ -414,6 +417,7 @@ function fillServerFields(): void {
 
 /** Refresh shared settings when opening the editor, leaving the draft untouched. */
 export async function populateSettings(): Promise<void> {
+  clearStatus(elements.settingsStatus);
   const [config, { theme }] = await Promise.all([getConfig(), browser.storage.sync.get('theme')]);
   const auth = await getStoredAuth();
   Object.assign(state, {

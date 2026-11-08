@@ -1,4 +1,4 @@
-// Playwright fixtures: Chromium with the built extension (.output/chrome-mv3) and a test ntfy server.
+// Playwright fixtures: Chromium with the isolated E2E build and a test ntfy server.
 // Extensions need a persistent context and Playwright's own Chromium (branded Chrome no longer loads
 // unpacked extensions from the command line).
 
@@ -7,7 +7,7 @@ import { test as base, expect, chromium, type BrowserContext, type Page, type Wo
 import type { Browser } from 'wxt/browser';
 import { startNtfyServer, type NtfyTestServer } from './ntfy-server';
 
-const EXTENSION_PATH = resolve('.output/chrome-mv3');
+const EXTENSION_PATH = resolve('.output/chrome-mv3-e2e');
 
 export interface Notified {
   id: string;
@@ -86,7 +86,11 @@ export const test = base.extend<Fixtures>({
       const authOrigins = [...new Set([apiUrl, fallbackUrl].filter(Boolean).map((url) => new URL(url).origin))];
       await serviceWorker.evaluate(
         async ({ apiUrl, fallbackUrl, topics, token, notifyRules, authOrigins, approveOrigins }) => {
-          await chrome.storage.local.set({ accessToken: token, ...(approveOrigins ? { authOrigins: [] } : {}) });
+          const existing = await chrome.storage.local.get('authOrigins');
+          await chrome.storage.local.set({
+            accessToken: token,
+            authOrigins: approveOrigins ? [] : (existing.authOrigins ?? []),
+          });
           // Rules are stored as a list of [topic, rule]
           await chrome.storage.sync.set({ apiUrl, fallbackUrl, topics, notifyRules: Object.entries(notifyRules) });
           if (approveOrigins) await chrome.storage.local.set({ authOrigins });

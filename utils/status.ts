@@ -21,6 +21,8 @@ export interface ReceiverStatus {
   syncErrors: [topic: string, error: string][];
   /** Topics whose catch-up or deletion replay was limited recently */
   truncatedTopics: string[];
+  /** Deletion-sync topics whose server may have hidden its replay truncation header. */
+  unverifiedDeletionTopics?: string[];
   /** End of the last poll of all topics (ms since the epoch) */
   lastSyncAt: number | null;
   /** The token or password isn't sent: the server changed outside this browser's settings */
@@ -38,6 +40,7 @@ export const INITIAL_STATUS: ReceiverStatus = {
   retryAt: null,
   syncErrors: [],
   truncatedTopics: [],
+  unverifiedDeletionTopics: [],
   lastSyncAt: null,
   authHeldBack: false,
 };
@@ -94,6 +97,12 @@ export function describeStatus(status: ReceiverStatus | null): StatusLine[] {
   }
   if (status.truncatedTopics?.length > 0) {
     lines.push({ text: `Some cached events may have been skipped: ${status.truncatedTopics.join(', ')}`, level: 'warning' });
+  }
+  if (status.unverifiedDeletionTopics?.length) {
+    lines.push({
+      text: `Could not verify cached deletions for ${status.unverifiedDeletionTopics.join(', ')}. Allow server access in Settings.`,
+      level: 'warning',
+    });
   }
   return lines;
 }

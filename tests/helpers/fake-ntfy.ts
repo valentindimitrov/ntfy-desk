@@ -14,6 +14,7 @@ export interface FakeServer {
   /** HTTP status of polls (200 by default) */
   pollStatus: number;
   pollTruncated: boolean;
+  hidePollHeaders: boolean;
   /** Hosts that don't answer: requests to them reject with a TypeError, like fetch does */
   downHosts: string[];
   /** While set, /auth answers wait for it */
@@ -139,6 +140,7 @@ export function installFakeNtfy(): FakeServer {
     authDown: false,
     pollStatus: 200,
     pollTruncated: false,
+    hidePollHeaders: false,
     downHosts: [],
     authGate: null,
     pollGate: null,
@@ -185,16 +187,20 @@ export function installFakeNtfy(): FakeServer {
     let messages = server.messages.filter((m) => m.topic === topic);
     if (/^\d+$/.test(since)) {
       messages = messages.filter((m) => m.time >= Number(since));
-    } else if (/^\d+h$/.test(since)) {
-      messages = messages.filter((m) => m.time >= server.now - parseInt(since, 10) * 3600);
+    } else if (/^\d+[hs]$/.test(since)) {
+      const seconds = parseInt(since, 10) * (since.endsWith('h') ? 3600 : 1);
+      messages = messages.filter((m) => m.time >= server.now - seconds);
     } else if (since !== 'all') {
       const row = server.messages.findIndex((m) => m.id === since);
       messages = messages.filter((m) => server.messages.indexOf(m) > row);
     }
-    return new Response(messages.map((m) => JSON.stringify(m)).join('\n'), {
-      status: 200,
-      headers: { Date: new Date(server.now * 1000).toUTCString(), 'X-Messages-Truncated': server.pollTruncated ? '1' : '0' },
+    const response = new Response(messages.map((m) => JSON.stringify(m)).join('\n'), {
+      headers: server.hidePollHeaders
+        ? {}
+        : { Date: new Date(server.now * 1000).toUTCString(), 'X-Messages-Truncated': server.pollTruncated ? '1' : '0' },
     });
+    if (server.hidePollHeaders) Object.defineProperty(response, 'type', { value: 'cors' });
+    return response;
   });
 
   FakeStream.instances = [];

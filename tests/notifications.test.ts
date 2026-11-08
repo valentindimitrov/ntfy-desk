@@ -127,12 +127,42 @@ describe('desktop notifications', () => {
     await fakeBrowser.storage.sync.set({ notifyRules: [['alerts', 'high']] });
     await notifyCatchUp(Array.from({ length: 9 }, (_, index) => message(String(index), { priority: index < 6 ? 4 : 2 })));
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create).toHaveBeenCalledWith('catch-up:alerts', expect.objectContaining({ title: '6 new notifications' }));
-    await handleNotificationClick('catch-up:alerts');
+    expect(create).toHaveBeenCalledWith(
+      'catch-up-summary',
+      expect.objectContaining({ title: '6 new notifications', requireInteraction: true }),
+    );
+    await handleNotificationClick('catch-up-summary');
     const [, options] = callsOf<[number, { url: string }]>(update)[0]!;
     const url = new URL(options.url);
     expect(url.search).toBe('?mode=page&message=old');
     expect(new URLSearchParams(url.hash.slice(1)).get('topic')).toBe('alerts');
+  });
+
+  it('caps catch-up across topics and adds later batches to the same urgent summary', async () => {
+    const id = 'catch-up-summary';
+    const create = mockResolved(fakeBrowser.notifications, 'create', '');
+    const update = mockResolved(fakeBrowser.notifications, 'update', true);
+    mockResolved(fakeBrowser.notifications, 'clear', true);
+    mockResolved(fakeBrowser.notifications, 'getAll', { [id]: {} });
+    mockResolved(fakeBrowser.runtime, 'getContexts', []);
+    vi.spyOn(fakeBrowser.runtime, 'getURL').mockImplementation(
+      ((path: string) => `chrome-extension://id${path}`) as typeof fakeBrowser.runtime.getURL,
+    );
+    const open = mockResolved(fakeBrowser.tabs, 'create', {});
+    await notifyCatchUp(
+      Array.from({ length: 6 }, (_, index) =>
+        message(String(index), { topic: index < 3 ? 'alerts' : 'backups', priority: index === 0 ? 5 : 3 }),
+      ),
+    );
+    await notifyCatchUp([message('later')]);
+    expect(create).toHaveBeenCalledExactlyOnceWith(
+      id,
+      expect.objectContaining({ title: '6 new notifications', message: 'Open the Inbox', requireInteraction: true }),
+    );
+    expect(update).toHaveBeenCalledExactlyOnceWith(id, expect.objectContaining({ title: '7 new notifications', requireInteraction: true }));
+    await handleNotificationClick(id);
+    const [{ url }] = callsOf<[{ url: string }]>(open)[0]!;
+    expect(new URLSearchParams(new URL(url).hash.slice(1)).get('topic')).toBe('');
   });
 
   it('opens only http(s) attachment URLs from the button', async () => {

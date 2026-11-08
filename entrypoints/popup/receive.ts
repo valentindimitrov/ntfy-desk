@@ -6,12 +6,13 @@ import { getHistoryState } from '@/utils/history';
 import { isHttpUrl, type NtfyMessage } from '@/utils/ntfy';
 import { linkify, renderMarkdown } from '@/utils/markdown';
 import { sendToBackground } from '@/utils/messages';
-import type { DeletionSyncResult } from '@/utils/delete';
+import type { DeletionSyncResult, ServerDeletionIntent } from '@/utils/delete';
 import { ruleFor } from '@/utils/rules';
 import { STATUS_KEY, describeStatus, getReceiverStatus, retryCountdown, type ReceiverStatus } from '@/utils/status';
+import { SYNC_DELETION_TOPICS_KEY, parseSyncDeletionTopics } from '@/utils/sync-modes';
 import { updateSendTopic } from './send';
 import { elements, inboxTopic, isConfigured, saveReceiveFilter, state } from './state';
-import { showReceiveStatus } from './ui';
+import { clearStatus, showReceiveStatus } from './ui';
 
 function emptyMessage(text: string): HTMLElement {
   const div = document.createElement('div');
@@ -38,6 +39,7 @@ function renderTopicSidebar(messages: NtfyMessage[], selected: string | null): v
     ...[null, ...state.topics].map((topic) => {
       const button = document.createElement('button');
       button.className = 'topic-filter-btn';
+      button.dataset.topic = topic ?? '';
       button.classList.toggle('active', topic === selected);
       button.setAttribute('aria-pressed', String(topic === selected));
 
@@ -238,14 +240,33 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   const deleteButton = document.createElement('button');
   deleteButton.className = 'notification-action-btn delete-btn';
   deleteButton.textContent = '×';
-  deleteButton.title = state.syncDeletionTopics.has(message.topic) ? 'Delete here and on the server (if allowed)' : 'Delete Notification';
+  const server = serverDeletionIntent([message]);
+  deleteButton.title = server ? 'Delete here and on the server (if allowed)' : 'Delete Notification';
   deleteButton.setAttribute('aria-label', deleteButton.title);
-  deleteButton.addEventListener('click', () => void deleteMessage(message.id, item));
+  deleteButton.addEventListener('click', () => void deleteMessage(message.id, item, server));
   actions.appendChild(deleteButton);
 
   footer.appendChild(actions);
   item.append(header, body, ...(preview ? [preview] : []), footer);
   return item;
+}
+
+function restoreInboxFocus(previous: Element | null): void {
+  if (!previous || previous.isConnected) return;
+  const topic = previous.closest<HTMLElement>('.topic-filter-btn')?.dataset.topic;
+  if (topic !== undefined) {
+    const buttons = [...elements.topicSidebar.querySelectorAll<HTMLButtonElement>('.topic-filter-btn')];
+    (buttons.find((button) => button.dataset.topic === topic) ?? buttons[0] ?? elements.notificationsSearch).focus();
+    return;
+  }
+  const row = previous.closest<HTMLElement>('.notification-item');
+  if (!row?.dataset.id) return;
+  const controls = 'button,a[href]';
+  const index = [...row.querySelectorAll(controls)].indexOf(previous);
+  const replacement = [...elements.notificationsList.querySelectorAll<HTMLElement>('.notification-item')].find(
+    (item) => item.dataset.id === row.dataset.id,
+  );
+  (replacement?.querySelectorAll<HTMLElement>(controls)[index] ?? elements.notificationsSearch).focus();
 }
 
 /** A message, or a placeholder if it can't be rendered, so one bad message doesn't hide the others */
@@ -277,6 +298,7 @@ export async function loadNotifications(): Promise<void> {
     state.deletedMessageIds = deletedMessageIds;
     const deleted = new Set(deletedMessageIds);
     const all = receivedNotifications.filter((m) => !deleted.has(m.id));
+    const focused = document.activeElement;
 
     const topic = inboxTopic();
     renderTopicSidebar(all, topic);
@@ -292,10 +314,12 @@ export async function loadNotifications(): Promise<void> {
       elements.notificationsList.replaceChildren(
         emptyMessage(inTopic.length > 0 ? 'No messages match the search' : 'No recent notifications'),
       );
+      restoreInboxFocus(focused);
       return;
     }
     shown.sort((a, b) => b.time - a.time);
     elements.notificationsList.replaceChildren(...shown.map(renderMessageSafely));
+    restoreInboxFocus(focused);
     applyPendingFocus();
   } catch (error) {
     console.error('Error loading notifications:', error);
@@ -307,6 +331,7 @@ export async function loadNotifications(): Promise<void> {
 }
 
 async function toggleRead(id: string, item: HTMLElement, button: HTMLElement): Promise<void> {
+  clearStatus(elements.receiveActionStatus);
   const index = state.readMessageIds.indexOf(id);
   if (index > -1) {
     state.readMessageIds.splice(index, 1);
@@ -323,13 +348,19 @@ async function toggleRead(id: string, item: HTMLElement, button: HTMLElement): P
   }
 }
 
-async function deleteMessage(id: string, item: HTMLElement): Promise<void> {
+function serverDeletionIntent(messages: NtfyMessage[]): ServerDeletionIntent | undefined {
+  const ids = messages.filter((message) => state.syncDeletionTopics.has(message.topic)).map(({ id }) => id);
+  return ids.length ? { ids, apiUrl: state.apiUrl, fallbackUrl: state.fallbackUrl } : undefined;
+}
+
+async function deleteMessage(id: string, item: HTMLElement, server?: ServerDeletionIntent): Promise<void> {
+  clearStatus(elements.receiveActionStatus);
   try {
     // Shown at once; the background applies it and the storage change refreshes every open view
     state.deletedMessageIds = [...new Set([...state.deletedMessageIds, id])];
     state.readMessageIds = state.readMessageIds.filter((other) => other !== id);
     item.remove();
-    showDeletionResult(await sendToBackground({ action: 'delete', ids: [id] }));
+    showDeletionResult(await sendToBackground({ action: 'delete', ids: [id], server }));
     if (elements.notificationsList.children.length === 0) {
       elements.notificationsList.replaceChildren(emptyMessage('No recent notifications'));
     }
@@ -344,6 +375,8 @@ function showDeletionResult(result: DeletionSyncResult | undefined, success?: st
     showReceiveStatus('Deleted here. Some server deletions could not be confirmed.', 'warning');
   } else if (result?.denied) {
     showReceiveStatus('Deleted here. The server denied deletion.', 'warning');
+  } else if (result?.skipped) {
+    showReceiveStatus('Deleted here. Server deletion was skipped because settings changed.', 'warning');
   } else if (success) {
     showReceiveStatus(success, 'success');
   }
@@ -352,12 +385,9 @@ function showDeletionResult(result: DeletionSyncResult | undefined, success?: st
 async function copyLink(url: string, button: HTMLElement): Promise<void> {
   try {
     await navigator.clipboard.writeText(url);
-    const originalTitle = button.title;
-    button.title = 'Copied!';
     button.style.color = 'var(--primary-light)';
     showReceiveStatus('Attachment link copied!', 'success');
     setTimeout(() => {
-      button.title = originalTitle;
       button.style.color = '';
     }, 2000);
   } catch (error) {
@@ -367,6 +397,7 @@ async function copyLink(url: string, button: HTMLElement): Promise<void> {
 }
 
 async function markAllRead(): Promise<void> {
+  clearStatus(elements.receiveActionStatus);
   const unread = state.currentNotifications.filter((m) => !state.readMessageIds.includes(m.id));
   if (unread.length === 0) return;
   state.readMessageIds.push(...unread.map((m) => m.id));
@@ -383,18 +414,18 @@ async function deleteAll(): Promise<void> {
   if (state.currentNotifications.length === 0) return;
   const topic = inboxTopic();
   const scope = topic === null ? '' : ` in topic "${topic}"`;
-  const serverNotice = state.currentNotifications.some((message) => state.syncDeletionTopics.has(message.topic))
-    ? ' This also deletes on the server for topics with deletion sync enabled, when allowed.'
-    : '';
+  const ids = state.currentNotifications.map((m) => m.id);
+  const server = serverDeletionIntent(state.currentNotifications);
+  const serverNotice = server ? ' This also deletes on the server for topics with deletion sync enabled, when allowed.' : '';
   if (!confirm(`Are you sure you want to delete all notifications${scope}?${serverNotice}`)) {
     return;
   }
 
-  const ids = state.currentNotifications.map((m) => m.id);
+  clearStatus(elements.receiveActionStatus);
   state.deletedMessageIds = [...new Set([...state.deletedMessageIds, ...ids])];
   state.readMessageIds = state.readMessageIds.filter((id) => !ids.includes(id));
   try {
-    showDeletionResult(await sendToBackground({ action: 'delete', ids }), 'All notifications deleted');
+    showDeletionResult(await sendToBackground({ action: 'delete', ids, server }), 'All notifications deleted');
   } catch (error) {
     console.error('Error performing bulk delete:', error);
     showReceiveStatus('Failed to delete all', 'error');
@@ -405,25 +436,33 @@ async function deleteAll(): Promise<void> {
 function renderConnectionStatus(): void {
   const lines = describeStatus(state.receiverStatus);
   const connected = lines[0]?.level === 'ok' ? lines.shift() : undefined;
+  const connection = connected?.text ?? '';
   elements.headerConnection.hidden = !connected;
-  elements.headerConnection.textContent = connected?.text ?? '';
-  elements.headerConnection.title = connected?.text ?? '';
-  elements.headerConnection.setAttribute('aria-label', connected?.text ?? '');
-  elements.connectionStatus.replaceChildren(
-    ...lines.map(({ text, level }, index) => {
-      const line = document.createElement('div');
-      line.className = `status-line ${level}`;
-      line.textContent = text;
-      if (index === 0 && state.receiverStatus?.state === 'reconnecting') {
-        const countdown = document.createElement('span');
-        countdown.className = 'retry-countdown';
-        countdown.setAttribute('aria-hidden', 'true');
-        countdown.textContent = retryCountdown(state.receiverStatus.retryAt);
-        line.append(countdown);
-      }
-      return line;
-    }),
-  );
+  if (elements.headerConnection.textContent !== connection) {
+    elements.headerConnection.textContent = connection;
+    elements.headerConnection.title = connection;
+    elements.headerConnection.setAttribute('aria-label', connection);
+  }
+  const children = [...elements.connectionStatus.children] as HTMLElement[];
+  lines.forEach(({ text, level }, index) => {
+    const previous = children[index];
+    const className = `status-line ${level}`;
+    if (previous?.dataset.text === text && previous.className === className) return;
+    const line = document.createElement('div');
+    line.className = className;
+    line.dataset.text = text;
+    line.textContent = text;
+    if (index === 0 && state.receiverStatus?.state === 'reconnecting') {
+      const countdown = document.createElement('span');
+      countdown.className = 'retry-countdown';
+      countdown.setAttribute('aria-hidden', 'true');
+      countdown.textContent = retryCountdown(state.receiverStatus.retryAt);
+      line.append(countdown);
+    }
+    if (previous) previous.replaceWith(line);
+    else elements.connectionStatus.append(line);
+  });
+  children.slice(lines.length).forEach((line) => line.remove());
 }
 
 async function loadConnectionStatus(): Promise<void> {
@@ -441,8 +480,13 @@ export function setupReceive(): void {
   }, 1000);
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === 'session' && changes[STATUS_KEY]) {
+      const previouslyUnreadable = state.receiverStatus?.unreadableTopics.join(',') ?? '';
       state.receiverStatus = (changes[STATUS_KEY].newValue as ReceiverStatus | undefined) ?? null;
       renderConnectionStatus();
+      if ((state.receiverStatus?.unreadableTopics.join(',') ?? '') !== previouslyUnreadable) void loadNotifications();
+    }
+    if (area === 'sync' && changes[SYNC_DELETION_TOPICS_KEY]) {
+      state.syncDeletionTopics = parseSyncDeletionTopics(changes[SYNC_DELETION_TOPICS_KEY].newValue);
       void loadNotifications();
     }
   });

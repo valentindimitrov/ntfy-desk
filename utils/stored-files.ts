@@ -39,6 +39,20 @@ export function removeStoredFiles(ids: string[]): Promise<void> {
 
 export const clearStoredFiles = (): Promise<void> => editStoredFiles(() => []);
 
+/** Start the request while the selected IDs still exist. Release the lock before waiting for it. */
+export async function dispatchStoredUpload(ids: string[], upload: () => Promise<unknown>): Promise<boolean> {
+  const { response } = await navigator.locks.request(STORED_FILES_KEY, async () => {
+    const current = new Set((await readStoredFiles()).map(({ id }) => id));
+    if (ids.some((id) => !current.has(id))) return {};
+    const response = upload();
+    void response.catch(() => {});
+    return { response };
+  });
+  if (!response) return false;
+  await response;
+  return true;
+}
+
 export function readFileAsDataUrl(file: File): Promise<StoredFile> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

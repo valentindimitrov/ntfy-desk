@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { deleteReceivedMessages } from '@/utils/delete';
 import { getHistoryState, type StoredMessage } from '@/utils/history';
+import { handlePopupRequest } from '@/utils/messages';
 
 const origin = 'https://ntfy.example';
+const intent = (...ids: string[]) => ({ ids, apiUrl: origin, fallbackUrl: '' });
 const stored = (id: string, extra: Partial<StoredMessage> = {}): StoredMessage => ({
   id,
   event: 'message',
@@ -31,8 +33,8 @@ describe('outbound deletion sync', () => {
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response(null, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    expect(await deleteReceivedMessages(['a', 'b', 'c', 'unknown'])).toEqual({ denied: 0, failed: 0 });
-    await deleteReceivedMessages(['a']);
+    expect(await deleteReceivedMessages(['a', 'b', 'c', 'unknown'], intent('a', 'b'))).toEqual({ denied: 0, failed: 0 });
+    await deleteReceivedMessages(['a'], intent('a'));
     expect((await getHistoryState()).deletedMessageIds).toEqual(['a', 'b', 'c', 'unknown']);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -60,7 +62,10 @@ describe('outbound deletion sync', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    expect(await deleteReceivedMessages(['old', 'legacy', 'missing'])).toEqual({ denied: 0, failed: 2 });
+    expect(await deleteReceivedMessages(['old', 'legacy', 'missing'], intent('old', 'legacy', 'missing'))).toEqual({
+      denied: 0,
+      failed: 2,
+    });
     expect((await getHistoryState()).deletedMessageIds).toEqual(['old', 'legacy', 'missing']);
     expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method])).toEqual([
       [`${origin}/alerts/json?poll=1&since=1234`, 'GET'],
@@ -73,7 +78,31 @@ describe('outbound deletion sync', () => {
     await fakeBrowser.storage.local.set({ receivedNotifications: [stored(id)] });
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    expect(await deleteReceivedMessages([id])).toEqual({ denied: 0, failed: 1 });
+    expect(await deleteReceivedMessages([id], intent(id))).toEqual({ denied: 0, failed: 1 });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('keeps stale local-only actions local after sync is enabled in another view', async () => {
+    await fakeBrowser.storage.local.set({ receivedNotifications: [stored('stale'), stored('bulk')] });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const sync = vi.fn();
+    await handlePopupRequest({ action: 'delete', ids: ['stale'] }, sync);
+    await handlePopupRequest({ action: 'delete', ids: ['bulk'] }, sync);
+    expect((await getHistoryState()).deletedMessageIds).toEqual(['stale', 'bulk']);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([{ apiUrl: 'https://replacement.example' }, { syncDeletionTopics: [] }])(
+    'keeps an approved server delete local after the destination or sync mode changes (%j)',
+    async (changes) => {
+      await fakeBrowser.storage.local.set({ receivedNotifications: [stored('shown')] });
+      await fakeBrowser.storage.sync.set<Record<string, unknown>>(changes);
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      expect(await deleteReceivedMessages(['shown'], intent('shown'))).toEqual({ denied: 0, failed: 0, skipped: 1 });
+      expect((await getHistoryState()).deletedMessageIds).toEqual(['shown']);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 });

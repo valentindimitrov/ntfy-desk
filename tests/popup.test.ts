@@ -141,6 +141,63 @@ describe('Inbox', () => {
     expect(inbox.textContent).toBe('inboxsend only');
   });
 
+  it('preserves focus and the live-region warning on routine sync updates and refocuses the row after history changes', async () => {
+    const status = {
+      state: 'connected',
+      server: 'ntfy.example',
+      unreadableTopics: [],
+      syncErrors: [['alerts', 'HTTP 502']],
+      lastSyncAt: 1,
+    };
+    await fakeBrowser.storage.session.set({ receiverStatus: status });
+    await openPopup();
+    const button = $('.notification-item[data-id="a1"] .delete-btn');
+    const warning = $('.status-line.warning');
+    expect(warning).toBeTruthy();
+    button.focus();
+    await fakeBrowser.storage.session.set({ receiverStatus: { ...status, lastSyncAt: 2 } });
+    await flush();
+    expect(document.activeElement).toBe(button);
+    expect($('.status-line.warning')).toBe(warning);
+
+    const { receivedNotifications } = await fakeBrowser.storage.local.get('receivedNotifications');
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [message('new', 'alerts', 1), ...(receivedNotifications as NtfyMessage[])],
+    });
+    await vi.waitFor(() => expect($('.notification-item[data-id="new"]')).toBeTruthy());
+    expect(button.isConnected).toBe(false);
+    expect(document.activeElement).toBe($('.notification-item[data-id="a1"] .delete-btn'));
+  });
+
+  it('keeps the Copy Link tooltip after copying an attachment URL', async () => {
+    const url = 'https://ntfy.example/file/document.txt';
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [message('file', 'alerts', 1, { attachment: { url, name: 'document.txt' } })],
+    });
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    await openPopup();
+    const button = $('.notification-action-btn[title*="Copy"]');
+    const hover = () => button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    const leave = () => button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+    vi.useFakeTimers();
+    try {
+      hover();
+      const tooltip = button.dataset.tooltip;
+      expect(tooltip).toMatch(/copy/i);
+      button.click();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(url);
+      leave();
+      hover();
+      await vi.advanceTimersByTimeAsync(2050);
+      leave();
+      hover();
+      expect(button.dataset.tooltip).toBe(tooltip);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('opens the click URL from the title and view actions from their buttons', async () => {
     await fakeBrowser.storage.local.set({
       receivedNotifications: [
@@ -266,6 +323,48 @@ describe('Inbox', () => {
 });
 
 describe('Send form', () => {
+  it('skips a queued file removed in another view before its upload starts', async () => {
+    const file = (id: string) => ({ id, name: `${id}.txt`, type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' });
+    await fakeBrowser.storage.local.set({ storedFiles: [file('first'), file('removed')] });
+    await openPopup('?mode=page');
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
+      await promise;
+      return new Response('');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { send } = await import('@/entrypoints/popup/send');
+    const { removeStoredFiles } = await import('@/utils/stored-files');
+    const pending = send();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await removeStoredFiles(['removed']);
+    resolve();
+    await pending;
+    expect(fetchMock.mock.calls.map(([, init]) => new Headers(init.headers).get('X-Filename'))).toEqual(['first.txt']);
+    expect($('#status').textContent).toBe('Notification sent!');
+  });
+
+  it('reports a successful publish separately from a persistent draft cleanup warning', async () => {
+    vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((async (request: { action: string }) => {
+      if (request.action === 'clearDraft') throw new Error('Storage unavailable');
+      return { success: true, deletion: await handlePopupRequest(request, async () => {}) };
+    }) as never);
+    await openPopup();
+    $<HTMLTextAreaElement>('#message-input').value = 'Already published';
+    const { send } = await import('@/entrypoints/popup/send');
+    vi.useFakeTimers();
+    try {
+      await send();
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(requests).toHaveLength(1);
+      expect($('#status').textContent).toBe('Sent, but the draft could not be cleared.');
+      expect($<HTMLTextAreaElement>('#message-input').value).toBe('Already published');
+      expect(closed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps failed attachments and the draft after a partial send, then retries only the failed file', async () => {
     const file = (name: string) => ({ name, type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' });
     await fakeBrowser.storage.local.set({ storedFiles: [file('sent.txt'), file('retry.txt')] });
@@ -451,6 +550,24 @@ describe('Send form', () => {
 });
 
 describe('settings', () => {
+  it('asks before leaving unsaved server and credential edits', async () => {
+    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+    vi.stubGlobal('confirm', confirm);
+    await openPopup();
+    await openSettings();
+    const input = $<HTMLInputElement>('#url-input');
+    input.value = 'https://unsaved.example';
+    $<HTMLInputElement>('#token-input').value = 'tk_synthetic_unsaved';
+    $('#back-btn').click();
+    expect($('#settings-view').classList.contains('active')).toBe(true);
+    expect(input.value).toBe('https://unsaved.example');
+    $('#back-btn').click();
+    expect($('#settings-view').classList.contains('active')).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.example' });
+    expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_x' });
+  });
+
   it('saves a theme change without restoring stale topics or authentication', async () => {
     await openPopup('?mode=page');
     await openSettings();

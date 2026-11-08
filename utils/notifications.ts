@@ -14,7 +14,28 @@ const PRIORITY_LABELS: Record<number, string> = {
   5: '⇈ Urgent',
 };
 const CATCH_UP_PREFIX = 'catch-up:';
+const CATCH_UP_ID = 'catch-up-summary';
+const CATCH_UP_KEY = 'catchUpSummary';
 const MAX_INDIVIDUAL_CATCH_UP = 5;
+
+interface CatchUpSummary {
+  count: number;
+  topic: string | null;
+  urgent: boolean;
+}
+
+let summaryQueue: Promise<unknown> = Promise.resolve();
+
+function updateSummary<T>(task: () => Promise<T>): Promise<T> {
+  const result = summaryQueue.then(task);
+  summaryQueue = result.catch(() => {});
+  return result;
+}
+
+async function readSummary(): Promise<CatchUpSummary | undefined> {
+  const stored = await browser.storage.session.get(CATCH_UP_KEY);
+  return stored[CATCH_UP_KEY] as CatchUpSummary | undefined;
+}
 
 export interface NotificationButton {
   title: string;
@@ -67,20 +88,46 @@ export async function notifyNewMessage(message: NtfyMessage): Promise<void> {
   }
 }
 
-/** Summarize bursts after the topic's priority rule has been applied. */
-export async function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
-  const rules = await getTopicRules();
-  const eligible = messages.filter((message) => shouldNotify(message, rules));
-  if (eligible.length <= MAX_INDIVIDUAL_CATCH_UP) {
-    eligible.forEach(showDesktopNotification);
-    return;
-  }
-  const topic = eligible[0]!.topic;
-  await browser.notifications.create(`${CATCH_UP_PREFIX}${topic}`, {
+function summaryOptions(summary: CatchUpSummary): Browser.notifications.NotificationCreateOptions {
+  return {
     type: 'basic',
     iconUrl: browser.runtime.getURL('/icon/128.png'),
-    title: `${eligible.length} new notifications`,
-    message: `Open the Inbox for ${topic}`,
+    title: `${summary.count} new notifications`,
+    message: summary.topic ? `Open the Inbox for ${summary.topic}` : 'Open the Inbox',
+    requireInteraction: summary.urgent,
+  };
+}
+
+/** Summarize across a whole sync pass and carry forward an open summary across passes. */
+export function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
+  return updateSummary(async () => {
+    const rules = await getTopicRules();
+    const eligible = messages.filter((message) => shouldNotify(message, rules));
+    const first = eligible[0];
+    if (!first) return;
+    const current: CatchUpSummary = {
+      count: eligible.length,
+      topic: eligible.every(({ topic }) => topic === first.topic) ? first.topic : null,
+      urgent: eligible.some(({ priority }) => (priority ?? 3) >= 4),
+    };
+    const previous = await readSummary();
+    if (previous && Object.hasOwn(await browser.notifications.getAll(), CATCH_UP_ID)) {
+      const combined = {
+        count: previous.count + current.count,
+        topic: previous.topic === current.topic ? current.topic : null,
+        urgent: previous.urgent || current.urgent,
+      };
+      if (await browser.notifications.update(CATCH_UP_ID, summaryOptions(combined))) {
+        await browser.storage.session.set({ [CATCH_UP_KEY]: combined });
+        return;
+      }
+    }
+    if (current.count <= MAX_INDIVIDUAL_CATCH_UP) {
+      eligible.forEach(showDesktopNotification);
+      return;
+    }
+    await browser.notifications.create(CATCH_UP_ID, summaryOptions(current));
+    await browser.storage.session.set({ [CATCH_UP_KEY]: current });
   });
 }
 
@@ -102,6 +149,16 @@ export async function handleNotificationButton(notificationId: string, buttonInd
 
 /** A click on the notification: the message's click URL (http(s) only), else the message in the extension's tab */
 export async function handleNotificationClick(notificationId: string): Promise<void> {
+  if (notificationId === CATCH_UP_ID) {
+    const summary = await updateSummary(async () => {
+      const summary = await readSummary();
+      await browser.notifications.clear(notificationId);
+      await browser.storage.session.remove(CATCH_UP_KEY);
+      return summary;
+    });
+    await openExtensionTab({ topic: summary?.topic ?? undefined, allTopics: !summary?.topic });
+    return;
+  }
   await browser.notifications.clear(notificationId);
   if (notificationId.startsWith(CATCH_UP_PREFIX)) {
     await openExtensionTab({ topic: notificationId.slice(CATCH_UP_PREFIX.length) });

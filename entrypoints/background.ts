@@ -11,9 +11,9 @@ import {
   updateUnreadBadge,
 } from '@/utils/notifications';
 import { clearComposerOnStartup, handlePopupRequest } from '@/utils/messages';
-import { AUTH_ORIGINS_KEY, CREDENTIALS_KEY } from '@/utils/ntfy';
+import { AUTH_ORIGINS_KEY, CREDENTIALS_KEY, getConfig, serverPermissionPattern } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
-import { SYNC_DELETION_TOPICS_KEY, parseSyncDeletionTopics } from '@/utils/sync-modes';
+import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics, parseSyncDeletionTopics } from '@/utils/sync-modes';
 
 const ALARM_NAME = 'receiver';
 /** The alarm's name while receiving used a WebSocket; cleared on update */
@@ -22,7 +22,7 @@ const OLD_ALARM_NAME = 'ws-keepalive';
 export default defineBackground(() => {
   const receiver = createReceiver({
     onNewMessage: (message) => void notifyNewMessage(message),
-    onCatchUp: (messages) => void notifyCatchUp(messages),
+    onCatchUp: (messages) => void notifyCatchUp(messages).catch(() => console.warn('Could not show catch-up notifications')),
     onConnected: () => void updateUnreadBadge(),
   });
 
@@ -70,9 +70,22 @@ export default defineBackground(() => {
     }
   });
 
+  browser.permissions.onAdded.addListener(({ origins }) => {
+    if (!origins?.length) return;
+    void (async () => {
+      const { apiUrl, fallbackUrl, topics } = await getConfig();
+      if (![apiUrl, fallbackUrl].some((url) => origins.includes(serverPermissionPattern(url) ?? ''))) return;
+      const enabled = await getSyncDeletionTopics();
+      await receiver.replayDeletions(topics.filter((topic) => enabled.has(topic)));
+    })().catch(() => console.warn('Could not recheck deletion sync after granting server access'));
+  });
+
   browser.contextMenus.onClicked.addListener((info, tab) => void handleContextMenuClick(info, tab));
   browser.notifications.onButtonClicked.addListener((id, index) => void handleNotificationButton(id, index));
   browser.notifications.onClicked.addListener((id) => void handleNotificationClick(id));
+  if (import.meta.env.MODE === 'e2e') {
+    Object.assign(globalThis, { __ntfyClickNotification: handleNotificationClick });
+  }
 
   // From the popup: a sync (when it opens, and on the Receive tab), and read and delete actions
   browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {

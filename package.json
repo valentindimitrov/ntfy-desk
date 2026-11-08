@@ -24,7 +24,7 @@
     "lint:firefox": "wxt build -b firefox && web-ext lint -s .output/firefox-mv3",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "wxt build && playwright test",
+    "test:e2e": "wxt build --mode e2e && playwright test",
     "check": "vp fmt --check && vp lint --deny-warnings && vitest run",
     "postinstall": "wxt prepare"
   },

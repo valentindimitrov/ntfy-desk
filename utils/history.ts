@@ -14,7 +14,7 @@ export const MAX_HISTORY_SIZE = 8 * 1024 * 1024;
 const MAX_SEEN_PER_TOPIC = 5000;
 /** Older deletions may still race with live delivery after a poll has moved the watermark. */
 const MAX_SERVER_DELETIONS_PER_TOPIC = 1000;
-const DELETION_REPLAY_VERSION = 2;
+const DELETION_REPLAY_VERSION = 3;
 /**
  * Deleted ids kept for replay suppression, newest last. Leave room for a single delete of the
  * entire 8 MiB history, even if it consists of the smallest possible stored messages.
@@ -32,6 +32,8 @@ export interface TopicSyncState {
    * missed while disconnected must not let the next poll skip them. An empty first poll can seed it.
    */
   since: number | null;
+  /** Start of the first empty poll, used when no server timestamp is available. */
+  emptyPollAt?: number;
   /** Id and time of every message recorded at or after `since`, to skip those a poll returns again */
   seen: [id: string, time: number][];
   /** Latest server deletion per sequence, bounded so an overlapping replay cannot restore it */
@@ -80,6 +82,7 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
           topic: state.topic,
           origins: Array.isArray(state.origins) ? state.origins : undefined,
           since: state.since ?? null,
+          emptyPollAt: state.emptyPollAt,
           seen: Array.isArray(state.seen) ? state.seen : [],
           synced: state.synced === true,
           truncatedAt: state.truncatedAt,
@@ -181,6 +184,8 @@ export interface HistorySource {
 interface PollCoverage {
   truncated?: boolean;
   advanceTo?: number;
+  emptyPollAt?: number;
+  resetWatermark?: boolean;
 }
 
 /** Apply one live event or a replay and return new messages eligible for a notification. */
@@ -294,8 +299,10 @@ function recordEvents(
       state.deletionReplay = { generation: replayGeneration, version: DELETION_REPLAY_VERSION, ...(replayProgress ?? { complete: true }) };
     } else if (poll) {
       state.synced = true;
+      if (coverage?.resetWatermark) state.since = null;
       const newestTime = Math.max(ordered.at(-1)?.time ?? -Infinity, coverage?.advanceTo ?? -Infinity);
       if (Number.isFinite(newestTime) && (state.since === null || newestTime > state.since)) state.since = newestTime;
+      state.emptyPollAt = ordered.length === 0 ? (state.emptyPollAt ?? coverage?.emptyPollAt) : undefined;
     }
     pruneSeen(state);
     state.serverDeletions = [...deletions].slice(-MAX_SERVER_DELETIONS_PER_TOPIC).map(([sequence, { time, id }]) => [sequence, time, id]);

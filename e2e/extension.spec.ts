@@ -25,6 +25,36 @@ async function waitForInitialSync(worker: Worker, topics: string[]): Promise<voi
 }
 
 test.describe('receiving', () => {
+  test('keeps a stale local-only delete off the server even if the mode changes during dispatch', async ({
+    ntfy,
+    configure,
+    openPopup,
+  }) => {
+    await configure({ topics: 'alerts' });
+    const page = await openPopup();
+    await expect.poll(() => ntfy.subscriptions.length).toBeGreaterThan(0);
+    const original = ntfy.publish('alerts', { title: 'Local-only delete', sequence_id: 'keep-on-server' });
+    const button = page.getByRole('button', { name: 'Delete Notification', exact: true });
+    await expect(button).toBeVisible();
+    await page.evaluate(() => {
+      const sendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
+      chrome.runtime.sendMessage = (async (request: { action: string }) => {
+        if (request.action !== 'delete') return sendMessage(request);
+        await chrome.storage.sync.set({ syncDeletionTopics: ['alerts'] });
+        const reply = (await sendMessage(request)) as { success: boolean };
+        document.body.dataset.deleteCompleted = String(reply.success);
+        return reply;
+      }) as typeof chrome.runtime.sendMessage;
+    });
+    await button.click();
+    await expect
+      .poll(() => page.evaluate(async () => (await chrome.storage.local.get('deletedMessageIds')).deletedMessageIds))
+      .toEqual([original.id]);
+    await expect(page.locator('.notification-item')).toHaveCount(0);
+    await expect(page.locator('body')).toHaveAttribute('data-delete-completed', 'true');
+    expect(ntfy.messages.filter(({ event }) => event === 'message_delete')).toEqual([]);
+  });
+
   test('catches up after a large replay and keeps its warning across later polls', async ({
     ntfy,
     configure,
@@ -257,6 +287,32 @@ test.describe('receiving', () => {
 });
 
 test.describe('sending', () => {
+  test('approves a server for the stored token through Settings', async ({ configure, openPopup, ntfy, serviceWorker }) => {
+    await configure({ topics: 'alerts', approveOrigins: false });
+    const page = await openPopup();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    const approve = page.getByRole('button', { name: 'Use them with this server' });
+    await expect(approve).toBeVisible();
+    expect(ntfy.subscriptions).toEqual([]);
+    await approve.click();
+    await expect(approve).toBeHidden();
+    await expect.poll(() => ntfy.subscriptions).toContainEqual(['alerts']);
+    expect(await serviceWorker.evaluate(() => chrome.storage.local.get('authOrigins'))).toEqual({ authOrigins: [ntfy.url] });
+  });
+
+  test('opens the attachment chooser by keyboard', async ({ configure, openPopup, context }) => {
+    await configure({ topics: 'alerts' });
+    const page = await openPopup('?mode=page');
+    const [picker] = await Promise.all([context.waitForEvent('page'), page.getByRole('button', { name: 'Attach files' }).click()]);
+    const browse = picker.getByRole('button', { name: 'Browse for files' });
+    await expect(browse).toBeVisible();
+    await picker.keyboard.press('Tab');
+    await expect(browse).toBeFocused();
+    const [chooser] = await Promise.all([picker.waitForEvent('filechooser'), picker.keyboard.press('Enter')]);
+    await chooser.setFiles({ name: 'keyboard.txt', mimeType: 'text/plain', buffer: Buffer.from('chosen by keyboard') });
+    await expect(page.locator('#file-preview')).toContainText('keyboard.txt');
+  });
+
   test('preserves a file picked in another window during an attachment upload', async ({
     configure,
     ntfy,
@@ -349,9 +405,12 @@ test.describe('sending', () => {
     const event = ntfy.publish('alerts', { title: 'Notification to focus' });
     await expect(page.locator('.notification-title')).toHaveText('Notification to focus');
     await page.locator('#message-input').fill('Unsent work');
-    await page.evaluate((id) => {
+    await page.evaluate(() => {
       document.body.dataset.originalDocument = 'yes';
-      location.hash = new URLSearchParams({ message: id, focus: 'test' }).toString();
+    });
+    await serviceWorker.evaluate((id) => {
+      const worker = globalThis as unknown as { __ntfyClickNotification: (id: string) => Promise<void> };
+      return worker.__ntfyClickNotification(id);
     }, event.id);
     await expect(page.locator('.notification-item.focused')).toHaveCount(1);
     await expect(page.locator('body')).toHaveAttribute('data-original-document', 'yes');

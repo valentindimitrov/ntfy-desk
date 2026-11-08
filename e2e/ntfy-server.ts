@@ -68,8 +68,8 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Authorization, *',
 };
 
-function send(res: ServerResponse, status: number, body: string, contentType = 'application/json'): void {
-  res.writeHead(status, { ...CORS, 'Content-Type': contentType });
+function send(res: ServerResponse, status: number, body: string, contentType = 'application/json', headers = {}): void {
+  res.writeHead(status, { ...CORS, 'Content-Type': contentType, ...headers });
   res.end(body);
 }
 
@@ -225,9 +225,13 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
       }
       const since = url.searchParams.get('since') ?? 'all';
       const now = Math.floor(Date.now() / 1000);
-      const minTime = /^\d+$/.test(since) ? Number(since) : /^\d+h$/.test(since) ? now - parseInt(since, 10) * 3600 : 0;
+      const duration = /^\d+[hs]$/.test(since) ? parseInt(since, 10) * (since.endsWith('h') ? 3600 : 1) : undefined;
+      const minTime = /^\d+$/.test(since) ? Number(since) : duration === undefined ? 0 : now - duration;
       const lines = server.messages.filter((m) => topics.includes(m.topic) && m.time >= minTime).map((m) => JSON.stringify(m));
-      send(res, 200, lines.join('\n') + (lines.length ? '\n' : ''), 'application/x-ndjson');
+      send(res, 200, lines.join('\n') + (lines.length ? '\n' : ''), 'application/x-ndjson', {
+        'Access-Control-Expose-Headers': 'Date, X-Messages-Truncated',
+        'X-Messages-Truncated': '0',
+      });
       return;
     }
 

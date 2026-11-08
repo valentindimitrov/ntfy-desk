@@ -83,6 +83,13 @@ export function serverOrigins(...urls: string[]): string[] {
   return [...new Set(origins)];
 }
 
+/** Host permission match patterns omit ports. */
+export function serverPermissionPattern(url: string): string | null {
+  if (!isHttpUrl(url)) return null;
+  const parsed = new URL(url);
+  return `${parsed.protocol}//${parsed.hostname}/*`;
+}
+
 /** Approve the token and password for these server origins */
 export async function setAuthOrigins(origins: string[]): Promise<void> {
   await browser.storage.local.set({ [AUTH_ORIGINS_KEY]: origins });
@@ -633,7 +640,10 @@ export async function getNotifications(
   const protectedEvents = new Map<string, { event: NtfyMessage; order: number }>();
   let order = 0;
   let buffered = 0;
-  const serverTruncated = response.headers.get('X-Messages-Truncated') === '1';
+  const truncation = response.headers.get('X-Messages-Truncated');
+  const serverTruncated = truncation === '1';
+  // A CORS-filtered response can hide a truncation header. An explicit 0 also certifies completeness.
+  const truncationKnown = response.type !== 'cors' || truncation === '0' || serverTruncated;
   let truncated = serverTruncated;
   const date = response.headers.get('Date');
   const serverTime = date ? Date.parse(date) : NaN;
@@ -685,6 +695,7 @@ export async function getNotifications(
     truncated: truncated || !complete,
     scanLimited: !complete,
     serverTruncated,
+    truncationKnown,
     serverTime: Number.isFinite(serverTime) ? serverTime : undefined,
   };
 }

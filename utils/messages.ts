@@ -3,7 +3,7 @@
 // extension's tab) are applied one at a time instead of overwriting each other's lists.
 
 import { browser } from 'wxt/browser';
-import { deleteReceivedMessages, type DeletionSyncResult } from './delete';
+import { deleteReceivedMessages, type DeletionSyncResult, type ServerDeletionIntent } from './delete';
 import { setRead } from './history';
 import { clearStoredFiles } from './stored-files';
 
@@ -19,11 +19,17 @@ export interface Draft {
 export type PopupRequest =
   | { action: 'sync' }
   | { action: 'setRead'; ids: string[]; read: boolean }
-  | { action: 'delete'; ids: string[] }
+  | { action: 'delete'; ids: string[]; server?: ServerDeletionIntent }
   | { action: 'saveDraft'; draft: Draft }
   | { action: 'clearDraft'; revision: string };
 
 const isStringList = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+function isServerDeletionIntent(value: unknown): value is ServerDeletionIntent {
+  if (!value || typeof value !== 'object') return false;
+  const intent = value as Partial<ServerDeletionIntent>;
+  return isStringList(intent.ids) && typeof intent.apiUrl === 'string' && typeof intent.fallbackUrl === 'string';
+}
 
 function isDraft(value: unknown): value is Draft {
   if (!value || typeof value !== 'object') return false;
@@ -56,12 +62,14 @@ export function clearComposerOnStartup(): Promise<void> {
 
 /** The background's handling of a request; null if it isn't one */
 export function handlePopupRequest(request: unknown, sync: () => Promise<void>): Promise<void | DeletionSyncResult> | null {
-  const { action, ids, read, draft, revision } = (request ?? {}) as Partial<
-    Record<'action' | 'ids' | 'read' | 'draft' | 'revision', unknown>
+  const { action, ids, read, draft, revision, server } = (request ?? {}) as Partial<
+    Record<'action' | 'ids' | 'read' | 'draft' | 'revision' | 'server', unknown>
   >;
   if (action === 'sync') return sync();
   if (action === 'setRead' && isStringList(ids) && typeof read === 'boolean') return setRead(ids, read);
-  if (action === 'delete' && isStringList(ids)) return deleteReceivedMessages(ids);
+  if (action === 'delete' && isStringList(ids) && (server === undefined || isServerDeletionIntent(server))) {
+    return deleteReceivedMessages(ids, server);
+  }
   if (action === 'saveDraft' && isDraft(draft)) {
     return updateDraft(() => browser.storage.local.set({ draftState: draft }));
   }
