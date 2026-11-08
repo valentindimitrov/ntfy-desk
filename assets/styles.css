@@ -1151,14 +1151,48 @@ body.filepicker-page {
    Inbox and send form
    ======================================== */
 
+#main-view {
+  --divider-width: 10px;
+  --pane-padding: 12px;
+  --min-inbox-width: 260px;
+  --min-send-width: 240px;
+  --min-topic-width: 104px;
+  --max-topic-width: 360px;
+  --default-topics-width: 120px;
+  --default-send-width: 260px;
+  --send-space: var(--min-send-width);
+  /* Include the inbox padding and the divider before Send. */
+  --inbox-space: calc(var(--min-inbox-width) + 2 * var(--pane-padding) + var(--divider-width));
+  --topics-column: clamp(
+    var(--min-topic-width),
+    var(--topics-width, var(--default-topics-width)),
+    min(var(--max-topic-width), calc(100cqw - var(--send-space) - var(--inbox-space) - var(--divider-width)))
+  );
+  --receive-space: calc(var(--inbox-space) + var(--topics-column) + var(--divider-width));
+  --send-columns: var(--divider-width)
+    clamp(var(--min-send-width), var(--send-width, var(--default-send-width)), calc(100% - var(--receive-space)));
+}
+
+.page-mode #main-view {
+  --divider-width: 12px;
+  --pane-padding: 16px;
+  --min-inbox-width: 300px;
+  --min-send-width: 280px;
+  --min-topic-width: 120px;
+  --default-topics-width: 144px;
+  --default-send-width: 32%;
+  flex: 1;
+}
+
 #main-view.active {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--send-column, minmax(280px, 32%));
+  grid-template-columns: minmax(0, 1fr) var(--send-columns);
   align-items: start;
 }
 
 #main-view:has(.send-section:not([open])) {
-  --send-column: 44px;
+  --send-space: 44px;
+  --send-columns: var(--send-space);
 }
 
 /* Keep the scrollbar inside the toolbar view so the browser can size the popup to its contents. */
@@ -1173,7 +1207,6 @@ body:not(.page-mode) #main-view.active {
 
 .send-section {
   min-width: 0;
-  border-inline-start: 1px solid var(--border-color);
 }
 
 .send-summary {
@@ -1181,7 +1214,7 @@ body:not(.page-mode) #main-view.active {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 12px var(--pane-padding);
   list-style: none;
   cursor: pointer;
 }
@@ -1207,6 +1240,7 @@ body:not(.page-mode) #main-view.active {
 
 .send-section:not([open]) {
   align-self: stretch;
+  border-inline-start: 1px solid var(--border-color);
 }
 
 .send-section:not([open]) .send-summary {
@@ -1227,26 +1261,10 @@ body:not(.page-mode) #main-view.active {
 
 .send-section > .main-content {
   padding-top: 0;
-}
-
-.page-mode #main-view {
-  --divider-width: 12px;
-  --min-inbox-width: 300px;
-  --min-send-width: 280px;
-  --min-topic-width: 120px;
-  --max-topic-width: 360px;
-  /* Include the inbox padding and the divider before Send. */
-  --inbox-space: calc(var(--min-inbox-width) + 32px + var(--divider-width));
-  --receive-space: var(--inbox-space);
-  --send-space: var(--min-send-width);
-}
-
-.page-mode #main-view:has(.send-section:not([open])) {
-  --send-space: var(--send-column);
+  padding-inline: var(--pane-padding);
 }
 
 .pane-divider {
-  display: none;
   align-self: stretch;
   width: var(--divider-width);
   flex: none;
@@ -1265,25 +1283,18 @@ body:not(.page-mode) #main-view.active {
   visibility: hidden;
 }
 
-@media (min-width: 760px) {
-  .page-mode #main-view.active:has(.send-section[open]) {
-    grid-template-columns:
-      minmax(0, 1fr) var(--divider-width)
-      clamp(var(--min-send-width), var(--send-width, 32%), calc(100% - var(--receive-space)));
-  }
-
-  .page-mode #main-view:has(.send-section[open]) .send-divider {
-    display: block;
-  }
-
-  .page-mode .send-section[open] {
-    border-inline-start: 0;
-  }
+#main-view:has(.send-section:not([open])) .send-divider {
+  display: none;
 }
 
 @media (max-width: 759px) {
   .page-mode #main-view.active {
     grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+
+  .page-mode .send-divider {
+    display: none;
   }
 
   .page-mode .send-section {
@@ -1357,10 +1368,15 @@ body:not(.page-mode) #main-view.active {
    Inbox: Topic List
    ======================================== */
 
+#inbox {
+  align-self: stretch;
+}
+
 .receive-layout {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  height: 100%;
+  padding-inline: var(--pane-padding);
 }
 
 .receive-layout .notifications-section {
@@ -1370,13 +1386,13 @@ body:not(.page-mode) #main-view.active {
 
 .topic-sidebar {
   display: flex;
-  flex: 0 0 120px;
+  /* The popup's internal scrollbar can reduce the space left by the outer grid. */
+  flex: 0 0 min(var(--topics-column), calc(100% - var(--min-inbox-width) - var(--divider-width)));
   flex-direction: column;
   gap: 2px;
   max-height: 480px;
   overflow-y: auto;
-  padding-inline-end: 8px;
-  border-inline-end: 1px solid var(--border-color);
+  padding-inline-end: 4px;
 }
 
 .topic-filter-btn {
@@ -1434,39 +1450,19 @@ body:not(.page-mode) #main-view.active {
   max-height: max(250px, calc(100vh - 170px));
 }
 
-@media (min-width: 960px) {
-  .page-mode #main-view {
-    --topics-column: clamp(
-      var(--min-topic-width),
-      var(--topics-width, 144px),
-      min(var(--max-topic-width), calc(100cqw - var(--send-space) - var(--inbox-space) - var(--divider-width)))
-    );
-    --receive-space: calc(var(--inbox-space) + var(--topics-column) + var(--divider-width));
-  }
-
-  .page-mode #inbox {
-    align-self: stretch;
-  }
-
-  .page-mode .receive-layout {
-    height: 100%;
-    gap: 0;
-  }
-
-  .page-mode .topic-sidebar {
-    flex-basis: var(--topics-column);
-    border-inline-end: 0;
-  }
-
-  .page-mode .topic-divider {
-    display: block;
-  }
-}
-
 @media (max-width: 959px) {
+  .page-mode #main-view {
+    --receive-space: var(--inbox-space);
+  }
+
   .page-mode .receive-layout {
     flex-direction: column;
     align-items: stretch;
+    gap: 10px;
+  }
+
+  .page-mode .topic-divider {
+    display: none;
   }
 
   .page-mode .topic-sidebar {
@@ -1474,7 +1470,6 @@ body:not(.page-mode) #main-view.active {
     flex-direction: row;
     overflow-x: auto;
     padding: 0 0 6px;
-    border-inline-end: 0;
     border-bottom: 1px solid var(--border-color);
   }
 }

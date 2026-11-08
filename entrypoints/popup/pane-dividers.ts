@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { elements, saveLocal } from './state';
+import { elements, isPageMode, saveLocal } from './state';
 
 interface DividerOptions {
   divider: HTMLElement;
@@ -103,8 +103,9 @@ function setupDivider({ divider, pane, property, key, stored, min, limit = Infin
 
 export async function setupPaneDividers(): Promise<void> {
   const { mainView, topicDivider, topicSidebar, sendDivider, sendSection } = elements;
-  const keys = ['topicsPaneWidth', 'sendPaneWidth'];
-  const stored = await browser.storage.local.get(keys).catch((): Record<string, unknown> => ({}));
+  const topicsKey = isPageMode ? 'topicsPaneWidth' : 'popupTopicsPaneWidth';
+  const sendKey = isPageMode ? 'sendPaneWidth' : 'popupSendPaneWidth';
+  const stored = await browser.storage.local.get([topicsKey, sendKey]).catch((): Record<string, unknown> => ({}));
   const style = getComputedStyle(mainView);
   const size = (property: string) => Number.parseFloat(style.getPropertyValue(property));
   const minInbox = size('--min-inbox-width');
@@ -112,8 +113,8 @@ export async function setupPaneDividers(): Promise<void> {
     divider: topicDivider,
     pane: topicSidebar,
     property: '--topics-width',
-    key: 'topicsPaneWidth',
-    stored: stored.topicsPaneWidth,
+    key: topicsKey,
+    stored: stored[topicsKey],
     min: size('--min-topic-width'),
     limit: size('--max-topic-width'),
     direction: 1,
@@ -123,8 +124,8 @@ export async function setupPaneDividers(): Promise<void> {
     divider: sendDivider,
     pane: sendSection,
     property: '--send-width',
-    key: 'sendPaneWidth',
-    stored: stored.sendPaneWidth,
+    key: sendKey,
+    stored: stored[sendKey],
     min: size('--min-send-width'),
     direction: -1,
     minInbox,

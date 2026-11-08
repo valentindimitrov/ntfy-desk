@@ -101,9 +101,9 @@ async function init(): Promise<void> {
     document.body.classList.add('page-mode');
     elements.popoutBtn.style.display = 'none';
     elements.tabUrlBtn.style.display = '';
-    await setupPaneDividers();
   }
 
+  await setupPaneDividers();
   await loadSettings();
   state.page = await getPage();
   await loadReceiveFilter();

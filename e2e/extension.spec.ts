@@ -1,5 +1,15 @@
+import type { Page } from '@playwright/test';
 import type { Browser } from 'wxt/browser';
 import { expect, test } from './fixtures';
+
+async function dragDivider(page: Page, name: string, dx: number): Promise<void> {
+  const { x, y, width } = (await page.getByRole('separator', { name }).boundingBox())!;
+  const center = x + width / 2;
+  await page.mouse.move(center, y + 20);
+  await page.mouse.down();
+  await page.mouse.move(center + dx, y + 20, { steps: 5 });
+  await page.mouse.up();
+}
 
 test.describe('receiving', () => {
   test('applies the topic table and replays cached deletions for existing messages', async ({
@@ -227,12 +237,22 @@ test.describe('sending', () => {
     await expect(destination).toHaveValue('backups');
     await expect(destination).toBeDisabled();
 
+    const topicsDivider = popup.getByRole('separator', { name: 'Resize topics' });
+    const sendDivider = popup.getByRole('separator', { name: 'Resize Send' });
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', '120');
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', '260');
+    await dragDivider(popup, 'Resize topics', 32);
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', '152');
+    await dragDivider(popup, 'Resize Send', -32);
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', '292');
+
     await message.fill('Keep this draft');
     const inbox = popup.getByRole('region', { name: 'Inbox' });
     const openWidth = (await inbox.boundingBox())!.width;
     const summary = popup.locator('#send-section summary');
     await summary.press('Enter');
     await expect(message).toBeHidden();
+    await expect(sendDivider).toBeHidden();
     await expect(inbox).toBeVisible();
     expect((await inbox.boundingBox())!.width).toBeGreaterThan(openWidth);
     const rail = (await summary.boundingBox())!;
@@ -240,9 +260,18 @@ test.describe('sending', () => {
     expect(rail.x + rail.width).toBeCloseTo(800);
     await summary.press('Space');
     await expect(message).toBeVisible();
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', '292');
     await popup.getByRole('button', { name: 'All topics', exact: true }).click();
     await expect(destination).toBeEnabled();
     await expect(message).toHaveValue('Keep this draft');
+
+    await popup.reload();
+    await expect(topicsDivider).toHaveAttribute('aria-valuenow', '152');
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', '292');
+    const tab = await openPopup('?mode=page');
+    await tab.setViewportSize({ width: 1600, height: 900 });
+    await expect(tab.getByRole('separator', { name: 'Resize topics' })).toHaveAttribute('aria-valuenow', '144');
+    await expect(tab.getByRole('separator', { name: 'Resize Send' })).toHaveAttribute('aria-valuenow', '512');
   });
 
   test('resizes both tab dividers and restores pane widths after reload and viewport changes', async ({ configure, openPopup }) => {
@@ -256,23 +285,17 @@ test.describe('sending', () => {
     const inbox = page.locator('#notifications-section');
     await expect(topicsDivider).toBeVisible();
     await expect(sendDivider).toBeVisible();
-    expect((await page.locator('#main-view').boundingBox())!.width).toBe(1440);
+    const bounds = (await page.locator('#main-view').boundingBox())!;
+    expect(bounds).toMatchObject({ x: 0, width: 1600 });
+    expect(bounds.y + bounds.height).toBe(900);
     const topicsWidth = (await topics.boundingBox())!.width;
     const sendWidth = Math.round((await send.boundingBox())!.width);
     await expect(topicsDivider).toHaveAttribute('aria-valuenow', String(topicsWidth));
     await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth));
-    const dragDivider = async (name: string, dx: number) => {
-      const { x, y, width } = (await page.getByRole('separator', { name }).boundingBox())!;
-      const center = x + width / 2;
-      await page.mouse.move(center, y + 20);
-      await page.mouse.down();
-      await page.mouse.move(center + dx, y + 20, { steps: 5 });
-      await page.mouse.up();
-    };
-    await dragDivider('Resize topics', 80);
+    await dragDivider(page, 'Resize topics', 80);
     await expect(topicsDivider).toHaveAttribute('aria-valuenow', String(topicsWidth + 80));
     expect(Math.round((await send.boundingBox())!.width)).toBe(sendWidth);
-    await dragDivider('Resize Send', -80);
+    await dragDivider(page, 'Resize Send', -80);
     await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 80));
     expect((await topics.boundingBox())!.width).toBe(topicsWidth + 80);
     await sendDivider.press('ArrowRight');
@@ -341,20 +364,40 @@ test.describe('sending', () => {
           sideBySide: Boolean(topics && inbox && composer && topics.right <= inbox.left && inbox.right <= composer.left),
           connectionInHeader: document.querySelector('header #header-connection')?.textContent?.startsWith('Connected to '),
           composerOpen: sendSection?.open,
+          topicsWidth: topics?.width,
+          sendWidth: composer?.width,
+          topicsDivider: Boolean(document.querySelector('#topic-divider')?.getBoundingClientRect().width),
+          sendDivider: Boolean(document.querySelector('#send-divider')?.getBoundingClientRect().width),
           message: card?.querySelector('.notification-message')?.textContent,
         };
       });
-    const fitted = { width: 800, taller: true, documentFits: true, sideBySide: true, connectionInHeader: true, message };
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true });
+    const fitted = {
+      width: 800,
+      taller: true,
+      documentFits: true,
+      sideBySide: true,
+      connectionInHeader: true,
+      topicsDivider: true,
+      message,
+    };
+    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true, sendDivider: true, topicsWidth: 120, sendWidth: 260 });
+    await tab.evaluate(() => {
+      const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
+      if (!popup) return;
+      popup.document.querySelector('#topic-divider')?.dispatchEvent(new popup.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+      popup.document.querySelector('#send-divider')?.dispatchEvent(new popup.KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    });
+    const resized = { ...fitted, composerOpen: true, sendDivider: true, topicsWidth: 136, sendWidth: 276 };
+    await expect.poll(measurePopup).toEqual(resized);
     const toggleComposer = () =>
       tab.evaluate(() => {
         const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
         popup?.document.querySelector<HTMLElement>('#send-section summary')?.click();
       });
     await toggleComposer();
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: false });
+    await expect.poll(measurePopup).toEqual({ ...resized, composerOpen: false, sendDivider: false, sendWidth: 44 });
     await toggleComposer();
-    await expect.poll(measurePopup).toEqual({ ...fitted, composerOpen: true });
+    await expect.poll(measurePopup).toEqual(resized);
   });
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
