@@ -19,19 +19,20 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Resizable panes**. Drag the dividers on either side of the inbox, or focus a divider and use the arrow keys. The toolbar popup and browser tab remember their pane widths separately. Select **Freeze dividers between sections All topics, Inbox, and Send notification** in Settings to lock them in both views.
 - **Open in a tab**. Open ntfy Desk in its own browser tab to use the full viewport.
 - **Keyboard**. Right Ctrl + Enter sends when focus is in the expanded Send form.
-- **Dark mode**, and no tracking.
+- **Dark mode**. See the [privacy policy](PRIVACY.md) for data and permissions.
 
 ## Install
 
-The current build version is **1.0.0**. Install from a local build or a CI build artifact.
+Published versions, extension ZIPs and matching source archives are available on [GitHub Releases](https://github.com/valentindimitrov/ntfy-desk/releases) when a release is published. For preview builds, use the `ntfy-desk` artifact on a successful [CI run](https://github.com/valentindimitrov/ntfy-desk/actions/workflows/ci.yml). Downloading a CI artifact requires signing in to GitHub with access to the repository.
 
-1. From this checkout, run `pnpm install`. Then run `pnpm build` for Chromium or `pnpm zip:firefox` for Firefox. Successful CI runs also upload both ZIPs as the `ntfy-desk` artifact.
-2. **Chromium**. Open the browser's extensions page, turn on Developer mode, and choose **Load unpacked**. Select `.output/chrome-mv3` or the extracted Chromium ZIP folder.
-3. **Firefox**. Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select the Firefox ZIP. This installation lasts until Firefox restarts.
+- **Chromium**. Download and extract the `-chrome.zip` file. Open the browser's extensions page, turn on **Developer mode**, then choose **Load unpacked** and select the folder containing `manifest.json`.
+- **Firefox 142 or later**. For a permanent installation, use a signed add-on when one becomes available. The Firefox ZIP from GitHub is for [temporary testing](#load-a-local-build). [Firefox signing and distribution](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)
 
 ## Setup
 
 In the settings (gear icon):
+
+Use an HTTPS server and a topic with access controls for sensitive messages. Anyone who can read a public topic can receive what you send to it. Start with a harmless test message. [ntfy quick start](https://docs.ntfy.sh/)
 
 1. **Server URL**. Use `https://ntfy.sh` or your own server. Choose **Save server settings** to commit the URLs and credentials together. The back arrow asks before discarding unsaved changes to those fields. Both URL fields accept a valid HTTP(S) address or an empty value. Username and password in the URL move into local fields. Query strings and fragments are discarded.
 2. **Fallback URL** (optional). Use another address of the same server, such as its public address when the main address is on your LAN. Receiving checks for the main server's return every minute. Sending chooses the reachable address before publishing. If the response goes missing, the composer keeps the draft and asks you to check the inbox before retrying. Right-click sends show a `?` on the toolbar when delivery is uncertain.
@@ -53,8 +54,10 @@ Behind a reverse proxy, turn off response buffering for ntfy (nginx: `proxy_buff
 
 Built with [WXT](https://wxt.dev) and TypeScript. [ARCHITECTURE.md](ARCHITECTURE.md) describes how the extension works and why. Unit tests use [Vitest](https://vitest.dev) with WXT's fake browser; end-to-end tests use [Playwright](https://playwright.dev) with the built extension and a test ntfy server; [Vite+](https://viteplus.dev) lints and formats.
 
+Use Node.js **24** and pnpm **12.14.0**, as in CI. For a reproducible build, start from the tag or source ZIP matching the extension package and install from the lockfile.
+
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev            # Chrome with hot reload (pnpm dev:firefox for Firefox)
 pnpm check          # format check, lint with type checking (Vite+), unit tests (Vitest)
 pnpm test:e2e       # isolated .output/chrome-mv3-e2e build and Playwright tests
@@ -63,6 +66,15 @@ pnpm build          # .output/chrome-mv3, load it unpacked
 pnpm zip            # .output/ntfy-desk-<version>-chrome.zip (pnpm zip:firefox)
 pnpm lint:firefox   # build and run Mozilla's add-on checks
 ```
+
+For end-to-end tests, install the browser once with `pnpm exec playwright install chromium`. On a clean Linux runner, use `pnpm exec playwright install --with-deps chromium`. The interactive `pnpm browse` command uses the separate `playwright-cli` tool and its own browser install (`playwright-cli install-browser chromium`).
+
+### Load a local build
+
+- **Chromium**. Run `pnpm build` and load `.output/chrome-mv3` from the browser's extensions page.
+- **Firefox**. Run `pnpm build:firefox`. Open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on**, and choose `.output/firefox-mv3/manifest.json`. You can also select the Firefox ZIP. The temporary installation lasts until Firefox restarts.
+
+`pnpm zip` produces the Chromium ZIP. `pnpm zip:firefox` produces the Firefox ZIP and a matching sources ZIP for review and distribution. The release workflow publishes these three files together. For Mozilla submission, provide the sources ZIP and the Firefox build instructions above. [Mozilla source code submission](https://extensionworkshop.com/documentation/publish/source-code-submission/)
 
 Code layout:
 
@@ -85,4 +97,4 @@ Both are GPL-3.0, and so is ntfy Desk.
 
 ## License
 
-[GNU General Public License v3.0](LICENSE)
+[GNU General Public License v3.0](LICENSE). The bundled Roboto fonts use Apache-2.0. See the [license notices](NOTICE.md) for attribution and license files.

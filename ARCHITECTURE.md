@@ -198,6 +198,8 @@ The extension handles two kinds of untrusted input: the **server** (or anyone wh
 
 **Permissions**: `storage`, `unlimitedStorage` (attachments as data URLs), `notifications`, `alarms`, `contextMenus`, `activeTab`, `scripting` (the text of a link sent from the context menu, read from the page). `tabs` and host access are optional and requested when a feature needs them. The default MV3 content security policy applies (no remote or inline scripts).
 
+Firefox's built-in installation disclosure declares `authenticationInfo` for credentials used on configured ntfy connections, `personalCommunications` for messages and attachments, and `browsingActivity` and `websiteContent` for tab and context-menu sends. The [privacy policy](PRIVACY.md) describes these flows and the separate runtime requests for tab and host access.
+
 ## Why WebSockets were dropped
 
 Until October 2026 the extension subscribed with ntfy's WebSocket endpoint (`wss://server/<topics>/ws`), as the [Ntfy-for-chrome](https://github.com/paulhybryant/Ntfy-for-chrome) extension it descends from did.
@@ -243,7 +245,7 @@ The trade-offs accepted:
 
 - **Reverse proxies must not buffer the response.** With nginx that is `proxy_buffering off`, which ntfy's docs already recommend for streaming. A buffering proxy delays live messages until the next poll (at most a minute), it doesn't lose them.
 - **The keepalive depends on Chrome counting extension API calls as activity.** The WebSocket keepalive depended on a comparable rule, so the risk is about the same, and the one-minute alarm plus the polls cover a stopped worker either way.
-- **Firefox** (whose MV3 background is a non-persistent event page) still needs to be run-tested, as it did with the WebSocket.
+- **Firefox** uses a non-persistent MV3 event page. A headless runtime smoke test verified catch-up summary replacement. The automated browser suite exercises Chromium.
 
 ## Testing
 
@@ -251,4 +253,4 @@ The trade-offs accepted:
 - **End-to-end tests** (`tests/e2e/`) run the built extension in Playwright's Chromium against `tests/e2e/ntfy-server.ts`, a real HTTP server with the JSON stream. The server accepts credentials only in the `Authorization` header, so the tests verify that credentials travel through that header.
 - **Checks**: `pnpm check` (format, lint with type checking, unit tests), `pnpm test:e2e`, `pnpm lint:firefox` (Mozilla's add-on checks). CI runs all three.
 - **Tooling security**. The workspace pins patched versions of `node-forge` and `fast-uri` for their affected transitive callers. Firefox's add-on linter still uses `deepmerge` 4.3.1. A pnpm patch blocks prototype poisoning through `__proto__` in both inputs, and a regression test exercises the installed package. Version-based scanners can still flag it until an upstream release incorporates a fix. [deepmerge advisory](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)
-- **Build version**. WXT uses `package.json` as the source of the version in both manifests and ZIP filenames. CI attaches the ZIPs to workflow runs. Tagged releases require `v` plus the package version. CI fails on a flaky Playwright result even if the retry passes. Dependabot checks npm packages and pinned GitHub Actions. CI installs the pnpm version declared in `package.json`. The workspace keeps a single-document lockfile so GitHub can read its dependency graph. [GitHub's pnpm support](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories#pnpm)
+- **Build version**. WXT uses `package.json` as the source of the version in both manifests and ZIP filenames. CI checks all three ZIPs and their license files before uploading them as one artifact. The tagged release job downloads that artifact and publishes the Chromium, Firefox and matching source ZIPs. Tagged releases require `v` plus the package version. CI fails on a flaky Playwright result even if the retry passes. Dependabot checks npm packages and pinned GitHub Actions. CI installs the pnpm version declared in `package.json`. The workspace keeps a single-document lockfile so GitHub can read its dependency graph. [GitHub's pnpm support](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories#pnpm)

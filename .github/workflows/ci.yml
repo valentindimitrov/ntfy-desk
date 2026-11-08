@@ -41,12 +41,30 @@ jobs:
       - run: pnpm check
       - run: pnpm zip
       - run: pnpm zip:firefox
+      - name: Verify release ZIPs and license notices
+        shell: bash
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          for browser in chrome firefox; do
+            archive=".output/ntfy-desk-${version}-${browser}.zip"
+            unzip -tq "$archive"
+            unzip -p "$archive" LICENSE | cmp - LICENSE
+            unzip -p "$archive" NOTICE.md | cmp - NOTICE.md
+            unzip -p "$archive" fonts/LICENSE.txt | cmp - public/fonts/LICENSE.txt
+          done
+          source=".output/ntfy-desk-${version}-sources.zip"
+          unzip -tq "$source"
+          for file in LICENSE NOTICE.md public/fonts/LICENSE.txt README.md PRIVACY.md; do
+            unzip -p "$source" "$file" | cmp - "$file"
+          done
       # Mozilla's add-on checks on the Firefox build
       - run: pnpm exec web-ext lint -s .output/firefox-mv3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ntfy-desk
           path: .output/*.zip
+          include-hidden-files: true
+          if-no-files-found: error
 
   e2e:
     runs-on: ubuntu-latest
@@ -84,4 +102,5 @@ jobs:
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: '*.zip'
+          fail_on_unmatched_files: true
           generate_release_notes: true

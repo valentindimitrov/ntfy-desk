@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'wxt';
 
 // See https://wxt.dev/api/reference/wxt/interfaces/inlineconfig.html
@@ -7,6 +8,13 @@ export default defineConfig({
   // No <link rel="modulepreload"> for shared chunks: Chrome doesn't use them on extension pages ("cross-world
   // extension resource mismatch" on the extensions page), and extension files load from disk anyway
   vite: () => ({ build: { modulePreload: false } }),
+  hooks: {
+    'build:publicAssets': (wxt, files) => {
+      for (const name of ['LICENSE', 'NOTICE.md']) {
+        files.push({ absoluteSrc: resolve(wxt.config.root, name), relativeDest: name });
+      }
+    },
+  },
   manifest: ({ browser }) => ({
     name: 'ntfy Desk',
     description:
@@ -22,7 +30,10 @@ export default defineConfig({
         gecko: {
           id: 'ntfy-desk@valentindimitrov.github.io',
           strict_min_version: '142.0',
-          data_collection_permissions: { required: ['none'] },
+          // ntfy requests can carry credentials, messages and content selected from a page.
+          data_collection_permissions: {
+            required: ['authenticationInfo', 'personalCommunications', 'browsingActivity', 'websiteContent'],
+          },
         },
       },
     }),

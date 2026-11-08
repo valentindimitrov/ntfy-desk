@@ -11,7 +11,7 @@ Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and
 - WXT takes the extension version from `package.json`. Verify both generated manifests when changing it.
 - `pnpm lint:firefox`: builds for Firefox, then runs Mozilla's add-on checks (`web-ext lint`); CI runs them too.
 - CI (`.github/workflows/ci.yml`): read-only token by default, write access only in the release job; actions pinned to commit SHAs with the version in a comment, updated by Dependabot (`.github/dependabot.yml`). Keep new actions pinned the same way.
-- `pnpm dev`: opens a browser with hot reload. The owner loads `.output/chrome-mv3` unpacked in Vivaldi on the laptop.
+- `pnpm dev` opens a browser with hot reload. For manual Chromium testing, load `.output/chrome-mv3` unpacked after `pnpm build`.
 - `pnpm test:e2e` builds into `.output/chrome-mv3-e2e` and runs `tests/e2e/` in Playwright's Chromium against `tests/e2e/ntfy-server.ts`. The HTTP test server uses ntfy's JSON stream and accepts credentials only in the Authorization header. Run one Chromium at a time. CI runs the same tests. The E2E build lets Playwright call the actual notification-click handler from the service worker. It covers the credential approval button in Settings. Unit tests cover the optional host-permission request, which uses a Chromium prompt outside the page. Firefox runtime testing is separate.
 - `pnpm browse [--headed]`: builds, then opens the extension's page in `playwright-cli` (mise tool) and prints the extension id. Then drive it with `playwright-cli snapshot`, `click <ref>`, `fill <ref> <text>`, `screenshot`, `close`; output lands in `.playwright-cli/`. Use it to look at UI changes in the real extension rather than a mocked page. `playwright-cli` needs its own Chromium build: `playwright-cli install-browser chromium`.
 
@@ -52,8 +52,8 @@ Open items; remove a row when it lands (the design goes to `ARCHITECTURE.md` if 
 
 | # | Improvement | Status |
 |---|---|---|
-| 7 | Run-test the Firefox build in Firefox | Open: `web-ext lint` passes; `web-ext run` can't attach while another Firefox instance is running. Close Firefox, then `pnpm dev:firefox` |
-| 8 | Validate the release pipeline after the Firefox runtime check (#7) | CI builds both ZIPs. The untried `release` job publishes them when a tag matches the package version. Keep version bumps separate from tagging and publishing. |
+| 7 | Extend Firefox runtime coverage | A headless Firefox smoke test confirmed catch-up summary replacement. The automated Playwright suite runs in Chromium. For broader manual Firefox testing, load the local build as described in the README. |
+| 8 | Validate the tagged release step | CI verifies and uploads the Chromium, Firefox and source ZIPs on branch runs. The release job publishes them when a tag matches the package version. Keep version bumps separate from tagging and publishing. |
 
 ## Skills
 
