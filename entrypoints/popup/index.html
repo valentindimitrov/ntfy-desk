@@ -172,12 +172,22 @@
           <!-- Priority -->
           <div class="form-group">
             <div class="form-label" id="priority-label">Priority</div>
-            <div class="chips" id="priority-chips" role="group" aria-labelledby="priority-label">
-              <button class="chip" data-priority="1"><span class="p-icon">⇊</span>Min</button>
-              <button class="chip" data-priority="2"><span class="p-icon">↓</span>Low</button>
-              <button class="chip active" data-priority="3">Default</button>
-              <button class="chip" data-priority="4"><span class="p-icon">↑</span>High</button>
-              <button class="chip" data-priority="5"><span class="p-icon">⇈</span>Urgent</button>
+            <div class="chips priority-chips" id="priority-chips" role="group" aria-labelledby="priority-label">
+              <button class="chip" data-priority="1" aria-label="Min" title="Min" aria-pressed="false">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 4 4 4-4m-8 4 4 4 4-4" /></svg>
+              </button>
+              <button class="chip" data-priority="2" aria-label="Low" title="Low" aria-pressed="false">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+              </button>
+              <button class="chip active" data-priority="3" aria-label="Default" title="Default" aria-pressed="true">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8" /></svg>
+              </button>
+              <button class="chip" data-priority="4" aria-label="High" title="High" aria-pressed="false">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 10 4-4 4 4" /></svg>
+              </button>
+              <button class="chip" data-priority="5" aria-label="Urgent" title="Urgent" aria-pressed="false">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 8 4-4 4 4m-8 4 4-4 4 4" /></svg>
+              </button>
             </div>
           </div>
 

@@ -703,15 +703,26 @@ body:has(#settings-view.active) .header-connection {
   color: white;
 }
 
-/* Priority Icons */
-.p-icon {
-  margin-right: 4px;
-  font-weight: bold;
-  font-size: 14px;
+.priority-chips {
+  flex-wrap: nowrap;
 }
 
-.chip.active .p-icon {
-  color: inherit;
+.priority-chips .chip {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+}
+
+.priority-chips svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* ========================================

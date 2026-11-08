@@ -58,7 +58,9 @@ export function updateSendTopic(): void {
 
 export function updatePriorityUI(): void {
   elements.priorityChips.querySelectorAll<HTMLElement>('.chip').forEach((chip) => {
-    chip.classList.toggle('active', Number(chip.dataset.priority) === state.selectedPriority);
+    const selected = Number(chip.dataset.priority) === state.selectedPriority;
+    chip.classList.toggle('active', selected);
+    chip.setAttribute('aria-pressed', String(selected));
   });
 }
 

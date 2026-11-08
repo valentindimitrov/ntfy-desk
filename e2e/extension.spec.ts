@@ -402,13 +402,31 @@ test.describe('sending', () => {
 
   test('sends a message from the popup with title, priority and tags', async ({ ntfy, configure, openPopup }) => {
     await configure({ topics: 'inbox' });
-    const popup = await openPopup('?mode=page');
+    const popup = await openPopup();
+    await popup.setViewportSize({ width: 800, height: 580 });
+    const sendDivider = popup.getByRole('separator', { name: 'Resize Send' });
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', '260');
+    await sendDivider.press('Home');
+    await expect(sendDivider).toHaveAttribute('aria-valuenow', '240');
+    const priority = popup.getByRole('group', { name: 'Priority' });
+    const buttons = priority.getByRole('button');
+    await expect(buttons).toHaveText(['', '', '', '', '']);
+    const rowPositions = await buttons.evaluateAll((items) => items.map((item) => item.getBoundingClientRect().top));
+    expect(new Set(rowPositions).size).toBe(1);
+    const defaultPriority = priority.getByRole('button', { name: 'Default' });
+    await expect(defaultPriority).toHaveAttribute('aria-pressed', 'true');
     await popup.locator('#title-input').fill('Grüße');
     await popup.locator('#message-input').fill('Hello from the popup');
-    await popup.getByRole('group', { name: 'Priority' }).getByRole('button', { name: 'High' }).click();
+    const highPriority = priority.getByRole('button', { name: 'High' });
+    await highPriority.hover();
+    await expect(popup.locator('#tooltip')).toHaveText('High');
+    await highPriority.click();
+    await expect(highPriority).toHaveAttribute('aria-pressed', 'true');
+    await expect(defaultPriority).toHaveAttribute('aria-pressed', 'false');
     const tags = popup.getByLabel('Tags', { exact: true });
     await tags.fill('laptop');
     await tags.press('Enter');
+    await popup.getByLabel('Send another').check();
     await popup.locator('#send-btn').click();
 
     await expect(popup.locator('#status')).toHaveText('Notification sent!');
