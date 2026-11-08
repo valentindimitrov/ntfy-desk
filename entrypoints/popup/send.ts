@@ -1,6 +1,7 @@
 // Send form: topic, title (optionally the tab's URL), message, attachments, priority and tags.
 
 import { browser, type Browser } from 'wxt/browser';
+import { sendToBackground, type Draft } from '@/utils/messages';
 import { getConfig, isHttpUrl, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
 import {
   STORED_FILES_KEY,
@@ -241,24 +242,22 @@ function useTab(): void {
 // Draft
 // ==================
 
-interface Draft {
-  title: string;
-  message: string;
-  topic: string;
-  tags: string[];
-  priority: number;
-}
+let draftRevision = '';
 
-async function saveDraft(): Promise<void> {
+async function saveDraft(): Promise<string> {
+  const revision = crypto.randomUUID();
+  draftRevision = revision;
   const draft: Draft = {
+    revision,
     // An automatically filled tab title or URL isn't part of the draft: the next popup fills in its own tab's
     title: elements.titleInput.value === state.autoTitle ? '' : elements.titleInput.value,
     message: elements.messageInput.value === state.autoMessage ? '' : elements.messageInput.value,
     topic: independentSendTopic(),
-    tags: state.tags,
+    tags: [...state.tags],
     priority: state.selectedPriority,
   };
-  await browser.storage.local.set({ draftState: draft });
+  await sendToBackground({ action: 'saveDraft', draft });
+  return revision;
 }
 
 /** Hand the edit to storage before the popup can close. */
@@ -282,11 +281,7 @@ export async function restoreDraft(): Promise<void> {
 /** A new browser session starts without the previous session's attachments and draft */
 export async function cleanUpAfterBrowserRestart(): Promise<void> {
   try {
-    const { sessionActive } = await browser.storage.session.get(['sessionActive']);
-    if (!sessionActive) {
-      await browser.storage.local.remove([STORED_FILES_KEY, 'draftState']);
-      await browser.storage.session.set({ sessionActive: true });
-    }
+    await sendToBackground({ action: 'prepareDraft' });
   } catch (error) {
     console.error('Error checking session state:', error);
   }
@@ -433,23 +428,26 @@ function getZipFilename(date = new Date()): string {
   return `ntfy-files-${datePart}-${timePart}.zip`;
 }
 
-async function finishSuccessfulSend(attachmentCount: number, successMessage?: string): Promise<void> {
-  elements.messageInput.value = '';
-  elements.titleInput.value = '';
-  state.autoTitle = '';
-  state.autoMessage = '';
-  applyPagePrefill();
-
+async function finishSuccessfulSend(revision: string, attachmentCount: number, successMessage?: string): Promise<void> {
   if (attachmentCount > 0) {
     elements.fileInput.value = '';
     await setAttachments([]);
   }
-  await browser.storage.local.remove(['draftState']);
-  updatePriorityUI();
+  await sendToBackground({ action: 'clearDraft', revision });
+  const edited = revision !== draftRevision;
+  if (!edited) {
+    elements.messageInput.value = '';
+    elements.titleInput.value = '';
+    state.autoTitle = '';
+    state.autoMessage = '';
+    applyPagePrefill();
+  }
 
   // Close the popup unless "Send another" is checked (the extension's tab stays open)
-  if (!elements.sendAnotherCheckbox.checked && !isPageMode) {
-    setTimeout(() => window.close(), 100);
+  if (!edited && !elements.sendAnotherCheckbox.checked && !isPageMode) {
+    setTimeout(() => {
+      if (draftRevision === revision) window.close();
+    }, 100);
   } else {
     showStatus(successMessage ?? (attachmentCount > 1 ? `${attachmentCount} notifications sent!` : 'Notification sent!'), 'success');
   }
@@ -462,6 +460,8 @@ export async function send(): Promise<void> {
   elements.sendBtn.disabled = true;
   try {
     await sendNow();
+  } catch {
+    showStatus('Could not prepare or finish the send. Check the inbox before retrying.', 'error');
   } finally {
     state.isSending = false;
     elements.sendBtn.disabled = false;
@@ -470,6 +470,7 @@ export async function send(): Promise<void> {
 }
 
 async function sendNow(): Promise<void> {
+  const { apiUrl, fallbackUrl } = state;
   const topic = inboxTopic() ?? independentSendTopic();
   // With "Fill in the current tab", the tab's title and URL are in these fields (applyPagePrefill)
   const message = elements.messageInput.value.trim();
@@ -478,7 +479,7 @@ async function sendNow(): Promise<void> {
   const priority = state.selectedPriority;
 
   // Capture the latest values first, so a failed send can be retried
-  await saveDraft();
+  const revision = await saveDraft();
 
   let files: StoredFile[];
   try {
@@ -490,7 +491,7 @@ async function sendNow(): Promise<void> {
     return;
   }
 
-  if (!state.apiUrl) {
+  if (!apiUrl) {
     showStatus('Configure ntfy URL in settings', 'warning');
     return;
   }
@@ -504,10 +505,14 @@ async function sendNow(): Promise<void> {
   // The fallback server is tried when the main one gives no response
   // getConfig: the token and password only for servers approved on this device
   const servers = await getConfig();
+  if (servers.apiUrl !== apiUrl || servers.fallbackUrl !== fallbackUrl || !servers.topics.includes(topic)) {
+    showStatus('The server or topic changed. Reopen ntfy Desk before sending.', 'warning');
+    return;
+  }
   try {
     if (files.length === 0) {
       await withFallback(servers, (server) => sendNotification(server, topic, { message, title, priority, tags }));
-      await finishSuccessfulSend(0);
+      await finishSuccessfulSend(revision, 0);
       return;
     }
 
@@ -517,7 +522,7 @@ async function sendNow(): Promise<void> {
       await withFallback(servers, (server) =>
         sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
       );
-      await finishSuccessfulSend(files.length, 'ZIP sent!');
+      await finishSuccessfulSend(revision, files.length, 'ZIP sent!');
       return;
     }
 
@@ -547,7 +552,7 @@ async function sendNow(): Promise<void> {
       );
       return;
     }
-    await finishSuccessfulSend(files.length);
+    await finishSuccessfulSend(revision, files.length);
   } catch (error) {
     showStatus(`Error: ${(error as Error).message}`, 'error');
   }

@@ -18,12 +18,13 @@ async function verifyLegacyMessages(server: NtfyServer, messages: StoredMessage[
   }
 
   const wanted = new Map(messages.map((message) => [message.id, message]));
+  const messageIds = new Set(wanted.keys());
   const sequences = new Map<string, string>();
   const signal = AbortSignal.timeout(10_000);
   for (const [topic, time] of topics) {
     if (signal.aborted) break;
     try {
-      const { events, serverOrigin } = await getNotifications(server, topic, Math.max(1, Math.floor(time)), { signal });
+      const { events, serverOrigin } = await getNotifications(server, topic, Math.max(1, Math.floor(time)), { signal, messageIds });
       if (!origins.includes(serverOrigin)) continue;
       for (const event of events) {
         const stored = wanted.get(event.id);

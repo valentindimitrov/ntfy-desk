@@ -4,10 +4,12 @@ import {
   CREDENTIALS_KEY,
   buildAuthHeaderValue,
   buildTopicUrl,
+  canReadTopic,
   encodeHeaderValue,
   getConfig,
   getNotifications,
   isHttpUrl,
+  openMessageStream,
   parseTopics,
   sendAttachment,
   sendNotification,
@@ -21,9 +23,9 @@ beforeEach(() => {
 });
 
 describe('credentials in server URLs', () => {
-  it('splits user:password@ from a URL, keeping the rest as written', () => {
-    expect(splitCredentials('https://us%C3%A9r:p%40ss@ntfy.example:8443/path?x=1')).toEqual({
-      url: 'https://ntfy.example:8443/path?x=1',
+  it('splits userinfo and discards queries and fragments while preserving the server path', () => {
+    expect(splitCredentials('https://us%C3%A9r:p%40ss@ntfy.example:8443/path?auth=synthetic#fragment')).toEqual({
+      url: 'https://ntfy.example:8443/path',
       credentials: { username: 'usér', password: 'p@ss' },
     });
     expect(splitCredentials('https://u:p@ss@ntfy.example')).toEqual({
@@ -60,6 +62,16 @@ describe('credentials in server URLs', () => {
     expect((await getConfig()).credentials).toEqual({ username: 'local', password: 'kept' });
   });
 
+  it('strips queries and fragments from synced URLs even without userinfo', async () => {
+    await fakeBrowser.storage.sync.set({
+      apiUrl: 'https://ntfy.example?auth=synthetic',
+      fallbackUrl: 'https://fallback.example/app?x=1#synthetic',
+    });
+    const expected = { apiUrl: 'https://ntfy.example', fallbackUrl: 'https://fallback.example/app' };
+    expect(await getConfig()).toMatchObject(expected);
+    expect(await fakeBrowser.storage.sync.get(null)).toEqual(expected);
+  });
+
   it('removes the credentials when both fields are empty', async () => {
     await setCredentials({ username: 'a', password: 'b' });
     await setCredentials({ username: '', password: '' });
@@ -94,6 +106,11 @@ describe('configuration', () => {
       includeUrl: false,
     });
     expect(parseTopics(undefined)).toEqual([]);
+  });
+
+  it('loads only valid topic names from synced settings', async () => {
+    await fakeBrowser.storage.sync.set({ topics: `alerts, alerts/publish?message=synthetic#, ../admin, __proto__, ${'a'.repeat(65)}` });
+    expect((await getConfig()).topics).toEqual(['alerts', '__proto__']);
   });
 });
 
@@ -178,6 +195,16 @@ describe('requests', () => {
   it('reports HTTP errors', async () => {
     stubFetch('', 403);
     await expect(sendNotification(server, 'inbox', { message: 'x' })).rejects.toThrow('HTTP 403: Forbidden');
+  });
+
+  it('blocks malformed topics at the request boundary', async () => {
+    const calls = stubFetch();
+    const topic = 'alerts/publish?message=synthetic#';
+    expect(await canReadTopic(server, topic)).toBeNull();
+    await expect(getNotifications(server, topic)).rejects.toThrow('Invalid ntfy topic');
+    expect(() => sendNotification(server, topic, {})).toThrow('Invalid ntfy topic');
+    expect(() => openMessageStream(server, ['alerts', topic], new AbortController().signal)).toThrow('Invalid ntfy topics');
+    expect(calls).toEqual([]);
   });
 
   it('parses the poll response and keeps message events only', async () => {

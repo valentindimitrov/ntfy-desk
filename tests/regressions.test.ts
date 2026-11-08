@@ -170,6 +170,22 @@ describe('#12 read and delete actions from several views', () => {
   });
 });
 
+describe('draft cleanup from several views', () => {
+  it('clears the sent revision only if it is still current', async () => {
+    const sync = async () => {};
+    const draft = { title: '', message: 'Sending this', topic: 'alerts', tags: [], priority: 3, revision: 'first' };
+    const next = { ...draft, message: 'Draft from a second view', revision: 'second' };
+    await handlePopupRequest({ action: 'saveDraft', draft }, sync);
+    await Promise.all([
+      handlePopupRequest({ action: 'saveDraft', draft: next }, sync),
+      handlePopupRequest({ action: 'clearDraft', revision: 'first' }, sync),
+    ]);
+    expect(await fakeBrowser.storage.local.get('draftState')).toEqual({ draftState: next });
+    await handlePopupRequest({ action: 'clearDraft', revision: 'second' }, sync);
+    expect(await fakeBrowser.storage.local.get('draftState')).toEqual({});
+  });
+});
+
 describe('#13 requests that never answer', () => {
   it('gives every request a time limit, and retries a send on the fallback after one', async () => {
     await configure('alerts');

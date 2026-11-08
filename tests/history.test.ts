@@ -3,6 +3,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import {
   MAX_DELETED_IDS,
   MAX_HISTORY_PER_TOPIC,
+  deleteMessages,
   getHistoryState,
   pruneReadState,
   recordMessage,
@@ -83,5 +84,27 @@ describe('read and deleted ids', () => {
     expect(pruned.readMessageIds).toEqual(['kept']);
     expect(pruned.deletedMessageIds).toHaveLength(MAX_DELETED_IDS);
     expect(pruned.deletedMessageIds[0]).toBe('d5'); // the oldest go first
+  });
+
+  it('removes a large bulk selection atomically and suppresses a later replay of every row', async () => {
+    const removed = Array.from({ length: 1100 }, (_, i) => message(`deleted-${i}`, `topic-${i % 11}`));
+    const kept = message('kept', 'other');
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [...removed, kept],
+      readMessageIds: [removed[0]!.id, kept.id],
+    });
+    await deleteMessages(removed.map(({ id }) => id));
+    expect(await getHistoryState()).toMatchObject({ receivedNotifications: [kept], readMessageIds: [kept.id] });
+
+    const source = { origin: 'https://ntfy.example', origins: ['https://ntfy.example'] };
+    for (let i = 0; i < 11; i++) {
+      const topic = `topic-${i}`;
+      await recordPoll(
+        topic,
+        removed.filter((row) => row.topic === topic),
+        source,
+      );
+    }
+    expect((await getHistoryState()).receivedNotifications).toEqual([kept]);
   });
 });

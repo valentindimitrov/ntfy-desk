@@ -16,7 +16,6 @@ import {
 import { pickServer } from './servers';
 import { INITIAL_STATUS, writeReceiverStatus, type ReceiverStatus } from './status';
 import {
-  MAX_MESSAGE_JSON,
   buildAuthHeaderValue,
   canReadTopic,
   getConfig,
@@ -24,6 +23,7 @@ import {
   isNoResponse,
   openMessageStream,
   parseMessageJson,
+  readLines,
   serverOrigins,
   type NtfyConfig,
   type NtfyMessage,
@@ -41,6 +41,7 @@ export const STREAM_IDLE_TIMEOUT = 150_000;
 const READABLE_TOPICS_TTL = 60 * 60 * 1000;
 // Window fetched silently the first time a topic is synced
 const INITIAL_SYNC_SINCE = '24h';
+const TRUNCATION_WARNING_TTL = 24 * 60 * 60 * 1000;
 
 export interface ReceiverEvents {
   /** A message new to the history (not during a topic's first, silent sync) */
@@ -54,39 +55,6 @@ interface Subscription {
   controller: AbortController;
   /** Server, topics and authentication it was opened with, to detect configuration changes */
   key: string;
-}
-
-/**
- * The lines of a response body, one call to onLine at a time: the next chunk is read only after the
- * lines before it were handled, so a server sending faster than they can be stored is slowed down
- * instead of queued. A line longer than MAX_MESSAGE_JSON is dropped. onData runs for every chunk.
- */
-async function readLines(body: ReadableStream<Uint8Array>, onLine: (line: string) => Promise<void>, onData: () => void): Promise<void> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let skipping = false;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return;
-    onData();
-    buffer += decoder.decode(value, { stream: true });
-    let end: number;
-    while ((end = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, end);
-      buffer = buffer.slice(end + 1);
-      if (skipping) {
-        skipping = false;
-      } else if (line.trim()) {
-        await onLine(line);
-      }
-    }
-    if (buffer.length > MAX_MESSAGE_JSON) {
-      // Too long for a message: drop it up to its end
-      buffer = '';
-      skipping = true;
-    }
-  }
 }
 
 export function createReceiver(events: ReceiverEvents) {
@@ -255,7 +223,7 @@ export function createReceiver(events: ReceiverEvents) {
           async (line) => {
             if (isCurrent()) await handleLine(line, config.topics, source);
           },
-          () => resetIdleTimer(current),
+          { onData: () => resetIdleTimer(current) },
         );
         console.log('The server ended the subscription. Reconnecting...');
       } catch (error) {
@@ -344,6 +312,8 @@ export function createReceiver(events: ReceiverEvents) {
       }
     }
     const syncErrors = new Map<string, string>();
+    const cutoff = Date.now() - TRUNCATION_WARNING_TTL;
+    const truncatedTopics = new Set(topics.filter((topic) => (topicState(topic)?.truncatedAt ?? 0) > cutoff));
     let unreachable = false;
 
     function reportSyncError(topic: string, error: unknown, prefix = ''): boolean {
@@ -363,7 +333,7 @@ export function createReceiver(events: ReceiverEvents) {
           const time = oldest.get(topic);
           const replay =
             time === undefined
-              ? { events: [], serverOrigin: new URL(apiUrl).origin }
+              ? { events: [], serverOrigin: new URL(apiUrl).origin, truncated: false }
               : await getNotifications(config, topic, Math.max(1, Math.floor(time)), { includeDeletions: true });
           if (!origins.includes(replay.serverOrigin)) throw new Error('Unexpected server origin');
           await recordDeletionReplay(
@@ -371,7 +341,9 @@ export function createReceiver(events: ReceiverEvents) {
             replay.events,
             { origin: replay.serverOrigin, origins },
             state?.deletionReplay?.generation ?? 0,
+            replay.truncated,
           );
+          if (replay.truncated) truncatedTopics.add(topic);
         } catch (error) {
           // The next sync retries the replay. A large or failed replay must not stop regular catch-up.
           unreachable = reportSyncError(topic, error, 'deletion replay: ') || unreachable;
@@ -380,15 +352,35 @@ export function createReceiver(events: ReceiverEvents) {
 
       try {
         const since = state?.since ?? INITIAL_SYNC_SINCE;
-        const { events: replay, serverOrigin } = await getNotifications(config, topic, since, { includeDeletions: true });
-        const messages = await recordPoll(topic, replay, { origin: serverOrigin, origins });
+        const replay = await getNotifications(config, topic, since, { includeDeletions: syncDeletions.has(topic) });
+        // A single second can fill even the scan limit. Skip that second only if the
+        // bounded replay couldn't move the inclusive cursor forward.
+        const advanceTo =
+          replay.scanLimited && typeof since === 'number' && replay.events.every((event) => event.time <= since)
+            ? Math.floor(since) + 1
+            : undefined;
+        const messages = await recordPoll(
+          topic,
+          replay.events,
+          { origin: replay.serverOrigin, origins },
+          {
+            truncated: replay.truncated,
+            advanceTo,
+          },
+        );
+        if (replay.truncated) truncatedTopics.add(topic);
         for (const message of messages) events.onNewMessage(message);
       } catch (error) {
         unreachable = reportSyncError(topic, error) || unreachable;
       }
     }
 
-    setStatus({ syncErrors: [...syncErrors], lastSyncAt: Date.now(), ...(unreachable && { unreachable: true }) });
+    setStatus({
+      syncErrors: [...syncErrors],
+      truncatedTopics: [...truncatedTopics],
+      lastSyncAt: Date.now(),
+      ...(unreachable && { unreachable: true }),
+    });
     // The topics configured now: they may have changed during the poll
     await pruneTopicSyncStates((await getConfig()).topics);
   }

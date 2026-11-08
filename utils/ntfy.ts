@@ -45,9 +45,8 @@ function decodeUserinfo(value: string): string {
 }
 
 /**
- * A server URL without user:password@, and the credentials it carried (decoded). The URL parser
- * removes them, so the result points where the browser would send the request (a URL edited by hand
- * could put an @ where the parser doesn't expect one). A bare origin keeps having no trailing slash.
+ * A server URL without userinfo, query parameters or fragments, and the decoded userinfo.
+ * Query parameters can carry ntfy authentication too. A bare origin keeps having no trailing slash.
  */
 export function splitCredentials(url: string): { url: string; credentials: Credentials | null } {
   let parsed: URL;
@@ -56,14 +55,17 @@ export function splitCredentials(url: string): { url: string; credentials: Crede
   } catch {
     return { url, credentials: null };
   }
-  if (!parsed.username && !parsed.password) {
+  const hasUserinfo = Boolean(parsed.username || parsed.password);
+  if (!hasUserinfo && !parsed.href.includes('?') && !parsed.href.includes('#')) {
     return { url, credentials: null };
   }
-  const credentials = { username: decodeUserinfo(parsed.username), password: decodeUserinfo(parsed.password) };
+  const credentials = hasUserinfo ? { username: decodeUserinfo(parsed.username), password: decodeUserinfo(parsed.password) } : null;
   parsed.username = '';
   parsed.password = '';
+  parsed.search = '';
+  parsed.hash = '';
   let clean = parsed.href;
-  if (parsed.pathname === '/' && !parsed.search && !parsed.hash && !url.endsWith('/')) {
+  if (parsed.pathname === '/' && !url.split(/[?#]/, 1)[0]?.endsWith('/')) {
     clean = clean.slice(0, -1);
   }
   return { url: clean, credentials };
@@ -143,7 +145,9 @@ export interface NtfyMessage {
 /** Longest message JSON accepted from the server (a line of the stream or of a poll), in characters */
 export const MAX_MESSAGE_JSON = 32 * 1024;
 /** Longest poll response read, in bytes */
-const MAX_POLL_BYTES = 4 * 1024 * 1024;
+const MAX_POLL_BYTES = 64 * 1024 * 1024;
+const MAX_POLL_BUFFER = 4 * 1024 * 1024;
+export const MAX_POLL_EVENTS = 1000;
 /** ntfy's limits: topic names and message ids of up to 64 characters, at most 3 actions */
 const MAX_ID_LENGTH = 64;
 const MAX_ACTIONS = 3;
@@ -246,26 +250,50 @@ export function parseMessageJson(json: string): NtfyMessage | null {
   }
 }
 
-/** A response body as text, up to maxBytes; a longer body is cancelled with an error */
-async function readLimited(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) {
-    return '';
-  }
-  const reader = response.body.getReader();
+/** Read NDJSON one line at a time. Drop oversized lines and cancel at the optional scan limit. */
+export async function readLines(
+  body: ReadableStream<Uint8Array>,
+  onLine: (line: string) => Promise<void> | void,
+  { onData, maxBytes = Infinity }: { onData?: () => void; maxBytes?: number } = {},
+): Promise<boolean> {
+  const reader = body.getReader();
   const decoder = new TextDecoder();
-  let text = '';
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel();
-      throw new Error('Response too large');
+  let buffer = '';
+  let skipping = false;
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (!skipping && buffer) await onLine(buffer + decoder.decode());
+        return true;
+      }
+      onData?.();
+      const remaining = maxBytes - bytes;
+      const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      bytes += chunk.byteLength;
+      buffer += decoder.decode(chunk, { stream: true });
+
+      let start = 0;
+      let end: number;
+      while ((end = buffer.indexOf('\n', start)) !== -1) {
+        if (!skipping && end - start <= MAX_MESSAGE_JSON) await onLine(buffer.slice(start, end));
+        skipping = false;
+        start = end + 1;
+      }
+      buffer = buffer.slice(start);
+      if (buffer.length > MAX_MESSAGE_JSON) {
+        buffer = '';
+        skipping = true;
+      }
+      if (chunk !== value) {
+        await reader.cancel();
+        return false;
+      }
     }
-    text += decoder.decode(value, { stream: true });
+  } finally {
+    reader.releaseLock();
   }
-  return text + decoder.decode();
 }
 
 export interface PublishOptions {
@@ -287,7 +315,7 @@ export function parseTopics(value: unknown): string[] {
     ? value
         .split(',')
         .map((topic) => topic.trim())
-        .filter(Boolean)
+        .filter(isNtfyPathPart)
     : [];
 }
 
@@ -325,7 +353,7 @@ export async function getConfig(): Promise<NtfyConfig> {
       await setCredentials(credentials);
     }
   }
-  // Remove incomplete URL edits left by older versions, as well as userinfo on valid URLs.
+  // Remove incomplete URL edits and strip userinfo, query strings and fragments from older URLs.
   const cleanedUrls = {
     ...(synced.apiUrl !== undefined && synced.apiUrl !== main.url && { apiUrl: main.url }),
     ...(synced.fallbackUrl !== undefined && synced.fallbackUrl !== fallback.url && { fallbackUrl: fallback.url }),
@@ -413,6 +441,7 @@ export function isHttpUrl(url: unknown): url is string {
 
 /** Topic URL on the server's origin (a path or credentials in the server URL are dropped) */
 export function buildTopicUrl(apiUrl: string, topic: string): string {
+  if (!isNtfyPathPart(topic)) throw new Error('Invalid ntfy topic');
   return `${new URL(apiUrl).origin}/${topic}`;
 }
 
@@ -557,8 +586,9 @@ export async function canReadTopic(server: NtfyServer, topic: string): Promise<b
  * Authorization header, never in the URL.
  */
 export function openMessageStream(server: NtfyServer, topics: string[], signal: AbortSignal): Promise<Response> {
+  if (topics.length === 0 || !topics.every(isNtfyPathPart)) throw new Error('Invalid ntfy topics');
   const headers = buildAuthHeaders(server);
-  return fetch(`${buildTopicUrl(server.apiUrl, topics.join(','))}/json`, {
+  return fetch(`${new URL(server.apiUrl).origin}/${topics.join(',')}/json`, {
     method: 'GET',
     headers,
     redirect: redirectPolicy(headers),
@@ -572,8 +602,12 @@ export async function getNotifications(
   server: NtfyServer,
   topic: string,
   since: string | number = 'all',
-  { includeDeletions = false, signal = AbortSignal.timeout(TIMEOUTS.poll) }: { includeDeletions?: boolean; signal?: AbortSignal } = {},
-): Promise<{ events: NtfyMessage[]; serverOrigin: string }> {
+  {
+    includeDeletions = false,
+    signal = AbortSignal.timeout(TIMEOUTS.poll),
+    messageIds,
+  }: { includeDeletions?: boolean; signal?: AbortSignal; messageIds?: ReadonlySet<string> } = {},
+): Promise<{ events: NtfyMessage[]; serverOrigin: string; truncated: boolean; scanLimited: boolean }> {
   if (!server.apiUrl) {
     throw new Error('API URL is not configured');
   }
@@ -590,17 +624,40 @@ export async function getNotifications(
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  const text = await readLimited(response, MAX_POLL_BYTES);
-  // NDJSON; keep valid notifications and, when requested, deletions of this topic only.
-  const events = text
-    .split('\n')
-    .filter((line) => line.trim())
-    .map(parseMessageJson)
-    .filter(
-      (message): message is NtfyMessage =>
-        message !== null &&
-        message.topic === topic &&
-        (message.event === 'message' || (includeDeletions && message.event === 'message_delete')),
-    );
-  return { events, serverOrigin: new URL(response.url || url).origin };
+  const retained = new Map<NtfyMessage, number>();
+  let buffered = 0;
+  let truncated = response.headers.get('X-Messages-Truncated') === '1';
+  const complete =
+    !response.body ||
+    (await readLines(
+      response.body,
+      (line) => {
+        const message = parseMessageJson(line);
+        if (
+          !message ||
+          message.topic !== topic ||
+          (messageIds && !messageIds.has(message.id)) ||
+          (message.event !== 'message' && !(includeDeletions && message.event === 'message_delete'))
+        )
+          return;
+
+        retained.set(message, line.length);
+        buffered += line.length;
+        // ntfy sends a topic's replay in time order, with publishes ordered within a second.
+        while (retained.size > MAX_POLL_EVENTS || buffered > MAX_POLL_BUFFER) {
+          const [oldest, length] = retained.entries().next().value!;
+          retained.delete(oldest);
+          buffered -= length;
+          truncated = true;
+        }
+      },
+      { maxBytes: MAX_POLL_BYTES },
+    ));
+  if (!complete && retained.size === 0) throw new Error('Response too large');
+  return {
+    events: [...retained.keys()],
+    serverOrigin: new URL(response.url || url).origin,
+    truncated: truncated || !complete,
+    scanLimited: !complete,
+  };
 }

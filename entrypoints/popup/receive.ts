@@ -272,7 +272,8 @@ export async function loadNotifications(): Promise<void> {
     const { receivedNotifications, readMessageIds, deletedMessageIds } = await getHistoryState();
     state.readMessageIds = readMessageIds;
     state.deletedMessageIds = deletedMessageIds;
-    const all = receivedNotifications.filter((m) => !state.deletedMessageIds.includes(m.id));
+    const deleted = new Set(deletedMessageIds);
+    const all = receivedNotifications.filter((m) => !deleted.has(m.id));
 
     const topic = inboxTopic();
     renderTopicSidebar(all, topic);

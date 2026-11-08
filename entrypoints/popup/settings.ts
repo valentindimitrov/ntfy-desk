@@ -6,6 +6,7 @@ import {
   getConfig,
   hasAuthentication,
   isHttpUrl,
+  isNtfyPathPart,
   serverOrigins,
   setAccessToken,
   setAuthOrigins,
@@ -133,7 +134,7 @@ function requestServerAccess(): void {
 
 /**
  * user:password@ typed or pasted into a server URL goes into the username and password fields, and
- * the URL keeps the rest: URLs are synced, credentials stay on this device
+ * query strings and fragments are discarded before the URL is synced
  */
 function moveUrlCredentialsToFields(): { apiUrl: string; fallbackUrl: string } | null {
   const apiUrl = elements.urlInput.value.trim();
@@ -146,8 +147,8 @@ function moveUrlCredentialsToFields(): { apiUrl: string; fallbackUrl: string } |
     elements.usernameInput.value = fromUrl.username;
     elements.passwordInput.value = fromUrl.password;
   }
-  if (main.credentials) elements.urlInput.value = main.url;
-  if (fallback.credentials) elements.fallbackUrlInput.value = fallback.url;
+  if (main.url !== apiUrl) elements.urlInput.value = main.url;
+  if (fallback.url !== fallbackUrl) elements.fallbackUrlInput.value = fallback.url;
   return { apiUrl: main.url, fallbackUrl: fallback.url };
 }
 
@@ -350,6 +351,10 @@ function handleTopicKeydown(event: KeyboardEvent): void {
     event.preventDefault();
     const value = elements.newTopicInput.value.trim();
     if (value) {
+      if (!isNtfyPathPart(value)) {
+        showSettingsStatus('Use up to 64 letters, numbers, dashes or underscores for a topic', 'error');
+        return;
+      }
       if (!state.topics.includes(value)) {
         state.topics.push(value);
         renderTopics();

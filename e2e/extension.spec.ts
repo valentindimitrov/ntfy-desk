@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Page, Worker } from '@playwright/test';
 import type { Browser } from 'wxt/browser';
 import { expect, test } from './fixtures';
 import { startNtfyServer } from './ntfy-server';
@@ -12,7 +12,39 @@ async function dragDivider(page: Page, name: string, dx: number): Promise<void> 
   await page.mouse.up();
 }
 
+async function waitForInitialSync(worker: Worker, topics: string[]): Promise<void> {
+  await expect
+    .poll(() =>
+      worker.evaluate(async (expected) => {
+        const { topicSync } = await chrome.storage.local.get('topicSync');
+        const states = topicSync as { topic: string; synced: boolean }[] | undefined;
+        return expected.every((topic) => states?.some((state) => state.topic === topic && state.synced));
+      }, topics),
+    )
+    .toBe(true);
+}
+
 test.describe('receiving', () => {
+  test('catches up after a large replay and keeps its warning across later polls', async ({
+    ntfy,
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
+    const body = 'x'.repeat(4000);
+    const start = Math.floor(Date.now() / 1000) - 1800;
+    for (let index = 0; index < 1200; index++) {
+      ntfy.publish('busy', { time: start + index, message: body, title: `Cached event ${index}` });
+    }
+    await configure({ topics: 'busy' });
+    await waitForInitialSync(serviceWorker, ['busy']);
+
+    const page = await openPopup();
+    await expect(page.locator('.notification-item')).toHaveCount(100);
+    await expect(page.locator('.notification-title').first()).toHaveText('Cached event 1199');
+    await expect(page.getByText('Some cached events may have been skipped: busy')).toBeVisible();
+  });
+
   test('keeps history from an unrelated server when the current server deletes the same sequence', async ({
     ntfy,
     configure,
@@ -162,6 +194,7 @@ test.describe('receiving', () => {
   }) => {
     await configure({ topics: 'alerts' });
     await expect.poll(() => ntfy.subscriptions).toEqual([['alerts']]);
+    await waitForInitialSync(serviceWorker, ['alerts']);
 
     ntfy.publish('alerts', { title: 'Disk full', message: 'sda at 91%', priority: 4 });
     await expect.poll(async () => (await notified()).map((n) => n.title)).toEqual(['Disk full [↑ High]']);
@@ -208,9 +241,10 @@ test.describe('receiving', () => {
     await expect.poll(() => ntfy.subscriptions.length, { timeout: 15_000 }).toBe(2);
   });
 
-  test('follows the per-topic notification rules', async ({ ntfy, configure, notified, openPopup }) => {
+  test('follows the per-topic notification rules', async ({ ntfy, configure, notified, openPopup, serviceWorker }) => {
     await configure({ topics: 'alerts,coolify', notifyRules: { coolify: 'off', alerts: 'high' } });
     await expect.poll(() => ntfy.subscriptions).toEqual([['alerts', 'coolify']]);
+    await waitForInitialSync(serviceWorker, ['alerts', 'coolify']);
 
     ntfy.publish('coolify', { title: 'Deployed', priority: 5 });
     ntfy.publish('alerts', { title: 'Low', priority: 2 });
@@ -224,6 +258,46 @@ test.describe('receiving', () => {
 });
 
 test.describe('sending', () => {
+  test('blocks an open composer from publishing to a replacement server', async ({ configure, ntfy, openPopup, serviceWorker }) => {
+    const next = await startNtfyServer();
+    try {
+      await configure({ topics: 'alerts' });
+      const page = await openPopup('?mode=page');
+      await expect(page.getByLabel('Send to')).toHaveValue('alerts');
+      await page.locator('#message-input').fill('Draft for the original server');
+      await serviceWorker.evaluate((authOrigins) => chrome.storage.local.set({ authOrigins }), [ntfy.url, next.url]);
+      await configure({ apiUrl: next.url, topics: 'alerts' });
+
+      await page.getByRole('button', { name: 'Send', exact: true }).click();
+      await expect(page.locator('#status')).toHaveText('The server or topic changed. Reopen ntfy Desk before sending.');
+      expect(ntfy.published).toEqual([]);
+      expect(next.published).toEqual([]);
+      await expect((await openPopup('?mode=page')).locator('#message-input')).toHaveValue('Draft for the original server');
+    } finally {
+      await next.close();
+    }
+  });
+
+  test('preserves edits made while a send is awaiting a response', async ({ configure, ntfy, openPopup }) => {
+    await configure({ topics: 'alerts' });
+    const page = await openPopup();
+    await expect(page.getByLabel('Send to')).toHaveValue('alerts');
+    let release!: () => void;
+    ntfy.publishGate = new Promise((resolve) => (release = resolve));
+    const message = page.locator('#message-input');
+    try {
+      await message.fill('First message');
+      await page.getByRole('button', { name: 'Send', exact: true }).click();
+      await expect.poll(() => ntfy.published.map(({ body }) => body)).toEqual(['First message']);
+      await message.fill('New draft');
+    } finally {
+      release();
+    }
+    await expect(page.locator('#status')).toHaveText('Notification sent!');
+    await expect(message).toHaveValue('New draft');
+    await expect((await openPopup()).locator('#message-input')).toHaveValue('New draft');
+  });
+
   test('restores draft input from a popup closed in the next task', async ({ configure, openPopup }) => {
     await configure({ topics: 'alerts' });
     const popup = await openPopup();

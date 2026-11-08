@@ -261,6 +261,20 @@ describe('Inbox', () => {
 });
 
 describe('Send form', () => {
+  it.each([
+    ['fallbackUrl', 'https://new-fallback.example'],
+    ['topics', 'alerts'],
+  ])('keeps the draft and blocks a send after a change to %s', async (key, value) => {
+    await openPopup();
+    const input = $<HTMLTextAreaElement>('#message-input');
+    input.value = 'Keep this draft';
+    await fakeBrowser.storage.sync.set({ [key]: value });
+    $('#send-btn').click();
+    await vi.waitFor(() => expect($('#status').textContent).toContain('The server or topic changed'));
+    expect(requests).toEqual([]);
+    expect((await fakeBrowser.storage.local.get('draftState')).draftState).toMatchObject({ message: 'Keep this draft' });
+  });
+
   it("puts the tab's title in the title and its URL in the message, and sends to the selected topic", async () => {
     await fakeBrowser.storage.sync.set({ includeUrl: true });
     await openPopup();
@@ -443,13 +457,35 @@ describe('settings', () => {
     expect($('#server-access-btn').style.display).toBe('');
   });
 
-  it('opens the server in a tab without credentials in the address', async () => {
-    await fakeBrowser.storage.sync.set({ apiUrl: 'https://alice:secret@ntfy.example' });
+  it('opens the server in a tab without userinfo, a query string or a fragment', async () => {
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://alice:synthetic@ntfy.example?auth=synthetic#synthetic' });
     const create = mockResolved(fakeBrowser.tabs, 'create', {});
     await openPopup();
     $('#open-url-btn').click();
     await flush();
     expect(create.mock.calls).toEqual([[{ url: 'https://ntfy.example/inbox' }]]);
+  });
+
+  it('drops the query from a server URL typed in settings before syncing it', async () => {
+    await openPopup();
+    $('#settings-btn').click();
+    const input = $<HTMLInputElement>('#url-input');
+    input.value = 'https://ntfy.lan?auth=synthetic#synthetic';
+    input.dispatchEvent(new Event('input'));
+    await vi.waitFor(async () => expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.lan' }), {
+      timeout: 3000,
+    });
+    expect(input.value).toBe('https://ntfy.lan');
+  });
+
+  it('rejects a malformed topic typed in settings', async () => {
+    await openPopup();
+    $('#settings-btn').click();
+    const input = $<HTMLInputElement>('#new-topic-input');
+    input.value = 'alerts/publish?message=synthetic#';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect($('#settings-status').textContent).toContain('Use up to 64');
+    expect(await fakeBrowser.storage.sync.get('topics')).toEqual({ topics: 'alerts,coolify,inbox' });
   });
 
   it('holds back the token from a server changed through sync, until confirmed (security review #1)', async () => {

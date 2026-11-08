@@ -1,7 +1,7 @@
 // State shared by the popup's modules.
 
 import { browser } from 'wxt/browser';
-import { getConfig, getStoredAuth, parseTopics, type Credentials, type NtfyMessage } from '@/utils/ntfy';
+import { getConfig, getStoredAuth, type Credentials, type NtfyMessage } from '@/utils/ntfy';
 import { getTopicRules, type TopicRules } from '@/utils/rules';
 import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFile } from '@/utils/stored-files';
@@ -10,18 +10,8 @@ import { getElements, type Elements } from './dom';
 
 export type Theme = 'light' | 'dark' | 'auto';
 
-/** Settings in storage.sync, except the access token (storage.local) */
-const SYNC_KEYS = [
-  'topics',
-  'apiUrl',
-  'theme',
-  'priority',
-  'lastTags',
-  'lastTopic',
-  'sendAnotherEnabled',
-  'includeUrl',
-  'sendAsZipEnabled',
-] as const;
+/** UI preferences in storage.sync, alongside the server settings from getConfig. */
+const SYNC_KEYS = ['theme', 'priority', 'lastTags', 'lastTopic', 'sendAnotherEnabled', 'sendAsZipEnabled'] as const;
 
 export interface PopupState {
   apiUrl: string;
@@ -115,7 +105,7 @@ export async function loadSettings(): Promise<void> {
   state.accessToken = stored.accessToken;
   state.credentials = stored.credentials;
   state.heldBackFrom = config.heldBackFrom;
-  state.topics = parseTopics(items.topics);
+  state.topics = config.topics;
   state.includeUrl = config.includeUrl;
   state.theme = items.theme === 'light' || items.theme === 'dark' ? items.theme : 'auto';
   state.sendAnotherEnabled = items.sendAnotherEnabled === true;

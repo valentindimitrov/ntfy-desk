@@ -48,6 +48,8 @@ export interface NtfyTestServer {
   messages: (ServerMessage | ServerDeletion)[];
   /** Messages published by the extension */
   published: PublishedRequest[];
+  /** When set, an accepted publish waits before returning its response. */
+  publishGate?: Promise<void>;
   /** Topic lists of the subscriptions (JSON streams) accepted so far */
   subscriptions: string[][];
   /** Publish as another client would: stored, and sent to open subscriptions */
@@ -184,6 +186,7 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
           tags: decodeHeader(req.headers['x-tags']),
         },
       });
+      await server.publishGate;
       const priority = Number(req.headers['x-priority']);
       const message = server.publish(topic, {
         message: body,

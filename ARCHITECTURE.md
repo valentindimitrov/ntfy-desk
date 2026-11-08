@@ -24,11 +24,11 @@ flowchart LR
   BG -- "JSON stream GET /topics/json<br/>polls GET /topic/json?poll=1" --> NTFY
   POP -- "publish POST /topic" --> NTFY
   BG -- "context menu: publish" --> NTFY
-  POP -- "runtime messages:<br/>sync, mark read, delete" --> BG
-  BG -- "writes history and topic sync state" --> LOCAL
+  POP -- "runtime messages:<br/>sync, mark read, delete, draft edits" --> BG
+  BG -- "writes history, topic sync state and drafts" --> LOCAL
   BG -- "only writer" --> SESSION
   POP -- "reads and writes settings" --> SYNC
-  POP -- "reads history; saves credentials, draft and layout" --> LOCAL
+  POP -- "reads history and draft; saves credentials and layout" --> LOCAL
   FP -- "picked files" --> LOCAL
 ```
 
@@ -69,7 +69,7 @@ The background owns the subscription, catch-up polls, received-message history, 
 `getConfig()` in `utils/ntfy.ts` is the one place that assembles the configuration for requests. It:
 
 - reads the server URLs and topics from `storage.sync` and the token and username/password from `storage.local`;
-- moves `user:password@` from valid legacy URLs into `storage.local` and clears invalid legacy URL values from synced storage;
+- moves `user:password@` from valid legacy URLs into `storage.local`, strips query strings and fragments, and clears invalid legacy URL values from synced storage;
 - withholds the credentials from server origins not approved on this device (see [Security model](#security-model)).
 
 Data keyed by topic is stored as lists (`[topic, value]` pairs, or objects with a `topic` field) and read into a `Map`, because topic names such as `__proto__` are valid in ntfy and break plain objects.
@@ -137,6 +137,8 @@ Each topic has a sync state in `topicSync`:
 
 Polls use time watermarks per topic, never one global `since=<message id>`: ids are global across topics, and an expired id makes ntfy replay its whole cache.
 
+Catch-up reads NDJSON incrementally and retains the newest 1,000 eligible events, up to 4 MiB of event JSON. If a response exceeds the 64 MiB scan limit, the next poll resumes from the saved prefix's watermark. If another bounded poll at that watermark cannot advance past the same second, it moves to the next second. The inbox warns for 24 hours when the extension drops events at a limit or detects ntfy's truncation header. [ntfy replay limits](https://docs.ntfy.sh/subscribe/api/#replay-limits)
+
 Enabling deletion sync schedules a one-time replay from the oldest saved message for the topic on the configured server. The replay applies cached delete events and recovers sequence IDs for existing rows. Ordinary message delivery and its watermark use the regular catch-up poll. The pending replay survives worker restarts and retries after failures. A new generation invalidates a replay started before a mode change.
 
 Deletion sync is opt-in per topic. A `message_delete` event removes matching messages from that server's main or fallback origin, in the same topic and sequence, up to the event timestamp. The receiver uses message IDs for notifications without sequence IDs. A cached publish that matches an older message's ID, topic and time can recover its origin and sequence before deletion. Deletion markers share the topic cursor's server scope. A poll applies events in time order, preserving the server's order within a second. This allows a republish after a deletion to revive a sequence and suppresses desktop alerts for messages already deleted in the same poll. Cache expiry leaves local history intact. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
@@ -147,7 +149,7 @@ The background is the only writer of the received messages, the read and deleted
 
 The popup sends `setRead` and `delete` requests through `utils/messages.ts`. The background serializes the local updates, so actions from open views cannot overwrite one another. For topics with deletion sync enabled, `utils/delete.ts` follows the local update with an authenticated `DELETE /<topic>/<sequence_id>` using `getConfig`. It checks the message's stored source origin against the configured server and fallback. For older history without a source origin, a bounded poll verifies the original message ID and timestamp on the current server. The request refuses redirects and ntfy checks topic write access. Delete all sends one request per selected sequence with bounded concurrency. The inbox reports denied or unconfirmed deletions after removing the local copies. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
 
-The history keeps the newest 100 messages per topic by server time (so a busy topic doesn't push out the others, and a late older message doesn't push out a newer one), up to 8 MB in all. Deleted ids are kept (newest 1000) so a poll doesn't bring a deleted message back.
+The history keeps the newest 100 messages per topic by server time, up to 8 MiB in all. Local deletion removes the selected rows and saves their IDs in one write. The separate replay-suppression list holds up to 200,000 IDs, enough for one deletion of the entire history.
 
 ### Notifications and the badge
 
@@ -165,10 +167,10 @@ The toolbar popup requests 800 × 600 px for the main view, and the full-page vi
 
 The Send form publishes with `POST /<topic>`: the message as the body, title, priority and tags as headers (RFC 2047-encoded when they contain anything outside printable ASCII, including line breaks). Attachments are sent as the body with `X-Filename` (and the message in `X-Message`), one request per file, or several files as one ZIP (`utils/zip.ts`).
 
-- The popup closes when a file dialog opens, so files are picked in a separate window (`entrypoints/filepicker/`) and wait in `storage.local` as data URLs until sent. Each draft edit immediately dispatches a local storage write. Sending and opening the file picker await a draft write. Drafts and attachments are dropped when a new browser session starts.
+- The popup closes when a file dialog opens, so files are picked in a separate window (`entrypoints/filepicker/`) and wait in `storage.local` as data URLs until sent. Each edit immediately dispatches a draft save to the background. Sending and opening the file picker await that save. The background serializes writes and clears a draft only when its revision matches the successful send. Drafts and attachments are dropped when a new browser session starts.
 - With "Fill in the current tab" (`includeUrl`), the page's title goes in the Title field and its URL in the Message field; a field the user typed in is left alone, and filled values aren't saved in the draft. Context menu sends put the page URL in the title. In the extension's own tab, "Use tab" asks once for the optional `tabs` permission to find the page used last.
 - The right-click menu sends the page, the selection, a link or an image (`utils/context-menu.ts`). An image is fetched and sent as an attachment, which asks for access to that image's site.
-- Sending retries on the fallback URL when the main server gives no response (network error or timeout); an HTTP error is not retried, because the server answered.
+- Before publishing, the composer verifies that its main and fallback URLs still match current settings and that the selected topic still exists. Sending retries on the fallback URL when the main server gives no response (network error or timeout). An HTTP error ends the attempt.
 
 Every request has a time limit (`TIMEOUTS` in `utils/ntfy.ts`).
 
@@ -178,7 +180,7 @@ The extension handles two kinds of untrusted input: the **server** (or anyone wh
 
 **Credentials**
 
-- Credentials entered in the access token or username and password fields live in `storage.local`. The settings editor saves only valid HTTP(S) URLs or empty fields. It uses `splitCredentials` to move userinfo to the local credentials fields before syncing the URLs.
+- Credentials entered in the access token or username and password fields live in `storage.local`. The settings editor saves only valid HTTP(S) URLs or empty fields. It uses `splitCredentials` to move userinfo to the local credentials fields and discard query strings and fragments before syncing the URLs.
 - Credentials are bound to the server origins approved on this device (`authOrigins`). Saving server URLs in this browser's settings approves them. A URL changed elsewhere, such as browser sync from another browser, gets no credentials until the user confirms in the settings; `getConfig` enforces it (`heldBackFrom`), and every request takes its authentication from `getConfig`.
 - Credentials travel only in the `Authorization` header, never in a URL (see the next section). "Open in ntfy" opens the server without credentials in the address.
 - Authenticated requests refuse redirects (`redirect: 'error'`): the browser keeps the `Authorization` header on a same-origin redirect, which could point at any path, and ntfy publishes on GET.
@@ -188,7 +190,8 @@ The extension handles two kinds of untrusted input: the **server** (or anyone wh
 **Server content**
 
 - Every message is validated before it is stored, and again when the history is read (`parseMessage`): types are checked, unknown fields dropped, invalid messages discarded.
-- Size limits: 32 KB per event line, 4 MB per poll response, the newest 1000 eligible events per poll, 100 messages per topic and 8 MB stored in all. Only messages of subscribed or polled topics are stored.
+- Event lines are capped at 32 KiB of text. Catch-up retains a bounded batch and limits the scan as described above. Only messages of subscribed or polled topics are stored.
+- Topic names must match ntfy's topic syntax in the settings form, when reading synced settings, and when building API requests. [ntfy topic names](https://docs.ntfy.sh/publish/#picking-a-topic)
 - Messages are rendered with `textContent` only; Markdown through `utils/markdown.ts`, which builds DOM nodes. Bare URLs become links (`linkify`) only if they are http(s). Each message renders on its own, so one that fails shows a placeholder instead of breaking the list.
 - URLs from messages are opened, linked or copied only if they are `http(s)`. Image previews load only the server's own attachment route (`/file/<name>`), because other same-origin URLs can be API calls.
 

@@ -13,7 +13,7 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Connection state**. The header shows the active connection. The inbox shows reconnects, unreachable servers, send-only topics and failed fetches.
 - **Received messages**. The inbox shows full messages, topic filters, unread counts, search and per-topic deletion sync. Links open in a new tab, Markdown is rendered, and images hosted on your server can be previewed.
 - **Send and receive on one page**. The toolbar popup and wide extension tab put the inbox on the left and the Send form on the right. Select **Send notification** to collapse it into a slim rail on the right. Enable **Remember collapsed/expanded state of section Send notification** in Settings to reopen it as you left it. The Send form follows the selected inbox topic. Choose **All topics** to pick a different destination.
-- **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP.
+- **Send**: title, message, priority, tags, and one or more file attachments, sent separately or as one ZIP. You can keep editing while a send finishes. If the server or selected topic changes in another view or through browser sync, reopen ntfy Desk and check the destination before sending.
 - **Context menu**: right-click to send the page, selected text, an image or a link.
 - **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.
 - **Resizable panes**. Drag the dividers on either side of the inbox, or focus a divider and use the arrow keys. The toolbar popup and browser tab remember their pane widths separately. Select **Freeze dividers between sections All topics, Inbox, and Send notification** in Settings to lock them in both views.
@@ -33,11 +33,11 @@ The current build version is **1.0.0**. Install from a local build or a CI build
 
 In the settings (gear icon):
 
-1. **Server URL**: `https://ntfy.sh`, or your own server. Settings keep the last saved addresses until both URL fields are empty or contain valid HTTP(S) URLs. Credentials in a valid URL move into the local username and password fields.
+1. **Server URL**: `https://ntfy.sh`, or your own server. Settings keep the last saved addresses until both URL fields are empty or contain valid HTTP(S) URLs. Username and password in the URL move into local fields. Query strings and fragments are discarded. Enter any access token in the Access Token field.
 2. **Fallback URL** (optional): another address of the same server, e.g. the public URL when the main one is a LAN address. Receiving switches to it while the main server doesn't answer (checked every minute) and back when it returns; sending retries on it when the main server gives no response.
 3. **Access Token**, or **Username and password**. Enter credentials in these fields so they are stored on this device only. The extension uses them only with server origins approved on this device. A server URL changed through browser sync requires confirmation before requests to it use your credentials. The settings warn if an `http://` connection would send credentials unencrypted.
 4. **Allow access to this server**: appears when a token or credentials are set. ntfy's CORS headers don't allow the `Authorization` header, so the extension needs permission for the server's site (both sites, with a fallback URL) to send authenticated requests.
-5. **Topics**: the topics to send to and receive from. The extension receives from the topics your credentials can read; a topic you can only send to is used for sending only.
+5. **Topics**: enter names of up to 64 letters, digits, dashes or underscores. The extension receives from the topics your credentials can read. Topics with write-only access appear as send only.
 6. **Topic settings** lists message sync and desktop notification rules for each topic. Choose **Apply** to save both columns together. **Keep received messages** is the default and keeps deletes on this device. Enabling **Sync server deletions** checks the configured server's saved messages against deletion events still available in ntfy's cache and follows future deletion events. Switching to an unrelated server preserves the previous server's history. Delete and Delete all also request deletion of the corresponding sequence on the server. If the server denies the request or the extension cannot confirm it, the local copy is removed and the inbox shows a warning. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
 7. **Fill in the current tab**: puts the page's title in the Title field and its URL in the Message field (from the context menu, the page URL becomes the title). In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
 
@@ -45,7 +45,7 @@ In the settings (gear icon):
 
 The extension subscribes with ntfy's JSON stream (`/<topics>/json`), which sends the credentials in the `Authorization` header like every other request, never in the URL. (A WebSocket can't carry headers, so it would need them in the URL, where browser error lists and proxy access logs keep them.)
 
-Chrome stops an idle extension service worker after 30 seconds, and data arriving on the stream doesn't count as activity, so the extension makes a small extension API call every 20 seconds while subscribed. If nothing arrives for 2½ minutes (ntfy sends a keepalive every 45 seconds by default), it reconnects. Missed messages are also polled once a minute.
+Chrome stops an idle extension service worker after 30 seconds, and data arriving on the stream doesn't count as activity, so the extension makes a small extension API call every 20 seconds while subscribed. If nothing arrives for 2½ minutes (ntfy sends a keepalive every 45 seconds by default), it reconnects. Missed messages are also polled once a minute. A large catch-up can omit cached events when it reaches the extension's limits or ntfy truncates the response. The inbox shows a warning for the affected topics. [ntfy replay limits](https://docs.ntfy.sh/subscribe/api/#replay-limits)
 
 Behind a reverse proxy, turn off response buffering for ntfy (nginx: `proxy_buffering off;`, as ntfy's docs recommend), or live messages only arrive with the next poll.
 

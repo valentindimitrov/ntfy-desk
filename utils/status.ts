@@ -19,6 +19,8 @@ export interface ReceiverStatus {
   retryAt: number | null;
   /** Topics whose last poll failed, with the error (a list: topic names aren't safe object keys) */
   syncErrors: [topic: string, error: string][];
+  /** Topics whose catch-up or deletion replay was limited recently */
+  truncatedTopics: string[];
   /** End of the last poll of all topics (ms since the epoch) */
   lastSyncAt: number | null;
   /** The token or password isn't sent: the server changed outside this browser's settings */
@@ -35,6 +37,7 @@ export const INITIAL_STATUS: ReceiverStatus = {
   unreachable: false,
   retryAt: null,
   syncErrors: [],
+  truncatedTopics: [],
   lastSyncAt: null,
   authHeldBack: false,
 };
@@ -89,6 +92,9 @@ export function describeStatus(status: ReceiverStatus | null, now = Date.now()):
   if (failed.length > 0) {
     const details = failed.map(([topic, error]) => `${topic} (${error})`).join(', ');
     lines.push({ text: `Couldn't fetch missed messages: ${details}`, level: 'warning' });
+  }
+  if (status.truncatedTopics?.length > 0) {
+    lines.push({ text: `Some cached events may have been skipped: ${status.truncatedTopics.join(', ')}`, level: 'warning' });
   }
   return lines;
 }

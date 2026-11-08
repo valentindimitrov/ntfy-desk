@@ -41,7 +41,7 @@ describe('outbound deletion sync', () => {
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer tk_test');
   });
 
-  it('verifies legacy history and skips messages belonging to a different server', async () => {
+  it('finds a legacy row in a busy replay and skips messages belonging to a different server', async () => {
     await fakeBrowser.storage.local.set({
       receivedNotifications: [
         stored('old', { serverOrigin: 'https://old.example', sequence_id: 'shared' }),
@@ -49,10 +49,14 @@ describe('outbound deletion sync', () => {
         stored('missing', { serverOrigin: undefined }),
       ],
     });
+    const replay = [
+      stored('legacy', { sequence_id: 'recovered' }),
+      ...Array.from({ length: 1000 }, (_, index) => stored(`new-${index}`, { time: 1235 + index })),
+    ]
+      .map((message) => JSON.stringify(message))
+      .join('\n');
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) =>
-      init.method === 'GET'
-        ? new Response(JSON.stringify({ id: 'legacy', time: 1234, event: 'message', topic: 'alerts', sequence_id: 'recovered' }))
-        : new Response(null, { status: 200 }),
+      init.method === 'GET' ? new Response(replay) : new Response(null, { status: 200 }),
     );
     vi.stubGlobal('fetch', fetchMock);
 

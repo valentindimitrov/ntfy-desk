@@ -3,10 +3,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { MAX_HISTORY_SIZE, MAX_POLL_EVENTS, getHistoryState, recordMessage, trimHistory } from '@/utils/history';
+import { MAX_HISTORY_SIZE, getHistoryState, getTopicSyncStates, recordMessage, trimHistory } from '@/utils/history';
 import {
   AUTH_ORIGINS_KEY,
   MAX_MESSAGE_JSON,
+  MAX_POLL_EVENTS,
   getConfig,
   getNotifications,
   parseMessage,
@@ -21,6 +22,21 @@ import { describeStatus, INITIAL_STATUS } from '@/utils/status';
 import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
 
 let server: FakeServer;
+
+function oversizedReplay(firstLine = ''): Response {
+  const encoder = new TextEncoder();
+  const filler = encoder.encode('x'.repeat(1024 * 1024 - 1) + '\n');
+  let remaining = 65;
+  return new Response(
+    new ReadableStream({
+      start: (controller) => controller.enqueue(encoder.encode(firstLine + '\n')),
+      pull: (controller) => {
+        if (remaining-- > 0) controller.enqueue(filler);
+        else controller.close();
+      },
+    }),
+  );
+}
 
 beforeEach(() => {
   fakeBrowser.reset();
@@ -145,9 +161,65 @@ describe('#4 a hostile server cannot fill storage', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('x'.repeat(5 * 1024 * 1024))),
+      vi.fn(async () => oversizedReplay()),
     );
     await expect(getNotifications({ apiUrl: 'https://ntfy.example', accessToken: '' }, 'a', 0)).rejects.toThrow('Response too large');
+  });
+
+  it('catches up through a replay larger than the old 4 MiB limit and reports dropped events', async () => {
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: 'a' });
+    const body = 'x'.repeat(4000);
+    for (let i = 0; i < 1200; i++) server.publish('a', 10000 + i, { message: body });
+    const notified: string[] = [];
+    const receiver = createReceiver({ onNewMessage: (m) => notified.push(m.id) });
+    await receiver.sync();
+    const saved = await getHistoryState();
+    expect(saved.receivedNotifications).toHaveLength(100);
+    expect(saved.receivedNotifications[0]?.id).toBe('m1200');
+    expect((await getTopicSyncStates()).get('a')?.since).toBe(11199);
+    const { receiverStatus } = await fakeBrowser.storage.session.get('receiverStatus');
+    expect(receiverStatus).toMatchObject({ syncErrors: [], truncatedTopics: ['a'] });
+    expect(notified).toEqual([]);
+
+    const newest = server.publish('a', 11200);
+    await receiver.sync();
+    expect(notified).toEqual([newest.id]);
+    expect((await fakeBrowser.storage.session.get('receiverStatus')).receiverStatus).toMatchObject({ truncatedTopics: ['a'] });
+  });
+
+  it('reports when the server truncated a replay', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { headers: { 'X-Messages-Truncated': '1' } })),
+    );
+    expect(await getNotifications({ apiUrl: 'https://ntfy.example', accessToken: '' }, 'a')).toMatchObject({
+      truncated: true,
+      scanLimited: false,
+    });
+  });
+
+  it('advances past a saturated second when an inclusive replay reaches the scan limit', async () => {
+    const origin = 'https://ntfy.example';
+    const first = { id: 'first', topic: 'a', event: 'message', time: 10000 };
+    const next = { ...first, id: 'next', time: 10001 };
+    await fakeBrowser.storage.sync.set({ apiUrl: origin, topics: 'a' });
+    await fakeBrowser.storage.local.set({
+      topicSync: [{ topic: 'a', origins: [origin], since: first.time, seen: [], synced: true }],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/auth')) return new Response();
+        if (new URL(url).searchParams.get('since') === String(next.time)) return new Response(JSON.stringify(next));
+        return oversizedReplay(JSON.stringify(first));
+      }),
+    );
+    const receiver = createReceiver({ onNewMessage: () => {} });
+    await receiver.sync();
+    expect((await getTopicSyncStates()).get('a')?.since).toBe(next.time);
+    expect((await fakeBrowser.storage.session.get('receiverStatus')).receiverStatus).toMatchObject({ truncatedTopics: ['a'] });
+    await receiver.sync();
+    expect((await getHistoryState()).receivedNotifications.map(({ id }) => id)).toEqual(['next', 'first']);
   });
 
   it('handles the newest MAX_POLL_EVENTS of a poll only', async () => {

@@ -3,7 +3,7 @@
 // delete actions (sent as messages) all go through one queue, so no update overwrites another.
 
 import { browser } from 'wxt/browser';
-import { parseMessage, sequenceOf, type NtfyMessage } from './ntfy';
+import { MAX_POLL_EVENTS, parseMessage, sequenceOf, type NtfyMessage } from './ntfy';
 import { getSyncDeletionTopics } from './sync-modes';
 
 /** Received messages kept per topic, so a busy topic doesn't push the others out */
@@ -12,15 +12,13 @@ export const MAX_HISTORY_PER_TOPIC = 100;
 export const MAX_HISTORY_SIZE = 8 * 1024 * 1024;
 /** Safety cap of a topic's seen ids, if its polls keep failing and live messages keep coming */
 const MAX_SEEN_PER_TOPIC = 5000;
-/** Newest events handled per poll (more than the history keeps) */
-export const MAX_POLL_EVENTS = 1000;
 /** Older deletions may still race with live delivery after a poll has moved the watermark. */
 const MAX_SERVER_DELETIONS_PER_TOPIC = 1000;
 /**
- * Deleted ids kept, newest last. They only matter while a deleted message can still come back from a
- * poll (a topic's first, 24 h sync), so old ones can go.
+ * Deleted ids kept for replay suppression, newest last. Leave room for a single delete of the
+ * entire 8 MiB history, even if it consists of the smallest possible stored messages.
  */
-export const MAX_DELETED_IDS = 1000;
+export const MAX_DELETED_IDS = 200_000;
 
 /** A topic's sync state */
 export interface TopicSyncState {
@@ -41,6 +39,8 @@ export interface TopicSyncState {
   deletionReplay?: { generation: number; complete: boolean };
   /** The first poll (silent: it loads recent history without notifications) completed */
   synced: boolean;
+  /** Last time a bounded replay skipped events, for the inbox warning. */
+  truncatedAt?: number;
 }
 
 /** Sync states by topic. A Map, so any topic name is a plain key (even "__proto__" or "constructor") */
@@ -80,6 +80,7 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
           since: state.since ?? null,
           seen: Array.isArray(state.seen) ? state.seen : [],
           synced: state.synced === true,
+          truncatedAt: state.truncatedAt,
           serverDeletions: Array.isArray(state.serverDeletions) ? state.serverDeletions : [],
           deletionReplay: state.deletionReplay,
         });
@@ -147,7 +148,9 @@ export function pruneReadState({
 
 /** Messages not deleted and not read */
 export function countUnread({ receivedNotifications, readMessageIds, deletedMessageIds }: HistoryState): number {
-  return receivedNotifications.filter((n) => !deletedMessageIds.includes(n.id) && !readMessageIds.includes(n.id)).length;
+  const read = new Set(readMessageIds);
+  const deleted = new Set(deletedMessageIds);
+  return receivedNotifications.filter((n) => !deleted.has(n.id) && !read.has(n.id)).length;
 }
 
 function newState(topic: string, origins?: string[]): TopicSyncState {
@@ -171,13 +174,21 @@ export interface HistorySource {
   origins: string[];
 }
 
+interface PollCoverage {
+  truncated?: boolean;
+  advanceTo?: number;
+}
+
 /** Apply one live event or a replay and return new messages eligible for a notification. */
 function recordEvents(
   topic: string,
   events: NtfyMessage[],
-  poll: boolean,
-  source?: HistorySource,
-  replayGeneration?: number,
+  {
+    source,
+    poll = false,
+    replayGeneration,
+    coverage,
+  }: { source?: HistorySource; poll?: boolean; replayGeneration?: number; coverage?: PollCoverage },
 ): Promise<NtfyMessage[]> {
   return serialized(async () => {
     const [states, history, syncDeletionTopics] = await Promise.all([getTopicSyncStates(), getHistoryState(), getSyncDeletionTopics()]);
@@ -267,12 +278,13 @@ function recordEvents(
 
     if (!poll && !recorded && !changed) return [];
     const notify = !poll || state.synced;
+    if (coverage?.truncated) state.truncatedAt = Date.now();
     if (replay) {
       state.deletionReplay = { generation: replayGeneration, complete: true };
     } else if (poll) {
       state.synced = true;
-      const newestTime = ordered.at(-1)?.time;
-      if (newestTime !== undefined && (state.since === null || newestTime > state.since)) state.since = newestTime;
+      const newestTime = Math.max(ordered.at(-1)?.time ?? -Infinity, coverage?.advanceTo ?? -Infinity);
+      if (Number.isFinite(newestTime) && (state.since === null || newestTime > state.since)) state.since = newestTime;
     }
     pruneSeen(state);
     state.serverDeletions = [...deletions].slice(-MAX_SERVER_DELETIONS_PER_TOPIC).map(([sequence, { time, id }]) => [sequence, time, id]);
@@ -295,16 +307,22 @@ function recordEvents(
 
 /** Resolves to true if a live notification was new to the history. */
 export async function recordMessage(message: NtfyMessage, source?: HistorySource): Promise<boolean> {
-  return (await recordEvents(message.topic, [message], false, source)).length > 0;
+  return (await recordEvents(message.topic, [message], { source })).length > 0;
 }
 
 /** A completed poll advances the watermark and applies replayed messages and deletions together. */
-export function recordPoll(topic: string, events: NtfyMessage[], source: HistorySource): Promise<NtfyMessage[]> {
-  return recordEvents(topic, events, true, source);
+export function recordPoll(topic: string, events: NtfyMessage[], source: HistorySource, coverage?: PollCoverage): Promise<NtfyMessage[]> {
+  return recordEvents(topic, events, { source, poll: true, coverage });
 }
 
-export async function recordDeletionReplay(topic: string, events: NtfyMessage[], source: HistorySource, generation: number): Promise<void> {
-  await recordEvents(topic, events, true, source, generation);
+export async function recordDeletionReplay(
+  topic: string,
+  events: NtfyMessage[],
+  source: HistorySource,
+  generation: number,
+  truncated = false,
+): Promise<void> {
+  await recordEvents(topic, events, { source, poll: true, replayGeneration: generation, coverage: { truncated } });
 }
 
 /** Mark newly enabled topics pending, including when an older replay is still in flight. */
@@ -341,16 +359,21 @@ export function setRead(ids: string[], read: boolean): Promise<void> {
   });
 }
 
-/** Delete actions from the popup: hide messages (kept as deleted ids so polls don't bring them back) */
+/** Delete actions from the popup: remove rows and keep their ids to suppress replays. */
 export function deleteMessages(ids: string[]): Promise<StoredMessage[]> {
   return serialized(async () => {
     const history = await getHistoryState();
     const requested = new Set(ids);
     const alreadyDeleted = new Set(history.deletedMessageIds);
     const messages = history.receivedNotifications.filter((message) => requested.has(message.id) && !alreadyDeleted.has(message.id));
+    const receivedNotifications = history.receivedNotifications.filter(
+      (message) => !requested.has(message.id) && !alreadyDeleted.has(message.id),
+    );
     const deletedMessageIds = [...new Set([...history.deletedMessageIds, ...ids])];
-    const readMessageIds = history.readMessageIds.filter((id) => !ids.includes(id));
-    await browser.storage.local.set(pruneReadState({ ...history, deletedMessageIds, readMessageIds }));
+    await browser.storage.local.set({
+      receivedNotifications,
+      ...pruneReadState({ ...history, receivedNotifications, deletedMessageIds }),
+    });
     return messages;
   });
 }
