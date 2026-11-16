@@ -137,7 +137,13 @@ test.describe('receiving', () => {
     expect(await popup.locator('#file-btn').evaluate(actionStyle)).toEqual(sendStyle);
     await popup.locator('#settings-btn').click();
     const table = popup.getByRole('table', { name: 'Topic settings' });
-    await expect(table.getByRole('columnheader')).toHaveText(['Topic', 'Message sync', 'Desktop notifications']);
+    await expect(table.getByRole('columnheader')).toHaveText([
+      'Topic',
+      'Message sync',
+      'Desktop notifications',
+      'Send priority',
+      'Send tags',
+    ]);
     await table.getByLabel('Message sync for alerts').selectOption('sync');
     await table.getByLabel('Desktop notifications for alerts').selectOption('off');
     expect(await serviceWorker.evaluate(() => chrome.storage.sync.get('syncDeletionTopics'))).toEqual({});
@@ -601,7 +607,7 @@ test.describe('sending', () => {
     await message.fill('Keep this draft');
     const inbox = popup.getByRole('region', { name: 'Inbox' });
     const openWidth = (await inbox.boundingBox())!.width;
-    const summary = popup.locator('#send-section summary');
+    const summary = popup.locator('#send-section > summary');
     await summary.press('Enter');
     await expect(message).toBeHidden();
     await expect(sendDivider).toBeHidden();
@@ -653,7 +659,7 @@ test.describe('sending', () => {
     await sendDivider.press('ArrowRight');
     await expect(sendDivider).toHaveAttribute('aria-valuenow', String(sendWidth + 64));
 
-    const summary = send.locator('summary');
+    const summary = send.locator('> summary');
     const openInboxWidth = (await inbox.boundingBox())!.width;
     await summary.click();
     await expect(sendDivider).toBeHidden();
@@ -683,7 +689,7 @@ test.describe('sending', () => {
     await configure({ topics: 'alerts' });
     const popup = await openPopup();
     const panel = popup.locator('#send-section');
-    const summary = panel.locator('summary');
+    const summary = panel.locator('> summary');
     const remember = popup.getByRole('checkbox', { name: 'Remember collapsed/expanded state of section Send notification', exact: true });
     const message = popup.getByLabel('Message', { exact: true });
     const destination = popup.getByLabel('Send to');
@@ -707,7 +713,7 @@ test.describe('sending', () => {
     const tab = await openPopup('?mode=page');
     const tabPanel = tab.locator('#send-section');
     await expect(tabPanel).not.toHaveAttribute('open');
-    await tabPanel.locator('summary').press('Space');
+    await tabPanel.locator('> summary').press('Space');
     await expect.poll(() => serviceWorker.evaluate(() => chrome.storage.local.get('sendPanelOpen'))).toEqual({ sendPanelOpen: true });
     await popup.reload();
     await expect(message).toBeVisible();
@@ -858,7 +864,7 @@ test.describe('sending', () => {
     const toggleComposer = () =>
       tab.evaluate(() => {
         const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
-        popup?.document.querySelector<HTMLElement>('#send-section summary')?.click();
+        popup?.document.querySelector<HTMLElement>('#send-section > summary')?.click();
       });
     await toggleComposer();
     await expect.poll(measurePopup).toEqual({ ...resized, composerOpen: false, sendDivider: false, sendWidth: 44 });
@@ -1039,6 +1045,136 @@ test.describe('customization', () => {
     const opened = context.waitForEvent('page');
     await shortcuts.getByRole('button', { name: 'Change shortcuts' }).click();
     expect((await opened).url()).toBe('chrome://extensions/shortcuts');
+  });
+
+  test('send defaults set per topic in Settings fill the Send form and reach the server', async ({ ntfy, configure, openPopup }) => {
+    await configure({ topics: 'alerts,notes' });
+    const popup = await openPopup('?mode=page');
+    await popup.setViewportSize({ width: 800, height: 600 });
+    await popup.getByRole('button', { name: 'Settings' }).click();
+    const tagsField = popup.getByLabel('Send tags for alerts');
+    await expect(tagsField).toBeDisabled();
+    await popup.getByLabel('Send priority for alerts').selectOption({ label: 'Urgent' });
+    await tagsField.fill('warning, server');
+    // The table scrolls inside its own box: the view itself stays as wide as the popup
+    expect(await popup.locator('#settings-view').evaluate((view) => view.scrollWidth <= view.clientWidth)).toBe(true);
+    await popup.getByRole('button', { name: 'Apply', exact: true }).click();
+    await expect(popup.locator('#topic-settings-status')).toHaveText('Applied.');
+    await popup.getByRole('button', { name: 'Back' }).click();
+
+    const priority = popup.getByRole('group', { name: 'Priority' });
+    const destination = popup.getByLabel('Send to');
+    const message = popup.locator('#message-input');
+    await expect(destination).toHaveValue('alerts');
+    await expect(priority.getByRole('button', { name: 'Urgent' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(popup.locator('.tag-badge')).toHaveText(['warning×', 'server×']);
+
+    await destination.selectOption('notes');
+    await expect(priority.getByRole('button', { name: 'Default' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(popup.locator('.tag-badge')).toHaveCount(0);
+    await message.fill('A note');
+    await popup.locator('#send-btn').click();
+    await expect(popup.locator('#status')).toHaveText('Notification sent!');
+
+    // The inbox topic overrides the Send form's own topic, and brings its defaults
+    await popup.getByRole('button', { name: 'alerts', exact: true }).click();
+    await expect(destination).toHaveValue('alerts');
+    await expect(priority.getByRole('button', { name: 'Urgent' })).toHaveAttribute('aria-pressed', 'true');
+    await message.fill('Disk full');
+    await popup.locator('#send-btn').click();
+    await expect.poll(() => ntfy.published.length).toBe(2);
+
+    // Set by hand for one message: kept when the topic changes, and not made another topic's value
+    await priority.getByRole('button', { name: 'Low' }).click();
+    await popup.locator('.topic-filter-btn').first().click(); // All topics (its name now includes the unread count)
+    await expect(destination).toHaveValue('notes');
+    await expect(priority.getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true');
+    await popup.getByRole('button', { name: 'Use last used' }).click();
+    await expect(priority.getByRole('button', { name: 'Default' })).toHaveAttribute('aria-pressed', 'true');
+    await message.fill('Another note');
+    await popup.locator('#send-btn').click();
+    await expect.poll(() => ntfy.published.length).toBe(3);
+
+    expect(ntfy.published).toEqual([
+      { topic: 'notes', body: 'A note', headers: {} },
+      { topic: 'alerts', body: 'Disk full', headers: { priority: '5', tags: 'warning,server' } },
+      { topic: 'notes', body: 'Another note', headers: {} },
+    ]);
+  });
+
+  test('More options send a click URL, Markdown and a delay, and a delayed message is reported as scheduled', async ({
+    ntfy,
+    configure,
+    openPopup,
+  }) => {
+    await configure({ topics: 'inbox' });
+    const popup = await openPopup();
+    await popup.setViewportSize({ width: 800, height: 600 });
+    const options = popup.locator('#more-options');
+    await expect(popup.getByLabel('Click URL')).toBeHidden();
+    await options.locator('summary').click();
+    const clickUrl = popup.getByLabel('Click URL');
+    const status = popup.locator('#status');
+    await popup.locator('#message-input').fill('**Backup** finished');
+
+    await clickUrl.fill('example.com/backups');
+    await popup.locator('#send-btn').click();
+    await expect(popup.locator('#click-error')).toHaveText('Enter a complete http:// or https:// click URL, or leave it empty');
+    await expect(clickUrl).toHaveAttribute('aria-invalid', 'true');
+    expect(ntfy.published).toEqual([]);
+
+    await clickUrl.fill('https://example.com/backups?run=7');
+    await popup.getByLabel('Format the message as Markdown').check();
+    const deliver = popup.getByLabel('Deliver', { exact: true });
+    await deliver.selectOption({ label: 'Other…' });
+    const delay = popup.getByLabel('Delay or delivery time');
+    await delay.fill('someday maybe');
+    // The composer stays within the popup with every option showing
+    expect(await popup.locator('#main-view').evaluate((view) => view.scrollWidth === view.clientWidth)).toBe(true);
+    expect(await popup.locator('#send-section').evaluate((section) => section.scrollWidth <= section.clientWidth)).toBe(true);
+    await popup.locator('#send-btn').click();
+    // The server judges the delay: its reason is shown and the form stays
+    await expect(status).toHaveText('Error: HTTP 400: invalid delay parameter: unable to parse delay');
+    await expect(delay).toHaveValue('someday maybe');
+    expect(ntfy.published).toEqual([]);
+
+    await deliver.selectOption({ label: 'In 30 minutes' });
+    await expect(delay).toBeHidden();
+    await expect(options.locator('summary')).toContainText('(URL, Markdown, delay)');
+    const before = Math.floor(Date.now() / 1000);
+    await popup.locator('#send-btn').click();
+    await expect(status).toHaveText(/^Notification scheduled for .+\. It appears in the Inbox when delivered\.$/);
+
+    expect(ntfy.published).toEqual([
+      {
+        topic: 'inbox',
+        body: '**Backup** finished',
+        headers: { click: 'https://example.com/backups?run=7', markdown: 'yes', delay: '30m' },
+      },
+    ]);
+    expect(ntfy.scheduled).toMatchObject([{ click: 'https://example.com/backups?run=7', content_type: 'text/markdown' }]);
+    expect(ntfy.scheduled[0]!.time).toBeGreaterThanOrEqual(before + 30 * 60);
+    // Scheduled, so not delivered: nothing in the inbox, and the options are cleared with the draft
+    expect(ntfy.messages).toEqual([]);
+    await expect(popup.locator('.notification-title')).toHaveCount(0);
+    await expect(clickUrl).toHaveValue('');
+    await expect(popup.getByLabel('Format the message as Markdown')).not.toBeChecked();
+    await expect(deliver).toHaveValue('');
+    await expect(popup.locator('#message-input')).toHaveValue('');
+
+    // An immediate Markdown message with a click URL is delivered and listed
+    await popup.locator('#message-input').fill('See the **report**');
+    await clickUrl.fill('https://example.com/report');
+    await popup.getByLabel('Format the message as Markdown').check();
+    await popup.getByLabel('Send another').check();
+    await popup.locator('#send-btn').click();
+    await expect(status).toHaveText('Notification sent!');
+    expect(ntfy.published[1]).toEqual({
+      topic: 'inbox',
+      body: 'See the **report**',
+      headers: { click: 'https://example.com/report', markdown: 'yes' },
+    });
+    await expect(popup.locator('.notification-message strong')).toHaveText('report');
   });
 
   test('the send-page command publishes the page to the last send topic from the background', async ({

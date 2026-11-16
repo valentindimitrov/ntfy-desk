@@ -1,4 +1,5 @@
-// A fake ntfy server (fetch, including the JSON stream of subscriptions) for the receiving tests. since= follows ntfy v2.29:
+// A fake ntfy server (fetch, including the JSON stream of subscriptions) for the receiving tests, with
+// publishing (POST /<topic>): click URL, Markdown and delayed delivery as ntfy handles them. since= follows ntfy v2.29:
 // a unix time or duration selects by message time; a message id selects by row id, which is
 // global across topics, and an unknown (expired) id replays the whole cache.
 
@@ -23,6 +24,10 @@ export interface FakeServer {
   pollGate: Promise<void> | null;
   now: number;
   requests: { url: string; auth: string | null }[];
+  /** Publishes the server accepted (POST /<topic>), with their request headers */
+  published: { topic: string; headers: Headers; body: unknown }[];
+  /** Delayed messages the server holds until their time: not in a poll or a stream yet */
+  scheduled: NtfyMessage[];
   publish(topic: string, time: number, extra?: Partial<NtfyMessage>): NtfyMessage;
 }
 
@@ -146,6 +151,8 @@ export function installFakeNtfy(): FakeServer {
     pollGate: null,
     now: 10000,
     requests: [],
+    published: [],
+    scheduled: [],
     publish(topic, time, extra = {}) {
       const message: NtfyMessage = { id: `m${++nextId}`, event: 'message', topic, time, title: 't', message: 'x', ...extra };
       server.messages.push(message);
@@ -170,6 +177,37 @@ export function installFakeNtfy(): FakeServer {
     }
     if (url.pathname === '/v1/health') {
       return new Response('{"healthy":true}', { status: 200 });
+    }
+
+    if (init?.method === 'POST') {
+      // ntfy's durations only; it also takes times such as "tomorrow 9am", which this server refuses
+      const delay = headers.get('X-Delay') ?? '';
+      const duration = /^(\d+)\s*(s|m|h|d)$/.exec(delay);
+      const seconds = duration ? Number(duration[1]) * { s: 1, m: 60, h: 3600, d: 86400 }[duration[2] as 's' | 'm' | 'h' | 'd'] : 0;
+      const error =
+        delay && !duration
+          ? [40004, 'invalid delay parameter: unable to parse delay']
+          : delay && seconds < 10
+            ? [40005, 'invalid delay parameter: too small, please refer to the docs']
+            : seconds > 3 * 86400
+              ? [40006, 'invalid delay parameter: too large, please refer to the docs']
+              : seconds > 3 * 3600 && headers.has('X-Filename')
+                ? [40015, 'invalid request: attachment expiry before delayed delivery date']
+                : null;
+      if (error) return Response.json({ code: error[0], http: 400, error: error[1] }, { status: 400 });
+      server.published.push({ topic, headers, body: init.body });
+      const click = headers.get('X-Click');
+      const message: NtfyMessage = {
+        id: `m${++nextId}`,
+        event: 'message',
+        topic,
+        time: server.now + seconds,
+        ...(typeof init.body === 'string' && { message: init.body }),
+        ...(click && { click }),
+        ...(/^(1|yes|true)$/.test(headers.get('X-Markdown') ?? '') && { content_type: 'text/markdown' }),
+      };
+      (seconds > 0 ? server.scheduled : server.messages).push(message);
+      return Response.json(message);
     }
 
     if (url.pathname.endsWith('/auth')) {

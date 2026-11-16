@@ -1,6 +1,7 @@
 // A small ntfy server for the end-to-end tests: real HTTP, with the JSON stream for subscriptions,
 // following ntfy v2.29 where the extension depends on it. Not covered: attachments, caching limits,
-// rate limits, keepalive events. Credentials are only accepted in the Authorization header (real ntfy
+// rate limits, keepalive events. A delayed publish (X-Delay with a duration) is answered with its
+// delivery time and held back: it reaches neither the subscriptions nor the polls. Credentials are only accepted in the Authorization header (real ntfy
 // also takes ?auth=, which the extension must not use).
 //
 // One difference: CORS preflights also allow Authorization explicitly. Real ntfy answers with
@@ -48,6 +49,8 @@ export interface NtfyTestServer {
   messages: (ServerMessage | ServerDeletion)[];
   /** Messages published by the extension */
   published: PublishedRequest[];
+  /** Delayed messages the server holds until their delivery time */
+  scheduled: ServerMessage[];
   /** When set, an accepted publish waits before returning its response. */
   publishGate?: Promise<void>;
   /** Accept the publish but close the connection before sending a response. */
@@ -108,6 +111,7 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
     readOnly: new Set(),
     messages: [],
     published: [],
+    scheduled: [],
     subscriptions: [],
     acceptConnections: true,
     publish(topic, fields = {}) {
@@ -179,6 +183,14 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
     if (req.method === 'POST' && topics.length === 1 && !action) {
       const topic = topics[0]!;
       const body = await readBody(req);
+      const delay = decodeHeader(req.headers['x-delay']);
+      const duration = /^(\d+)\s*(s|m|h|d)$/.exec(delay ?? '');
+      if (delay && !duration) {
+        send(res, 400, '{"code":40004,"http":400,"error":"invalid delay parameter: unable to parse delay"}');
+        return;
+      }
+      const click = decodeHeader(req.headers['x-click']);
+      const markdown = decodeHeader(req.headers['x-markdown']);
       server.published.push({
         topic,
         body,
@@ -186,15 +198,28 @@ export async function startNtfyServer(token = 'tk_e2e'): Promise<NtfyTestServer>
           title: decodeHeader(req.headers['x-title']),
           priority: decodeHeader(req.headers['x-priority']),
           tags: decodeHeader(req.headers['x-tags']),
+          click,
+          markdown,
+          delay,
         },
       });
       await server.publishGate;
       const priority = Number(req.headers['x-priority']);
-      const message = server.publish(topic, {
+      const fields: Partial<ServerMessage> = {
         message: body,
         title: decodeHeader(req.headers['x-title']),
         ...(priority ? { priority } : {}),
-      });
+        ...(click ? { click } : {}),
+        ...(markdown && /^(1|yes|true)$/.test(markdown) ? { content_type: 'text/markdown' } : {}),
+      };
+      let message: ServerMessage;
+      if (duration) {
+        const seconds = Number(duration[1]) * { s: 1, m: 60, h: 3600, d: 86400 }[duration[2] as 's' | 'm' | 'h' | 'd'];
+        message = { id: `msg${++nextId}`, time: Math.floor(Date.now() / 1000) + seconds, event: 'message', topic, ...fields };
+        server.scheduled.push(message);
+      } else {
+        message = server.publish(topic, fields);
+      }
       if (server.dropPublishResponse) res.destroy();
       else send(res, 200, JSON.stringify(message));
       return;

@@ -35,6 +35,18 @@ export function getElements() {
     tagsContainer: byId('tags-container'),
     newTagInput: byId<HTMLInputElement>('new-tag-input'),
     tagInputHint: byId('tag-input-hint'),
+    sendDefaultsReset: byId<HTMLButtonElement>('send-defaults-reset'),
+
+    // More options
+    moreOptions: byId<HTMLDetailsElement>('more-options'),
+    moreOptionsActive: byId('more-options-active'),
+    clickInput: byId<HTMLInputElement>('click-input'),
+    clickError: byId('click-error'),
+    markdownCheckbox: byId<HTMLInputElement>('markdown-checkbox'),
+    delaySelect: byId<HTMLSelectElement>('delay-select'),
+    delayInput: byId<HTMLInputElement>('delay-input'),
+    delayHint: byId('delay-hint'),
+    delayError: byId('delay-error'),
 
     // Attachments
     fileInput: byId<HTMLInputElement>('file-input'),

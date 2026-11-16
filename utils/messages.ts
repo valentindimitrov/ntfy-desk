@@ -15,6 +15,15 @@ export interface Draft {
   topic: string;
   tags: string[];
   priority: number;
+  /**
+   * The priority or tags were set by hand for this message: they are restored as they are. Otherwise
+   * the composer shows the topic's send defaults, or the values used last.
+   */
+  customPriorityTags: boolean;
+  /** More options: the click URL as typed, Markdown, and the delay ('' for none) */
+  click: string;
+  markdown: boolean;
+  delay: string;
 }
 
 export type PopupRequest =
@@ -34,14 +43,18 @@ function isServerDeletionIntent(value: unknown): value is ServerDeletionIntent {
 
 function isDraft(value: unknown): value is Draft {
   if (!value || typeof value !== 'object') return false;
-  const { revision, title, message, topic, tags, priority } = value as Partial<Draft>;
+  const { revision, title, message, topic, tags, priority, customPriorityTags, click, markdown, delay } = value as Partial<Draft>;
   return (
     typeof revision === 'string' &&
     typeof title === 'string' &&
     typeof message === 'string' &&
     typeof topic === 'string' &&
     isStringList(tags) &&
-    typeof priority === 'number'
+    typeof priority === 'number' &&
+    typeof customPriorityTags === 'boolean' &&
+    typeof click === 'string' &&
+    typeof markdown === 'boolean' &&
+    typeof delay === 'string'
   );
 }
 

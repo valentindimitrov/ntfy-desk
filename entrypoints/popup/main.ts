@@ -11,6 +11,7 @@ import {
   loadAttachments,
   renderTags,
   restoreDraft,
+  setupMoreOptions,
   setupSend,
   setupSendPanel,
   updatePriorityUI,
@@ -99,7 +100,7 @@ async function init(): Promise<void> {
     elements.tabUrlBtn.style.display = '';
   }
 
-  await Promise.all([setupPaneDividers(), setupSendPanel()]);
+  await Promise.all([setupPaneDividers(), setupSendPanel(), setupMoreOptions()]);
   await loadSettings();
   state.page = await getPage();
   await loadReceiveFilter();

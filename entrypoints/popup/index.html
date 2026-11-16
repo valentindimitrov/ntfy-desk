@@ -186,7 +186,18 @@
 
           <!-- Priority -->
           <div class="form-group">
-            <div class="form-label" id="priority-label">Priority</div>
+            <div class="form-label-row">
+              <div class="form-label" id="priority-label">Priority</div>
+              <button
+                type="button"
+                class="link-btn"
+                id="send-defaults-reset"
+                title="Replace the priority and tags set by hand for this message"
+                hidden
+              >
+                Use topic defaults
+              </button>
+            </div>
             <div class="chips priority-chips" id="priority-chips" role="group" aria-labelledby="priority-label">
               <button class="chip" data-priority="1" aria-label="Min" title="Min" aria-pressed="false">
                 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 4 4 4-4m-8 4 4 4 4-4" /></svg>
@@ -214,6 +225,70 @@
               <span class="tag-input-hint" id="tag-input-hint">Press enter to add tag</span>
             </div>
           </div>
+
+          <!-- More options: click URL, Markdown, delayed delivery -->
+          <details class="more-options" id="more-options">
+            <summary class="more-options-summary">
+              <svg class="more-options-chevron" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="m6 3 5 5-5 5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>More options</span>
+              <span class="more-options-active" id="more-options-active"></span>
+            </summary>
+            <div class="form-group">
+              <label class="form-label" for="click-input">Click URL</label>
+              <input
+                type="text"
+                inputmode="url"
+                class="form-input"
+                id="click-input"
+                placeholder="https://example.com/page"
+                maxlength="2048"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="click-hint click-error"
+              />
+              <p class="form-hint" id="click-hint">Opened when the notification is clicked.</p>
+              <p class="form-error" id="click-error" role="alert" hidden></p>
+            </div>
+            <div class="checkbox-group">
+              <input type="checkbox" id="markdown-checkbox" />
+              <label for="markdown-checkbox">Format the message as Markdown</label>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="delay-select">Deliver</label>
+              <select class="form-select" id="delay-select" aria-describedby="delay-hint">
+                <option value="">Now</option>
+                <option value="10m">In 10 minutes</option>
+                <option value="30m">In 30 minutes</option>
+                <option value="1h">In 1 hour</option>
+                <option value="3h">In 3 hours</option>
+                <option value="1d">In 1 day</option>
+                <option value="__custom">Other…</option>
+              </select>
+              <input
+                type="text"
+                class="form-input"
+                id="delay-input"
+                placeholder="45m, 2 days, tomorrow 9am"
+                maxlength="100"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="Delay or delivery time"
+                aria-describedby="delay-hint delay-error"
+                hidden
+              />
+              <p class="form-hint" id="delay-hint" hidden></p>
+              <p class="form-error" id="delay-error" role="alert" hidden></p>
+            </div>
+          </details>
 
           <!-- Send Footer -->
           <div class="send-footer">
@@ -308,6 +383,8 @@
                     <th scope="col">Topic</th>
                     <th scope="col">Message sync</th>
                     <th scope="col">Desktop notifications</th>
+                    <th scope="col">Send priority</th>
+                    <th scope="col">Send tags</th>
                   </tr>
                 </thead>
                 <tbody id="topic-settings-rows"></tbody>
@@ -318,6 +395,10 @@
               allow.
             </p>
             <p class="form-hint">Messages below the desktop notification level still appear in the inbox.</p>
+            <p class="form-hint">
+              A send priority gives the topic its own starting priority and tags in the Send form (up to 10 tags separated by commas, or
+              none). Last used keeps the priority and tags of the previous message.
+            </p>
             <div class="topic-settings-footer">
               <button type="button" class="action-btn" id="apply-topic-settings" disabled>Apply</button>
               <span class="form-hint" id="topic-settings-status" role="status"></span>

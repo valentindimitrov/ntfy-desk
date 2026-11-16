@@ -1,8 +1,21 @@
-// Send form: topic, title (optionally the tab's URL), message, attachments, priority and tags.
+// Send form: topic, title (optionally the tab's URL), message, attachments, priority and tags (with
+// per-topic defaults), and the options under "More options" (click URL, Markdown, delayed delivery).
 
 import { browser, type Browser } from 'wxt/browser';
 import { sendToBackground, type Draft } from '@/utils/messages';
-import { getConfig, isHttpUrl, PublishUncertainError, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
+import {
+  clickUrlError,
+  delayError,
+  getConfig,
+  isHttpUrl,
+  publishedTime,
+  PublishUncertainError,
+  sendAttachment,
+  sendNotification,
+  splitCredentials,
+  type PublishOptions,
+} from '@/utils/ntfy';
+import { SEND_DEFAULTS_KEY, isPriority, parseSendDefaults, sameSendDefaults, type SendDefaults } from '@/utils/send-defaults';
 import {
   STORED_FILES_REVISION_KEY,
   addPickedFiles,
@@ -15,7 +28,18 @@ import {
 } from '@/utils/stored-files';
 import { pickServer } from '@/utils/servers';
 import { createZip } from '@/utils/zip';
-import { elements, inboxTopic, isConfigured, isPageMode, saveLocal, saveSync, state, type PageInfo } from './state';
+import {
+  elements,
+  inboxTopic,
+  isConfigured,
+  isPageMode,
+  parseRememberedPriority,
+  parseRememberedTags,
+  saveLocal,
+  saveSync,
+  state,
+  type PageInfo,
+} from './state';
 import { clearStatus, moveItem, setupDragAndDrop, showSettingsStatus, showStatus } from './ui';
 
 export async function setupSendPanel(): Promise<void> {
@@ -91,11 +115,69 @@ export function updateSendTopic(): void {
   elements.sendTopicHint.hidden = topic === null;
   if (topic === null) elements.topicSelect.removeAttribute('aria-describedby');
   else elements.topicSelect.setAttribute('aria-describedby', elements.sendTopicHint.id);
+  applySendDefaults();
 }
+
+/** Where a message goes: the inbox's topic when one is selected there, else the Send form's own choice */
+const sendTopic = (): string => inboxTopic() ?? independentSendTopic();
 
 // ==================
 // Priority and tags
 // ==================
+//
+// Until the user sets the priority or tags by hand, they follow the send topic: its send defaults if
+// it has any (Settings > Topics), else the priority and tags used last. Once set by hand they belong
+// to the message in progress: they stay when the topic changes and are saved in the draft, until the
+// message is sent or the user takes the automatic values back ("Use topic defaults" / "Use last used").
+// A change by hand is also remembered as "used last" (storage.sync), except on a topic with send
+// defaults: there it applies to this message only, so a topic's defaults never become the values of
+// the other topics.
+
+/** The priority and tags a new message to the send topic starts with */
+function automaticPriorityTags(): SendDefaults {
+  return state.topicSendDefaults.get(sendTopic()) ?? { priority: state.rememberedPriority, tags: state.rememberedTags };
+}
+
+/** Offer the automatic values back when the ones set by hand differ from them */
+function updateDefaultsReset(): void {
+  const current = { priority: state.selectedPriority, tags: state.tags };
+  elements.sendDefaultsReset.hidden = !state.customPriorityTags || sameSendDefaults(automaticPriorityTags(), current);
+  elements.sendDefaultsReset.textContent = state.topicSendDefaults.has(sendTopic()) ? 'Use topic defaults' : 'Use last used';
+}
+
+/** Show the send topic's priority and tags, unless the user set them by hand for this message */
+export function applySendDefaults(): void {
+  if (!state.customPriorityTags) {
+    const { priority, tags } = automaticPriorityTags();
+    state.selectedPriority = priority;
+    state.tags = [...tags];
+  }
+  updatePriorityUI();
+  renderTags();
+  updateDefaultsReset();
+}
+
+/** The user changed the priority or the tags */
+function setByHand(changed: 'priority' | 'tags'): void {
+  state.customPriorityTags = true;
+  persistDraft();
+  if (!state.topicSendDefaults.has(sendTopic())) {
+    if (changed === 'priority') {
+      state.rememberedPriority = state.selectedPriority;
+      void saveSync({ priority: state.selectedPriority });
+    } else {
+      state.rememberedTags = [...state.tags];
+      void saveSync({ lastTags: [...state.tags] });
+    }
+  }
+  updateDefaultsReset();
+}
+
+function resetPriorityTags(): void {
+  state.customPriorityTags = false;
+  applySendDefaults();
+  persistDraft();
+}
 
 export function updatePriorityUI(): void {
   elements.priorityChips.querySelectorAll<HTMLElement>('.chip').forEach((chip) => {
@@ -106,8 +188,7 @@ export function updatePriorityUI(): void {
 }
 
 function saveTags(): void {
-  persistDraft();
-  void saveSync({ lastTags: [...state.tags] });
+  setByHand('tags');
 }
 
 export function renderTags(): void {
@@ -258,6 +339,10 @@ async function saveDraft(): Promise<string> {
     topic: independentSendTopic(),
     tags: [...state.tags],
     priority: state.selectedPriority,
+    customPriorityTags: state.customPriorityTags,
+    click: elements.clickInput.value,
+    markdown: elements.markdownCheckbox.checked,
+    delay: delayValue(),
   };
   await sendToBackground({ action: 'saveDraft', draft });
   return revision;
@@ -276,9 +361,114 @@ export async function restoreDraft(): Promise<void> {
 
   if (typeof draft.title === 'string') elements.titleInput.value = draft.title;
   if (typeof draft.message === 'string') elements.messageInput.value = draft.message;
-  if (Array.isArray(draft.tags)) state.tags = draft.tags;
-  if (typeof draft.priority === 'number') state.selectedPriority = draft.priority;
   if (draft.topic) state.lastTopic = draft.topic;
+  // Priority and tags set by hand come back as they were; otherwise the topic decides (applySendDefaults)
+  if (draft.customPriorityTags === true) {
+    state.customPriorityTags = true;
+    if (isPriority(draft.priority)) state.selectedPriority = draft.priority;
+    if (Array.isArray(draft.tags)) state.tags = draft.tags.filter((tag): tag is string => typeof tag === 'string');
+  }
+  if (typeof draft.click === 'string') elements.clickInput.value = draft.click;
+  elements.markdownCheckbox.checked = draft.markdown === true;
+  if (typeof draft.delay === 'string') showDelay(draft.delay);
+  updateMoreOptions();
+}
+
+// ==================
+// More options: click URL, Markdown, delayed delivery
+// ==================
+
+/** The Deliver choice that shows the free text field */
+const CUSTOM_DELAY = '__custom';
+
+/** The delay to send: a listed duration, the typed value, or '' for now */
+function delayValue(): string {
+  const choice = elements.delaySelect.value;
+  return choice === CUSTOM_DELAY ? elements.delayInput.value.trim() : choice;
+}
+
+function showDelay(delay: string): void {
+  const listed = delay !== CUSTOM_DELAY && [...elements.delaySelect.options].some((option) => option.value === delay);
+  elements.delaySelect.value = listed ? delay : CUSTOM_DELAY;
+  elements.delayInput.value = listed ? '' : delay;
+}
+
+function showFieldError(input: HTMLElement, target: HTMLElement, problem: string): void {
+  target.textContent = problem;
+  target.hidden = !problem;
+  if (problem) input.setAttribute('aria-invalid', 'true');
+  else input.removeAttribute('aria-invalid');
+}
+
+/** The delay field and hint for the current choice, and the options in use on the summary line */
+function updateMoreOptions(): void {
+  const custom = elements.delaySelect.value === CUSTOM_DELAY;
+  const delayed = custom || elements.delaySelect.value !== '';
+  elements.delayInput.hidden = !custom;
+  elements.delayHint.hidden = !delayed;
+  elements.delayHint.textContent = delayed
+    ? `The server sets the limits: 10 seconds to 3 days by default.${
+        state.attachments.length > 0 ? ' It refuses a delay longer than it keeps attachments (3 hours by default).' : ''
+      }${custom ? ' A duration, or a time such as "tomorrow 9am" in your time zone.' : ''}`
+    : '';
+  const active = [elements.clickInput.value.trim() && 'URL', elements.markdownCheckbox.checked && 'Markdown', delayed && 'delay'].filter(
+    Boolean,
+  );
+  elements.moreOptionsActive.textContent = active.length > 0 ? `(${active.join(', ')})` : '';
+}
+
+function clearMoreOptions(): void {
+  elements.clickInput.value = '';
+  elements.markdownCheckbox.checked = false;
+  showDelay('');
+  showFieldError(elements.clickInput, elements.clickError, '');
+  showFieldError(elements.delayInput, elements.delayError, '');
+  updateMoreOptions();
+}
+
+/**
+ * The options to publish with; null, with the problem shown at its field, if one can't be sent.
+ * Only what the browser can judge is checked here: the server's error text is shown for the rest.
+ */
+function readMoreOptions(): Pick<PublishOptions, 'click' | 'markdown' | 'delay'> | null {
+  const click = elements.clickInput.value.trim();
+  const delay = delayValue();
+  const clickProblem = click ? clickUrlError(click) : '';
+  const delayProblem =
+    elements.delaySelect.value === CUSTOM_DELAY && !delay ? 'Enter a delay such as 45m, or choose Now' : delayError(delay);
+  showFieldError(elements.clickInput, elements.clickError, clickProblem);
+  showFieldError(elements.delayInput, elements.delayError, delayProblem);
+  const problem = clickProblem || delayProblem;
+  if (problem) {
+    elements.moreOptions.open = true;
+    (clickProblem ? elements.clickInput : elements.delayInput).focus();
+    showStatus(problem, 'error');
+    return null;
+  }
+  return { click, markdown: elements.markdownCheckbox.checked, delay };
+}
+
+/** Whether "More options" is open is kept on this device */
+export async function setupMoreOptions(): Promise<void> {
+  const { moreOptions } = elements;
+  const { sendOptionsOpen } = await browser.storage.local.get('sendOptionsOpen').catch((): Record<string, unknown> => ({}));
+  moreOptions.open = sendOptionsOpen === true;
+  let lastOpen = moreOptions.open;
+  moreOptions.addEventListener('toggle', () => {
+    if (moreOptions.open === lastOpen) return;
+    lastOpen = moreOptions.open;
+    void saveLocal({ sendOptionsOpen: lastOpen }).catch(() => {});
+  });
+}
+
+const DELIVERY_TIME: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+
+/** A lost answer to a delayed publish: the Inbox can't tell whether it arrived until it is delivered */
+const UNCERTAIN_SCHEDULE =
+  'Delivery is uncertain: the server may have scheduled the message. It only appears in the Inbox when it is delivered, so sending again can deliver it twice.';
+
+function uncertainText(error: PublishUncertainError, delayed: boolean): string {
+  return delayed ? UNCERTAIN_SCHEDULE : error.message;
 }
 
 // ==================
@@ -334,6 +524,7 @@ function renderAttachments(): void {
   elements.fileBtn.disabled = isSending;
   elements.fileInput.disabled = isSending;
   updateZipToggle();
+  updateMoreOptions();
 }
 
 function updateZipToggle(): void {
@@ -416,12 +607,30 @@ function getZipFilename(date = new Date()): string {
   return `ntfy-files-${datePart}-${timePart}.zip`;
 }
 
-async function finishSuccessfulSend(
-  revision: string,
-  attachmentCount: number,
-  successMessage?: string,
-  filesNotCleared = false,
-): Promise<void> {
+interface SentResult {
+  revision: string;
+  attachmentCount: number;
+  zip?: boolean;
+  filesNotCleared?: boolean;
+  /** Sent with a delay: when the server will deliver it (unix seconds), if its answer said so */
+  scheduled?: { time?: number };
+}
+
+function successText({ attachmentCount, zip, scheduled }: SentResult): string {
+  if (!scheduled) {
+    if (zip) return 'ZIP sent!';
+    return attachmentCount > 1 ? `${attachmentCount} notifications sent!` : 'Notification sent!';
+  }
+  const what = zip ? 'ZIP' : attachmentCount > 1 ? `${attachmentCount} notifications` : 'Notification';
+  const { time } = scheduled;
+  // Only a time that is still ahead: a server that ignored the delay answers with the current time
+  const when = time && time * 1000 > Date.now() ? ` for ${new Date(time * 1000).toLocaleString(undefined, DELIVERY_TIME)}` : '';
+  return `${what} scheduled${when}. ${attachmentCount > 1 && !zip ? 'They appear' : 'It appears'} in the Inbox when delivered.`;
+}
+
+async function finishSuccessfulSend(result: SentResult): Promise<void> {
+  const { revision, attachmentCount, filesNotCleared = false, scheduled } = result;
+  const sent = scheduled ? 'Scheduled' : 'Sent';
   if (attachmentCount > 0) {
     elements.fileInput.value = '';
     await loadAttachments();
@@ -430,7 +639,7 @@ async function finishSuccessfulSend(
     await sendToBackground({ action: 'clearDraft', revision });
   } catch {
     showStatus(
-      filesNotCleared ? 'Sent, but the sent files and draft could not be cleared.' : 'Sent, but the draft could not be cleared.',
+      filesNotCleared ? `${sent}, but the sent files and draft could not be cleared.` : `${sent}, but the draft could not be cleared.`,
       'warning',
     );
     return;
@@ -442,16 +651,21 @@ async function finishSuccessfulSend(
     state.autoTitle = '';
     state.autoMessage = '';
     applyPagePrefill();
+    // The next message starts from the topic's priority and tags again, without the options of this one
+    clearMoreOptions();
+    state.customPriorityTags = false;
+    applySendDefaults();
   }
 
   if (filesNotCleared) {
-    showStatus('Sent, but some uploaded files could not be cleared.', 'warning');
-  } else if (!edited && !elements.sendAnotherCheckbox.checked && !isPageMode) {
+    showStatus(`${sent}, but some uploaded files could not be cleared.`, 'warning');
+  } else if (!edited && !scheduled && !elements.sendAnotherCheckbox.checked && !isPageMode) {
     setTimeout(() => {
       if (draftRevision === revision) window.close();
     }, 100);
   } else {
-    showStatus(successMessage ?? (attachmentCount > 1 ? `${attachmentCount} notifications sent!` : 'Notification sent!'), 'success');
+    // A scheduled message keeps the popup open: this line is the only sign of it until delivery
+    showStatus(successText(result), 'success');
   }
 }
 
@@ -494,8 +708,21 @@ async function sendNow(): Promise<void> {
   const tags = state.tags.join(',');
   const priority = state.selectedPriority;
 
+  // Every field is read before the first await, so an edit made while the draft is being saved
+  // belongs to the next message, not to this one
+  const more = readMoreOptions();
+
   // Capture the latest values first, so a failed send can be retried
   const revision = await saveDraft();
+  if (!more) return;
+  const options: PublishOptions = { message, title, priority, tags, ...more };
+  const delayed = Boolean(more.delay);
+  // The delivery time of a delayed message, from the first answer that says it
+  let deliveryTime: number | undefined;
+  const noteDelivery = async (response: Response): Promise<void> => {
+    if (delayed) deliveryTime ??= await publishedTime(response);
+  };
+  const scheduled = () => (delayed ? { time: deliveryTime } : undefined);
 
   let files: StoredFile[];
   try {
@@ -527,8 +754,8 @@ async function sendNow(): Promise<void> {
   try {
     const server = await pickServer(servers);
     if (files.length === 0) {
-      await sendNotification(server, topic, { message, title, priority, tags });
-      await finishSuccessfulSend(revision, 0);
+      await noteDelivery(await sendNotification(server, topic, options));
+      await finishSuccessfulSend({ revision, attachmentCount: 0, scheduled: scheduled() });
       return;
     }
 
@@ -539,10 +766,11 @@ async function sendNow(): Promise<void> {
         const zip = await createZip(entries);
         const filename = getZipFilename();
         const sent = await dispatchStoredUpload(ids, () =>
-          sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
+          sendAttachment(server, topic, { ...options, data: zip, filename, contentType: 'application/zip' }).then(noteDelivery),
         );
         if (sent) {
-          await finishSuccessfulSend(revision, files.length, 'ZIP sent!', !(await clearSentFiles(ids)));
+          const filesNotCleared = !(await clearSentFiles(ids));
+          await finishSuccessfulSend({ revision, attachmentCount: files.length, zip: true, filesNotCleared, scheduled: scheduled() });
           return;
         }
         // A file disappeared during compression. Rebuild using only the original IDs still queued.
@@ -561,7 +789,7 @@ async function sendNow(): Promise<void> {
         // header (ntfy can take text/markdown there as the message format); ntfy detects the type itself
         const data = file.blob.slice();
         const dispatched = await dispatchStoredUpload([file.id], () =>
-          sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags }),
+          sendAttachment(server, topic, { ...options, data, filename: file.name }).then(noteDelivery),
         );
         if (!dispatched) continue;
       } catch (error) {
@@ -574,10 +802,12 @@ async function sendNow(): Promise<void> {
 
     if (failures.length > 0) {
       // Failed files stay attached and the form stays as it is, for a retry
-      const details = failures.map(({ file, error }) => `${file.name}: ${error.message}`).join(' · ');
+      const details = failures
+        .map(({ file, error }) => `${file.name}: ${error instanceof PublishUncertainError ? uncertainText(error, delayed) : error.message}`)
+        .join(' · ');
       const uncertain = failures.some(({ error }) => error instanceof PublishUncertainError);
       showStatus(
-        `${sent} of ${files.length} attachment${files.length === 1 ? '' : 's'} ${uncertain ? 'confirmed' : 'sent'}. ${details}${filesNotCleared ? ' Some uploaded files could not be cleared.' : ''}`,
+        `${sent} of ${files.length} attachment${files.length === 1 ? '' : 's'} ${uncertain ? 'confirmed' : delayed ? 'scheduled' : 'sent'}. ${details}${filesNotCleared ? ' Some uploaded files could not be cleared.' : ''}`,
         uncertain ? 'warning' : 'error',
       );
       return;
@@ -587,9 +817,9 @@ async function sendNow(): Promise<void> {
       showStatus('All selected attachments were removed before sending.', 'warning');
       return;
     }
-    await finishSuccessfulSend(revision, sent, undefined, filesNotCleared);
+    await finishSuccessfulSend({ revision, attachmentCount: sent, filesNotCleared, scheduled: scheduled() });
   } catch (error) {
-    if (error instanceof PublishUncertainError) showStatus(error.message, 'warning');
+    if (error instanceof PublishUncertainError) showStatus(uncertainText(error, delayed), 'warning');
     else showStatus(`Error: ${(error as Error).message}`, 'error');
   }
 }
@@ -624,10 +854,32 @@ export function setupSend(): void {
   elements.priorityChips.addEventListener('click', (event) => {
     const chip = (event.target as Element).closest<HTMLElement>('.chip');
     if (!chip?.dataset.priority) return;
-    state.selectedPriority = Number(chip.dataset.priority);
+    const priority = Number(chip.dataset.priority);
+    if (!isPriority(priority)) return;
+    state.selectedPriority = priority;
     updatePriorityUI();
+    setByHand('priority');
+  });
+  elements.sendDefaultsReset.addEventListener('click', resetPriorityTags);
+
+  elements.clickInput.addEventListener('input', () => {
+    showFieldError(elements.clickInput, elements.clickError, '');
+    updateMoreOptions();
     persistDraft();
-    void saveSync({ priority: state.selectedPriority });
+  });
+  elements.markdownCheckbox.addEventListener('change', () => {
+    updateMoreOptions();
+    persistDraft();
+  });
+  elements.delaySelect.addEventListener('change', () => {
+    showFieldError(elements.delayInput, elements.delayError, '');
+    updateMoreOptions();
+    persistDraft();
+    if (elements.delaySelect.value === CUSTOM_DELAY) elements.delayInput.focus();
+  });
+  elements.delayInput.addEventListener('input', () => {
+    showFieldError(elements.delayInput, elements.delayError, '');
+    persistDraft();
   });
 
   elements.newTagInput.addEventListener('keydown', handleTagKeydown);
@@ -650,6 +902,7 @@ export function setupSend(): void {
     if (elements.topicSelect.disabled) return;
     state.lastTopic = elements.topicSelect.value;
     void saveSync({ lastTopic: state.lastTopic });
+    applySendDefaults();
     persistDraft();
   });
 
@@ -658,5 +911,12 @@ export function setupSend(): void {
     if (area === 'local' && changes[STORED_FILES_REVISION_KEY]) {
       void loadAttachments();
     }
+    if (area !== 'sync') return;
+    // Send defaults and the values used last, changed in the settings, another view or through sync
+    const defaults = changes[SEND_DEFAULTS_KEY];
+    if (defaults) state.topicSendDefaults = parseSendDefaults(defaults.newValue);
+    if (changes.priority) state.rememberedPriority = parseRememberedPriority(changes.priority.newValue);
+    if (changes.lastTags) state.rememberedTags = parseRememberedTags(changes.lastTags.newValue);
+    if (defaults || changes.priority || changes.lastTags) applySendDefaults();
   });
 }

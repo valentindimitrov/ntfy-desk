@@ -1381,9 +1381,16 @@ body:not(.page-mode) #main-view.active {
 }
 
 .send-section > .main-content {
+  /* Holds the visually hidden status line at its top: left below the form, it made the page itself
+     scroll whenever the form was taller than the view (many tags or files, More options open) */
+  position: relative;
   padding-top: 0;
   padding-bottom: 4px;
   padding-inline: var(--pane-padding);
+}
+
+.send-section .status[role='status']:not(.visible) {
+  top: 0;
 }
 
 body:not(.page-mode) .send-section > .main-content {
@@ -1625,7 +1632,94 @@ body:not(.page-mode) .send-section :is(.form-input, .form-select, .form-textarea
   }
 }
 
-/* Title label with the "Use tab URL" button */
+/* Send form: click URL, Markdown and delayed delivery, closed until needed. The closed line sits in
+   the gap above the Send button; in the toolbar popup the gaps between the fields give up 2px each,
+   so the form is exactly as tall as it was without the line (it fits the popup's 600px). */
+#send-section .form-group:has(+ .more-options) {
+  margin-bottom: 3px;
+}
+
+body:not(.page-mode) .send-section > .main-content > .form-group {
+  margin-bottom: 11px;
+}
+
+.more-options + .send-footer {
+  margin-top: 0;
+}
+
+.more-options-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.more-options-summary > span:first-of-type {
+  flex: none;
+  white-space: nowrap;
+}
+
+.more-options-summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-options-summary:hover {
+  color: var(--text-primary);
+}
+
+.more-options-chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  transition: transform 0.15s;
+}
+
+.more-options[open] .more-options-chevron {
+  transform: rotate(90deg);
+}
+
+/* The options in use, visible while the section is closed */
+.more-options-active {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--primary-light);
+}
+
+.more-options[open] > .more-options-summary {
+  margin-bottom: 10px;
+}
+
+.more-options[open] {
+  margin-bottom: 4px;
+}
+
+.more-options .form-group {
+  margin-bottom: 13px;
+}
+
+.more-options #delay-input {
+  margin-top: 8px;
+}
+
+.more-options [hidden],
+#send-defaults-reset[hidden] {
+  display: none;
+}
+
+.form-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--status-error);
+}
+
+/* Title label with the "Use tab URL" button; Priority label with the reset to the topic's defaults */
 .form-label-row {
   display: flex;
   align-items: baseline;
@@ -1718,7 +1812,7 @@ body:not(.page-mode) .send-section :is(.form-input, .form-select, .form-textarea
 
 .topic-settings {
   width: 100%;
-  min-width: 490px;
+  min-width: 660px;
   border-collapse: collapse;
   font-size: 14px;
 }
@@ -1734,12 +1828,13 @@ body:not(.page-mode) .send-section :is(.form-input, .form-select, .form-textarea
 }
 
 .topic-settings th[scope='row'] {
-  width: 34%;
+  width: 16%;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 
-.topic-setting-select {
+.topic-setting-select,
+.topic-setting-input {
   width: 100%;
   padding: 4px 6px;
   border: 1px solid var(--border-color);
@@ -1748,6 +1843,26 @@ body:not(.page-mode) .send-section :is(.form-input, .form-select, .form-textarea
   color: var(--text-primary);
   font: inherit;
   font-size: 13px;
+}
+
+/* Send priority: room for "Last used" */
+.topic-settings td:nth-child(4) .topic-setting-select {
+  min-width: 104px;
+}
+
+/* Send tags: not in use while the send priority is "Last used" */
+.topic-setting-input {
+  min-width: 90px;
+}
+
+.topic-setting-input:disabled {
+  background-color: transparent;
+  border-style: dashed;
+}
+
+.topic-setting-input::placeholder {
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 .topic-settings-footer {

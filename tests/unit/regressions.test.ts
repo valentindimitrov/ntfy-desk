@@ -183,7 +183,18 @@ describe('#12 read and delete actions from several views', () => {
 describe('draft cleanup from several views', () => {
   it('clears the sent revision only if it is still current', async () => {
     const sync = async () => {};
-    const draft = { title: '', message: 'Sending this', topic: 'alerts', tags: [], priority: 3, revision: 'first' };
+    const draft = {
+      title: '',
+      message: 'Sending this',
+      topic: 'alerts',
+      tags: [],
+      priority: 3,
+      customPriorityTags: false,
+      click: '',
+      markdown: false,
+      delay: '',
+      revision: 'first',
+    };
     const next = { ...draft, message: 'Draft from a second view', revision: 'second' };
     await handlePopupRequest({ action: 'saveDraft', draft }, sync);
     await Promise.all([

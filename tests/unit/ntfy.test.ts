@@ -1,16 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { installFakeNtfy } from './helpers/fake-ntfy';
 import {
   CREDENTIALS_KEY,
   buildAuthHeaderValue,
   buildTopicUrl,
   canReadTopic,
+  clickUrlError,
+  delayError,
   encodeHeaderValue,
   getConfig,
   getNotifications,
   isHttpUrl,
   openMessageStream,
   parseTopics,
+  publishedTime,
   sendAttachment,
   sendNotification,
   setAccessToken,
@@ -194,6 +198,85 @@ describe('requests', () => {
     expect(headers.get('X-Message')).toBe('m');
   });
 
+  it('sends no click, Markdown or delay header unless asked', async () => {
+    const calls = stubFetch();
+    await sendNotification(server, 'inbox', { message: 'x', click: '', markdown: false, delay: '' });
+    await sendAttachment(server, 'inbox', { data: new Uint8Array([1]), filename: 'a.txt', click: ' ', delay: ' ' });
+    for (const { init } of calls) {
+      const headers = new Headers(init.headers);
+      for (const name of ['X-Click', 'X-Markdown', 'X-Delay', 'X-Timezone']) expect(headers.has(name)).toBe(false);
+    }
+  });
+
+  it('publishes the click URL, Markdown and delay as headers, never in the URL', async () => {
+    const calls = stubFetch();
+    await sendNotification(server, 'inbox', {
+      message: '**hello**',
+      click: ' https://example.com/päge?q=a b ',
+      markdown: true,
+      delay: ' 30m ',
+    });
+    const headers = new Headers(calls[0]!.init.headers);
+    expect(calls[0]!.url).toBe('https://ntfy.example/inbox');
+    expect(calls[0]!.init.body).toBe('**hello**');
+    // As the URL parser writes it: ASCII, so it needs no RFC 2047 encoding
+    expect(headers.get('X-Click')).toBe('https://example.com/p%C3%A4ge?q=a%20b');
+    expect(headers.get('X-Markdown')).toBe('yes');
+    expect(headers.get('X-Delay')).toBe('30m');
+    expect(headers.has('X-Timezone')).toBe(false);
+  });
+
+  it('sends the same options with an attachment', async () => {
+    const calls = stubFetch();
+    await sendAttachment(server, 'inbox', {
+      data: new Uint8Array([1, 2]),
+      filename: 'a.txt',
+      message: 'm',
+      click: 'https://example.com/',
+      markdown: true,
+      delay: '1h',
+    });
+    const headers = new Headers(calls[0]!.init.headers);
+    expect(calls[0]!.url).toBe('https://ntfy.example/inbox');
+    expect(headers.get('X-Filename')).toBe('a.txt');
+    expect(headers.get('X-Click')).toBe('https://example.com/');
+    expect(headers.get('X-Markdown')).toBe('yes');
+    expect(headers.get('X-Delay')).toBe('1h');
+  });
+
+  it("names the browser's time zone for a delivery time, not for a duration or a unix time", async () => {
+    const calls = stubFetch();
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    for (const delay of ['30m', '2 days', '45 Minutes', '1h30m', '1767225600', 'tomorrow 9am', '2026-12-01T09:00:00']) {
+      await sendNotification(server, 'inbox', { message: 'x', delay });
+    }
+    const zones = calls.map(({ init }) => new Headers(init.headers).get('X-Timezone'));
+    expect(zones).toEqual([null, null, null, null, null, zone, zone]);
+  });
+
+  it('RFC 2047-encodes a delay with characters outside printable ASCII', async () => {
+    const calls = stubFetch();
+    await sendNotification(server, 'inbox', { message: 'x', delay: 'demain 9h\nX-Injected: 1 é' });
+    const delay = new Headers(calls[0]!.init.headers).get('X-Delay')!;
+    expect(delay).toMatch(/^=\?utf-8\?B\?[A-Za-z0-9+/=]+\?=$/);
+    expect(new Headers(calls[0]!.init.headers).has('X-Injected')).toBe(false);
+  });
+
+  it('refuses a click URL that is not http(s) or carries credentials, and an overlong delay, before any request', () => {
+    const calls = stubFetch();
+    for (const click of ['javascript:alert(1)', 'example.com', 'mailto:a@example.com', 'ftp://example.com/x']) {
+      expect(clickUrlError(click)).toMatch(/http:\/\/ or https:\/\//);
+      expect(() => sendNotification(server, 'inbox', { message: 'x', click })).toThrow(/click URL/);
+    }
+    expect(clickUrlError('https://user:secret@example.com/')).toMatch(/username and password/);
+    expect(() => sendNotification(server, 'inbox', { message: 'x', click: 'https://user:secret@example.com/' })).toThrow(/click URL/);
+    expect(clickUrlError('https://example.com/a?b=c#d')).toBe('');
+    expect(delayError('x'.repeat(100))).toBe('');
+    expect(delayError('x'.repeat(101))).toMatch(/at most 100 characters/);
+    expect(() => sendNotification(server, 'inbox', { message: 'x', delay: 'x'.repeat(101) })).toThrow(/at most 100/);
+    expect(calls).toEqual([]);
+  });
+
   it('reports HTTP errors', async () => {
     stubFetch('', 403);
     await expect(sendNotification(server, 'inbox', { message: 'x' })).rejects.toThrow('HTTP 403: Forbidden');
@@ -261,5 +344,54 @@ describe('HTTP error messages', () => {
     const message = await publishError();
     expect(message.startsWith('HTTP 400: line <b>bold</b>yyy')).toBe(true);
     expect(message.length).toBeLessThanOrEqual('HTTP 400: '.length + 200);
+  });
+});
+
+describe('publish options against the fake ntfy server', () => {
+  const server = { apiUrl: 'https://ntfy.example', accessToken: 'tk_x' };
+
+  it('schedules a delayed message: the answer carries its delivery time, and it is not in the cache yet', async () => {
+    const fake = installFakeNtfy();
+    const response = await sendNotification(server, 'inbox', {
+      message: 'later',
+      click: 'https://example.com/a',
+      markdown: true,
+      delay: '30m',
+    });
+    expect(await publishedTime(response)).toBe(fake.now + 30 * 60);
+    expect(fake.published).toHaveLength(1);
+    expect(fake.published[0]!.headers.get('X-Delay')).toBe('30m');
+    expect(fake.scheduled).toMatchObject([{ message: 'later', click: 'https://example.com/a', content_type: 'text/markdown' }]);
+    expect((await getNotifications(server, 'inbox')).events).toEqual([]);
+  });
+
+  it('delivers at once without a delay', async () => {
+    const fake = installFakeNtfy();
+    const response = await sendNotification(server, 'inbox', { message: 'now' });
+    expect(await publishedTime(response)).toBe(fake.now);
+    expect((await getNotifications(server, 'inbox')).events).toMatchObject([{ message: 'now' }]);
+  });
+
+  it("passes on the server's reason for a delay it refuses", async () => {
+    const fake = installFakeNtfy();
+    const refused = async (options: Parameters<typeof sendNotification>[2]) =>
+      sendNotification(server, 'inbox', { message: 'x', ...options }).then(
+        () => 'sent',
+        (error: Error) => error.message,
+      );
+    expect(await refused({ delay: 'whenever' })).toBe('HTTP 400: invalid delay parameter: unable to parse delay');
+    expect(await refused({ delay: '5s' })).toBe('HTTP 400: invalid delay parameter: too small, please refer to the docs');
+    expect(await refused({ delay: '4d' })).toBe('HTTP 400: invalid delay parameter: too large, please refer to the docs');
+    await expect(sendAttachment(server, 'inbox', { data: new Uint8Array([1]), filename: 'a.txt', delay: '1d' })).rejects.toThrow(
+      'HTTP 400: invalid request: attachment expiry before delayed delivery date',
+    );
+    expect(fake.published).toEqual([]);
+  });
+
+  it('reads no delivery time from an answer that is not a message', async () => {
+    expect(await publishedTime(new Response(''))).toBeUndefined();
+    expect(await publishedTime(new Response('<html>'))).toBeUndefined();
+    expect(await publishedTime(new Response(null))).toBeUndefined();
+    expect(await publishedTime(Response.json({ id: 'm', event: 'message', topic: 'a', time: 'soon' }))).toBeUndefined();
   });
 });

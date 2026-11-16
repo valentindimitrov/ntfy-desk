@@ -1,6 +1,7 @@
 // Settings view: server and fallback URL, token or username and password, topics, notification rules,
 // badge, notification, history and inbox display preferences, include-URL option, theme and the
-// keyboard shortcuts. Per-topic options are staged until Apply.
+// keyboard shortcuts. Per-topic options (message sync, desktop notifications, send defaults) are
+// staged until Apply.
 
 import { browser } from 'wxt/browser';
 import {
@@ -30,6 +31,18 @@ import {
 } from '@/utils/rules';
 import { getShortcuts, openShortcutSettings } from '@/utils/commands';
 import { DEFAULT_PREFERENCES, PREFERENCE_KEYS, getPreferences, parsePreferences, type Preferences } from '@/utils/preferences';
+import {
+  PRIORITIES,
+  PRIORITY_LABELS,
+  SEND_DEFAULTS_KEY,
+  getSendDefaults,
+  isPriority,
+  sameSendDefaults,
+  splitTags,
+  storedSendDefaults,
+  type SendDefaults,
+  sendDefaultsFit,
+} from '@/utils/send-defaults';
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics } from '@/utils/sync-modes';
 import { loadNotifications } from './receive';
 import { updateTopicOptions } from './send';
@@ -270,19 +283,33 @@ async function saveServerSettings(): Promise<void> {
 
 const pendingModes = new Map<string, boolean>();
 const pendingRules = new Map<string, NotifyRule>();
+/** Send defaults edited and not applied yet; null removes a topic's defaults */
+const pendingDefaults = new Map<string, SendDefaults | null>();
 let applyingTopicSettings = false;
 
 async function refreshTopics(): Promise<void> {
-  const [{ topics }, modes, rules] = await Promise.all([browser.storage.sync.get('topics'), getSyncDeletionTopics(), getTopicRules()]);
+  const [{ topics }, modes, rules, defaults] = await Promise.all([
+    browser.storage.sync.get('topics'),
+    getSyncDeletionTopics(),
+    getTopicRules(),
+    getSendDefaults(),
+  ]);
   state.topics = parseTopics(topics);
   state.syncDeletionTopics = modes;
   state.notifyRules = rules;
+  state.topicSendDefaults = defaults;
   renderTopics();
   updateTopicOptions();
 }
 
 function updateApplyButton(): void {
-  elements.applyTopicSettings.disabled = applyingTopicSettings || (pendingModes.size === 0 && pendingRules.size === 0);
+  elements.applyTopicSettings.disabled =
+    applyingTopicSettings || (pendingModes.size === 0 && pendingRules.size === 0 && pendingDefaults.size === 0);
+}
+
+function topicEdited(): void {
+  elements.topicSettingsStatus.textContent = '';
+  updateApplyButton();
 }
 
 function topicSelect(label: string, options: [string, string][], value: string, onChange: (value: string) => void): HTMLTableCellElement {
@@ -299,11 +326,52 @@ function topicSelect(label: string, options: [string, string][], value: string, 
   select.value = value;
   select.addEventListener('change', () => {
     onChange(select.value);
-    elements.topicSettingsStatus.textContent = '';
-    updateApplyButton();
+    topicEdited();
   });
   cell.append(select);
   return cell;
+}
+
+/**
+ * A topic's send defaults: the priority select ("Last used" for none) and the tags that go with it.
+ * The tags field is only in use with a priority: together they are what the Send form starts with.
+ */
+function sendDefaultsCells(topic: string): HTMLTableCellElement[] {
+  const saved = state.topicSendDefaults.get(topic);
+  const shown = pendingDefaults.has(topic) ? (pendingDefaults.get(topic) ?? undefined) : saved;
+
+  const tagsCell = document.createElement('td');
+  const tags = document.createElement('input');
+  tags.type = 'text';
+  tags.className = 'topic-setting-input';
+  tags.setAttribute('aria-label', `Send tags for ${topic}`);
+  tags.autocomplete = 'off';
+  tags.spellcheck = false;
+  tags.value = shown ? shown.tags.join(', ') : '';
+  const showTagsState = (enabled: boolean) => {
+    tags.disabled = !enabled;
+    tags.placeholder = enabled ? 'None' : 'Last used';
+  };
+  showTagsState(shown !== undefined);
+  tagsCell.append(tags);
+
+  const stage = () => {
+    const priority = Number(select.value);
+    const edited = isPriority(priority) ? { priority, tags: splitTags(tags.value) } : undefined;
+    showTagsState(edited !== undefined);
+    if (sameSendDefaults(edited, saved)) pendingDefaults.delete(topic);
+    else pendingDefaults.set(topic, edited ?? null);
+    topicEdited();
+  };
+  const priorityCell = topicSelect(
+    `Send priority for ${topic}`,
+    [['', 'Last used'], ...PRIORITIES.map((priority): [string, string] => [String(priority), PRIORITY_LABELS[priority]])],
+    shown ? String(shown.priority) : '',
+    () => stage(),
+  );
+  const select = priorityCell.querySelector('select')!;
+  tags.addEventListener('input', stage);
+  return [priorityCell, tagsCell];
 }
 
 function renderTopicSettings(): void {
@@ -341,12 +409,15 @@ function renderTopicSettings(): void {
             else pendingRules.set(topic, value);
           },
         ),
+        ...sendDefaultsCells(topic),
       );
       return row;
     }),
   );
   updateApplyButton();
 }
+
+class SendDefaultsTooLarge extends Error {}
 
 async function applyTopicSettings(): Promise<void> {
   applyingTopicSettings = true;
@@ -355,7 +426,12 @@ async function applyTopicSettings(): Promise<void> {
   try {
     // Merge only edited fields so applying a draft cannot overwrite unrelated synced settings.
     const enabledDeletions = await editSettings(async () => {
-      const [{ topics }, modes, rules] = await Promise.all([browser.storage.sync.get('topics'), getSyncDeletionTopics(), getTopicRules()]);
+      const [{ topics }, modes, rules, defaults] = await Promise.all([
+        browser.storage.sync.get('topics'),
+        getSyncDeletionTopics(),
+        getTopicRules(),
+        getSendDefaults(),
+      ]);
       let enabled = false;
       for (const topic of parseTopics(topics)) {
         const mode = pendingModes.get(topic);
@@ -367,17 +443,29 @@ async function applyTopicSettings(): Promise<void> {
         }
         const rule = pendingRules.get(topic);
         if (rule !== undefined) rules.set(topic, rule);
+        const sendDefaults = pendingDefaults.get(topic);
+        if (sendDefaults) defaults.set(topic, sendDefaults);
+        else if (sendDefaults === null) defaults.delete(topic);
       }
-      await saveSync({ [SYNC_DELETION_TOPICS_KEY]: [...modes], [NOTIFY_RULES_KEY]: storedTopicRules(rules) });
+      if (pendingDefaults.size > 0 && !sendDefaultsFit(defaults)) throw new SendDefaultsTooLarge();
+      await saveSync({
+        [SYNC_DELETION_TOPICS_KEY]: [...modes],
+        [NOTIFY_RULES_KEY]: storedTopicRules(rules),
+        ...(pendingDefaults.size > 0 && { [SEND_DEFAULTS_KEY]: storedSendDefaults(defaults) }),
+      });
       return enabled;
     });
     pendingModes.clear();
     pendingRules.clear();
+    pendingDefaults.clear();
     await refreshTopics();
     void updateServerAccessUI();
     elements.topicSettingsStatus.textContent = enabledDeletions ? 'Applied. Cached deletion check requested.' : 'Applied.';
-  } catch {
-    elements.topicSettingsStatus.textContent = 'Could not apply topic settings. Try again.';
+  } catch (error) {
+    elements.topicSettingsStatus.textContent =
+      error instanceof SendDefaultsTooLarge
+        ? 'Nothing applied: the send tags of all topics together are too long to sync. Shorten or remove some.'
+        : 'Could not apply topic settings. Try again.';
   } finally {
     applyingTopicSettings = false;
     elements.topicSettingsRows.inert = false;
@@ -415,12 +503,18 @@ function renderTopics(): void {
 async function changeTopics(edit: (topics: string[]) => void, removed?: string): Promise<void> {
   try {
     await editSettings(async () => {
-      const [{ topics }, modes, rules] = await Promise.all([browser.storage.sync.get('topics'), getSyncDeletionTopics(), getTopicRules()]);
+      const [{ topics }, modes, rules, defaults] = await Promise.all([
+        browser.storage.sync.get('topics'),
+        getSyncDeletionTopics(),
+        getTopicRules(),
+        getSendDefaults(),
+      ]);
       const current = parseTopics(topics);
       edit(current);
       const updates: Record<string, unknown> = { topics: current.join(',') };
       if (removed && modes.delete(removed)) updates[SYNC_DELETION_TOPICS_KEY] = [...modes];
       if (removed && rules.delete(removed)) updates[NOTIFY_RULES_KEY] = storedTopicRules(rules);
+      if (removed && defaults.delete(removed)) updates[SEND_DEFAULTS_KEY] = storedSendDefaults(defaults);
       await saveSync(updates);
     });
     await refreshTopics();
@@ -434,6 +528,7 @@ async function removeTopic(topic: string): Promise<void> {
   if (state.receiveFilter === topic) void saveReceiveFilter(null).catch(() => {});
   pendingModes.delete(topic);
   pendingRules.delete(topic);
+  pendingDefaults.delete(topic);
   await changeTopics((current) => {
     const index = current.indexOf(topic);
     if (index >= 0) current.splice(index, 1);
@@ -489,6 +584,7 @@ export async function populateSettings(): Promise<void> {
   });
   pendingModes.clear();
   pendingRules.clear();
+  pendingDefaults.clear();
   elements.topicSettingsStatus.textContent = '';
   fillServerFields();
   elements.includeUrlCheckbox.checked = state.includeUrl;
@@ -560,7 +656,7 @@ export function setupSettings(): void {
     if (
       area === 'sync' &&
       elements.settingsView.classList.contains('active') &&
-      (changes.topics || changes[SYNC_DELETION_TOPICS_KEY] || changes[NOTIFY_RULES_KEY])
+      (changes.topics || changes[SYNC_DELETION_TOPICS_KEY] || changes[NOTIFY_RULES_KEY] || changes[SEND_DEFAULTS_KEY])
     ) {
       void refreshTopics().catch(() => showSettingsStatus('Could not refresh topics', 'error'));
     }

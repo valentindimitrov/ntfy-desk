@@ -4,6 +4,7 @@ import { browser } from 'wxt/browser';
 import { getConfig, getStoredAuth, type Credentials, type NtfyMessage } from '@/utils/ntfy';
 import { DEFAULT_PREFERENCES, getPreferences, type Preferences } from '@/utils/preferences';
 import { getTopicRules, type TopicRules } from '@/utils/rules';
+import { DEFAULT_PRIORITY, getSendDefaults, isPriority, type Priority, type TopicSendDefaults } from '@/utils/send-defaults';
 import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFileInfo } from '@/utils/stored-files';
 import { getSyncDeletionTopics } from '@/utils/sync-modes';
@@ -38,7 +39,17 @@ export interface PopupState {
 
   // Send
   tags: string[];
-  selectedPriority: number;
+  selectedPriority: Priority;
+  /** The priority and tags used last on a topic without send defaults (storage.sync priority, lastTags) */
+  rememberedPriority: Priority;
+  rememberedTags: string[];
+  /** Send priority and tags per topic (utils/send-defaults.ts) */
+  topicSendDefaults: TopicSendDefaults;
+  /**
+   * The priority or tags were set by hand for the message in progress (or restored from its draft):
+   * they stay as they are when the send topic changes, until the message is sent or they are reset.
+   */
+  customPriorityTags: boolean;
   attachments: StoredFileInfo[];
   isSending: boolean;
   /** The tab title last put in the Title field automatically */
@@ -89,7 +100,11 @@ export const state: PopupState = {
   syncDeletionTopics: new Set(),
   page: { url: '', title: '' },
   tags: [],
-  selectedPriority: 3,
+  selectedPriority: DEFAULT_PRIORITY,
+  rememberedPriority: DEFAULT_PRIORITY,
+  rememberedTags: [],
+  topicSendDefaults: new Map(),
+  customPriorityTags: false,
   attachments: [],
   isSending: false,
   autoTitle: '',
@@ -115,20 +130,29 @@ export async function loadSettings(): Promise<void> {
   state.theme = items.theme === 'light' || items.theme === 'dark' ? items.theme : 'auto';
   state.sendAnotherEnabled = items.sendAnotherEnabled === true;
   state.sendAsZipEnabled = items.sendAsZipEnabled === true;
-  if (typeof items.priority === 'number') {
-    state.selectedPriority = items.priority;
-  }
+  state.rememberedPriority = parseRememberedPriority(items.priority);
+  state.rememberedTags = parseRememberedTags(items.lastTags);
+  state.selectedPriority = state.rememberedPriority;
+  state.tags = [...state.rememberedTags];
   if (typeof items.lastTopic === 'string' && state.topics.includes(items.lastTopic)) {
     state.lastTopic = items.lastTopic;
   }
-  if (Array.isArray(items.lastTags)) {
-    state.tags = items.lastTags.filter((tag): tag is string => typeof tag === 'string');
-  }
-  [state.notifyRules, state.syncDeletionTopics, state.preferences] = await Promise.all([
+  [state.notifyRules, state.syncDeletionTopics, state.preferences, state.topicSendDefaults] = await Promise.all([
     getTopicRules(),
     getSyncDeletionTopics(),
     getPreferences(),
+    getSendDefaults(),
   ]);
+}
+
+/** storage.sync `priority`: the priority used last; the default for anything else */
+export function parseRememberedPriority(stored: unknown): Priority {
+  return isPriority(stored) ? stored : DEFAULT_PRIORITY;
+}
+
+/** storage.sync `lastTags`: the tags used last */
+export function parseRememberedTags(stored: unknown): string[] {
+  return Array.isArray(stored) ? stored.filter((tag): tag is string => typeof tag === 'string') : [];
 }
 
 export async function loadReceiveFilter(): Promise<void> {

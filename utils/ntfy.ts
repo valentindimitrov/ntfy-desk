@@ -309,6 +309,15 @@ export interface PublishOptions {
   title?: string;
   priority?: number;
   tags?: string;
+  /** http(s) URL opened when the notification is clicked (X-Click) */
+  click?: string;
+  /** The message is Markdown (X-Markdown) */
+  markdown?: boolean;
+  /**
+   * Deliver later (X-Delay): a duration ("30m", "2 hours", "1 day"), a unix time, an RFC 3339 time
+   * or English such as "tomorrow 9am". The server decides what it accepts (10 s to 3 days by default).
+   */
+  delay?: string;
 }
 
 export interface AttachmentOptions extends PublishOptions {
@@ -462,7 +471,36 @@ export function encodeHeaderValue(value: string | undefined): string {
   return value;
 }
 
-function setPublishHeaders(headers: Headers, { title, priority, tags }: PublishOptions): void {
+/** Longest delay value sent; ntfy's own formats are far shorter */
+export const MAX_DELAY_LENGTH = 100;
+
+/** Why a click URL can't be sent ('' if it can): http(s) only, and without a username or password */
+export function clickUrlError(value: string): string {
+  if (!isHttpUrl(value)) return 'Enter a complete http:// or https:// click URL, or leave it empty';
+  const { username, password } = new URL(value);
+  // Every subscriber of the topic receives the URL
+  return username || password ? 'Remove the username and password from the click URL' : '';
+}
+
+/** Why a delay can't be sent ('' if it can). The server checks the format and its own limits. */
+export function delayError(value: string): string {
+  return value.length > MAX_DELAY_LENGTH ? `Use at most ${MAX_DELAY_LENGTH} characters for the delay` : '';
+}
+
+/** ntfy durations ("30m", "2 hours", Go's "1h30m") and unix times: the same moment in every time zone */
+const ZONELESS_DELAY = /^(\d+|\d+\s*(d|days?|h|hours?|m|mins?|minutes?|s|secs?|seconds?)|(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+)$/i;
+
+/** The browser's IANA time zone; '' if it isn't known */
+function localTimeZone(): string {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return /^[\w+\-/]{1,64}$/.test(zone) ? zone : '';
+  } catch {
+    return '';
+  }
+}
+
+function setPublishHeaders(headers: Headers, { title, priority, tags, click, markdown, delay }: PublishOptions): void {
   if (title) {
     headers.set('X-Title', encodeHeaderValue(title));
   }
@@ -471,6 +509,25 @@ function setPublishHeaders(headers: Headers, { title, priority, tags }: PublishO
   }
   if (tags) {
     headers.set('X-Tags', encodeHeaderValue(tags));
+  }
+  const clickUrl = click?.trim();
+  if (clickUrl) {
+    const error = clickUrlError(clickUrl);
+    if (error) throw new Error(error);
+    // As the URL parser writes it: ASCII only, without line breaks
+    headers.set('X-Click', encodeHeaderValue(new URL(clickUrl).href));
+  }
+  if (markdown) {
+    headers.set('X-Markdown', 'yes');
+  }
+  const delayValue = delay?.trim();
+  if (delayValue) {
+    const error = delayError(delayValue);
+    if (error) throw new Error(error);
+    headers.set('X-Delay', encodeHeaderValue(delayValue));
+    // "tomorrow 9am" means the user's 9am, not the server's (servers before X-Timezone ignore it)
+    const zone = ZONELESS_DELAY.test(delayValue) ? '' : localTimeZone();
+    if (zone) headers.set('X-Timezone', zone);
   }
 }
 
@@ -555,6 +612,27 @@ async function post(url: string, headers: Headers, body: BodyInit, timeout: numb
     throw await httpError(response);
   }
   return response;
+}
+
+/**
+ * The time (unix seconds) of the message a publish created, from the server's answer: for a delayed
+ * message, when it will be delivered. undefined if the answer can't be read.
+ */
+export async function publishedTime(response: Response): Promise<number | undefined> {
+  try {
+    if (!response.body) return undefined;
+    let time: number | undefined;
+    await readLines(
+      response.body,
+      (line) => {
+        time ??= parseMessageJson(line)?.time;
+      },
+      { maxBytes: MAX_MESSAGE_JSON },
+    );
+    return time;
+  } catch {
+    return undefined;
+  }
 }
 
 export function sendNotification(server: NtfyServer, topic: string, options: PublishOptions): Promise<Response> {

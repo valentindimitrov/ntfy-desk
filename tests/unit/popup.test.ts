@@ -613,6 +613,485 @@ describe('Send form', () => {
   });
 });
 
+describe('Send form: per-topic send defaults', () => {
+  const priority = () => $('#priority-chips .chip.active').dataset.priority;
+  const tags = () => [...document.querySelectorAll('#tags-container .tag-badge')].map((badge) => badge.firstChild?.textContent);
+  const reset = () => $<HTMLButtonElement>('#send-defaults-reset');
+  const pickTopic = (topic: string) => {
+    $<HTMLSelectElement>('#topic-select').value = topic;
+    $('#topic-select').dispatchEvent(new Event('change'));
+  };
+  const pickPriority = (value: number) => $(`#priority-chips .chip[data-priority="${value}"]`).click();
+  const addTag = (tag: string) => {
+    $<HTMLInputElement>('#new-tag-input').value = tag;
+    $('#new-tag-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+  };
+  const draft = async () => (await fakeBrowser.storage.local.get('draftState')).draftState as Record<string, unknown> | undefined;
+  const reopen = async (search = '') => {
+    vi.resetModules();
+    document.body.innerHTML = body;
+    await openPopup(search);
+  };
+
+  beforeEach(async () => {
+    // "inbox" is the send topic (lastTopic); "alerts" has send defaults
+    await fakeBrowser.storage.sync.set({
+      priority: 2,
+      lastTags: ['last'],
+      topicSendDefaults: [{ topic: 'alerts', priority: 5, tags: ['warning', 'server'] }],
+    });
+  });
+
+  it('shows the priority and tags used last for a topic without defaults, as before', async () => {
+    await openPopup();
+    expect([priority(), tags()]).toEqual(['2', ['last']]);
+    expect(reset().hidden).toBe(true);
+    $<HTMLTextAreaElement>('#message-input').value = 'x';
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.headers.get('X-Priority')).toBe('2');
+    expect(requests[0]!.headers.get('X-Tags')).toBe('last');
+    await vi.waitFor(() => expect(closed).toBe(true));
+  });
+
+  it("shows a topic's defaults when the popup opens on it, and sends with them", async () => {
+    await fakeBrowser.storage.sync.set({ lastTopic: 'alerts' });
+    await openPopup('?mode=page');
+    expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
+    $<HTMLTextAreaElement>('#message-input').value = 'x';
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.url).toBe('https://ntfy.example/alerts');
+    expect(requests[0]!.headers.get('X-Priority')).toBe('5');
+    expect(requests[0]!.headers.get('X-Tags')).toBe('warning,server');
+    // Sending with a topic's defaults doesn't make them the values used last
+    expect(await fakeBrowser.storage.sync.get(['priority', 'lastTags'])).toEqual({ priority: 2, lastTags: ['last'] });
+  });
+
+  it('follows the send topic: the select, and the inbox topic that overrides it', async () => {
+    await openPopup('?mode=page');
+    pickTopic('alerts');
+    expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
+    pickTopic('coolify');
+    expect([priority(), tags()]).toEqual(['2', ['last']]);
+
+    const inboxTopics = [...document.querySelectorAll<HTMLElement>('.topic-filter-btn')];
+    inboxTopics.find((button) => button.textContent === 'alerts')!.click();
+    expect($<HTMLSelectElement>('#topic-select').value).toBe('alerts');
+    expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
+    inboxTopics[0]!.click(); // All topics: back to the Send form's own topic
+    expect($<HTMLSelectElement>('#topic-select').value).toBe('coolify');
+    expect([priority(), tags()]).toEqual(['2', ['last']]);
+    await flush();
+    // Following the topic is not an edit: nothing was saved as used last or as a draft's own values
+    expect(await fakeBrowser.storage.sync.get(['priority', 'lastTags'])).toEqual({ priority: 2, lastTags: ['last'] });
+    expect(await draft()).toMatchObject({ customPriorityTags: false });
+  });
+
+  it('keeps a priority and tags set by hand when the topic changes, until they are reset', async () => {
+    await openPopup('?mode=page');
+    pickPriority(4);
+    addTag('mine');
+    expect([priority(), tags()]).toEqual(['4', ['last', 'mine']]);
+    // Equal to what "last used" now is: nothing to take back
+    expect(reset().hidden).toBe(true);
+
+    pickTopic('alerts');
+    expect([priority(), tags()]).toEqual(['4', ['last', 'mine']]);
+    expect(reset().hidden).toBe(false);
+    expect(reset().textContent).toBe('Use topic defaults');
+    await vi.waitFor(async () => expect(await draft()).toMatchObject({ customPriorityTags: true, priority: 4, tags: ['last', 'mine'] }));
+
+    reset().click();
+    expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
+    expect(reset().hidden).toBe(true);
+    pickTopic('inbox');
+    expect([priority(), tags()]).toEqual(['4', ['last', 'mine']]); // used last
+    await vi.waitFor(async () => expect(await draft()).toMatchObject({ customPriorityTags: false }));
+  });
+
+  it('remembers a change by hand as used last, except on a topic with defaults', async () => {
+    await openPopup('?mode=page');
+    pickPriority(4);
+    addTag('mine');
+    await flush();
+    expect(await fakeBrowser.storage.sync.get(['priority', 'lastTags'])).toEqual({ priority: 4, lastTags: ['last', 'mine'] });
+
+    reset().click(); // nothing differs, but the next topic's defaults apply again
+    await reopen('?mode=page');
+    await fakeBrowser.storage.local.remove('draftState');
+    await reopen('?mode=page');
+    pickTopic('alerts');
+    expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
+    pickPriority(1);
+    addTag('once');
+    $('#tags-container .tag-remove').click(); // "warning"
+    await flush();
+    expect([priority(), tags()]).toEqual(['1', ['server', 'once']]);
+    expect(reset().hidden).toBe(false);
+    expect(await fakeBrowser.storage.sync.get(['priority', 'lastTags'])).toEqual({ priority: 4, lastTags: ['last', 'mine'] });
+    expect((await fakeBrowser.storage.sync.get('topicSendDefaults')).topicSendDefaults).toEqual([
+      { topic: 'alerts', priority: 5, tags: ['warning', 'server'] },
+    ]);
+  });
+
+  it('restores the priority and tags of a draft that set them by hand, whatever the topic defaults', async () => {
+    await openPopup('?mode=page');
+    pickTopic('alerts');
+    pickPriority(3);
+    addTag('draft-tag');
+    $<HTMLInputElement>('#title-input').value = 'Unsent';
+    $('#title-input').dispatchEvent(new Event('input'));
+    await vi.waitFor(async () =>
+      expect(await draft()).toMatchObject({
+        title: 'Unsent',
+        topic: 'alerts',
+        priority: 3,
+        tags: ['warning', 'server', 'draft-tag'],
+        customPriorityTags: true,
+      }),
+    );
+
+    await reopen();
+    expect($<HTMLSelectElement>('#topic-select').value).toBe('alerts');
+    expect($<HTMLInputElement>('#title-input').value).toBe('Unsent');
+    expect([priority(), tags()]).toEqual(['3', ['warning', 'server', 'draft-tag']]);
+    expect(reset().hidden).toBe(false);
+    pickTopic('inbox');
+    expect([priority(), tags()]).toEqual(['3', ['warning', 'server', 'draft-tag']]);
+  });
+
+  it("lets a draft that never set them follow the topic's defaults, also ones changed since", async () => {
+    await openPopup('?mode=page');
+    pickTopic('alerts');
+    $<HTMLInputElement>('#title-input').value = 'Unsent';
+    $('#title-input').dispatchEvent(new Event('input'));
+    await vi.waitFor(async () => expect(await draft()).toMatchObject({ title: 'Unsent', topic: 'alerts', customPriorityTags: false }));
+    await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'alerts', priority: 4, tags: ['changed'] }] });
+
+    await reopen();
+    expect($<HTMLInputElement>('#title-input').value).toBe('Unsent');
+    expect([priority(), tags()]).toEqual(['4', ['changed']]);
+  });
+
+  it('ignores invalid priority and tags in a stored draft', async () => {
+    await fakeBrowser.storage.local.set({ draftState: { topic: 'coolify', customPriorityTags: true, priority: 9, tags: ['ok', 7] } });
+    await openPopup();
+    expect([priority(), tags()]).toEqual(['2', ['ok']]);
+  });
+
+  it("starts the next message from the topic's defaults again after a send", async () => {
+    await openPopup('?mode=page');
+    pickTopic('alerts');
+    pickPriority(1);
+    $<HTMLTextAreaElement>('#message-input').value = 'x';
+    $('#send-btn').click();
+    await vi.waitFor(() => expect($('#status').textContent).toBe('Notification sent!'));
+    expect(requests[0]!.headers.get('X-Priority')).toBe('1');
+    expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
+    expect(reset().hidden).toBe(true);
+    expect(await draft()).toBeUndefined();
+  });
+
+  it('follows defaults and last-used values changed in another view or through sync, unless set by hand', async () => {
+    await openPopup('?mode=page');
+    await fakeBrowser.storage.sync.set({ priority: 1, lastTags: ['elsewhere'] });
+    await vi.waitFor(() => expect([priority(), tags()]).toEqual(['1', ['elsewhere']]));
+    await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'inbox', priority: 4, tags: [] }] });
+    await vi.waitFor(() => expect([priority(), tags()]).toEqual(['4', []]));
+    // An invalid value from another device reads as no defaults
+    await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'inbox', priority: 11, tags: 'x' }] });
+    await vi.waitFor(() => expect([priority(), tags()]).toEqual(['1', ['elsewhere']]));
+
+    pickPriority(3);
+    await flush();
+    await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'inbox', priority: 5, tags: ['late'] }] });
+    await flush();
+    expect([priority(), tags()]).toEqual(['3', ['elsewhere']]);
+    expect(reset().hidden).toBe(false);
+  });
+
+  it('reads an invalid stored priority as the default priority', async () => {
+    await fakeBrowser.storage.sync.set({ priority: 42, lastTags: 'x' });
+    await openPopup();
+    expect([priority(), tags()]).toEqual(['3', []]);
+  });
+});
+
+describe('Send form: more options', () => {
+  const click = () => $<HTMLInputElement>('#click-input');
+  const markdown = () => $<HTMLInputElement>('#markdown-checkbox');
+  const delaySelect = () => $<HTMLSelectElement>('#delay-select');
+  const delayInput = () => $<HTMLInputElement>('#delay-input');
+  const type = (input: HTMLInputElement, value: string) => {
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+  };
+  const chooseDelay = (value: string) => {
+    delaySelect().value = value;
+    delaySelect().dispatchEvent(new Event('change'));
+  };
+  const fill = (options: { click?: string; markdown?: boolean; delay?: string; custom?: string }) => {
+    if (options.click !== undefined) type(click(), options.click);
+    if (options.markdown) {
+      markdown().checked = true;
+      markdown().dispatchEvent(new Event('change'));
+    }
+    if (options.delay !== undefined) chooseDelay(options.delay);
+    if (options.custom !== undefined) type(delayInput(), options.custom);
+  };
+  const optionHeaders = (headers: Headers) => ['X-Click', 'X-Markdown', 'X-Delay'].map((name) => headers.get(name));
+  const draft = async () => (await fakeBrowser.storage.local.get('draftState')).draftState as Record<string, unknown> | undefined;
+  /** The server's answer to a publish: the message, delivered `seconds` from now */
+  const answerWithDelivery = (seconds: number) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, headers: new Headers(init.headers), body: init.body });
+        return Response.json({ id: 'm1', event: 'message', topic: 'inbox', time: Math.floor(Date.now() / 1000) + seconds });
+      }),
+    );
+
+  it('is closed and empty at first, and sends none of the options', async () => {
+    await openPopup('?mode=page');
+    expect($<HTMLDetailsElement>('#more-options').open).toBe(false);
+    expect($('#more-options-active').textContent).toBe('');
+    expect(delayInput().hidden).toBe(true);
+    $<HTMLTextAreaElement>('#message-input').value = 'plain';
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(optionHeaders(requests[0]!.headers)).toEqual([null, null, null]);
+  });
+
+  it('sends the click URL, Markdown and delay as headers, and says the message is scheduled', async () => {
+    answerWithDelivery(30 * 60);
+    await openPopup(); // the toolbar popup, which closes after an immediate send
+    fill({ click: 'https://example.com/ticket/7', markdown: true, delay: '30m' });
+    expect($('#more-options-active').textContent).toBe('(URL, Markdown, delay)');
+    expect($('#delay-hint').textContent).toBe('The server sets the limits: 10 seconds to 3 days by default.');
+    $<HTMLTextAreaElement>('#message-input').value = '**later**';
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.url).toBe('https://ntfy.example/inbox');
+    expect(requests[0]!.body).toBe('**later**');
+    expect(optionHeaders(requests[0]!.headers)).toEqual(['https://example.com/ticket/7', 'yes', '30m']);
+
+    await vi.waitFor(() =>
+      expect($('#status').textContent).toMatch(/^Notification scheduled for .+\. It appears in the Inbox when delivered\.$/),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150)); // past the popup's 100 ms close delay
+    expect(closed).toBe(false);
+    // Cleared like the title and message, with the draft
+    expect([click().value, markdown().checked, delaySelect().value]).toEqual(['', false, '']);
+    expect($('#more-options-active').textContent).toBe('');
+    expect(await draft()).toBeUndefined();
+  });
+
+  it('says scheduled without a time when the answer has none', async () => {
+    await openPopup('?mode=page');
+    fill({ delay: '1h' });
+    $('#send-btn').click();
+    await vi.waitFor(() => expect($('#status').textContent).toBe('Notification scheduled. It appears in the Inbox when delivered.'));
+  });
+
+  it('sends a typed delay, and asks for one when the field is empty', async () => {
+    await openPopup('?mode=page');
+    fill({ delay: '__custom' });
+    expect(delayInput().hidden).toBe(false);
+    expect($('#delay-hint').textContent).toContain('"tomorrow 9am" in your time zone');
+    $('#send-btn').click();
+    await vi.waitFor(() => expect($('#status').textContent).toBe('Enter a delay such as 45m, or choose Now'));
+    expect($('#delay-error').textContent).toBe('Enter a delay such as 45m, or choose Now');
+    expect(delayInput().getAttribute('aria-invalid')).toBe('true');
+    expect($<HTMLDetailsElement>('#more-options').open).toBe(true);
+    expect(requests).toEqual([]);
+
+    fill({ custom: ' tomorrow 9am ' });
+    expect($('#delay-error').hidden).toBe(true);
+    expect(delayInput().hasAttribute('aria-invalid')).toBe(false);
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.headers.get('X-Delay')).toBe('tomorrow 9am');
+    expect(requests[0]!.headers.get('X-Timezone')).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  it.each([
+    ['example.com/page', 'Enter a complete http:// or https:// click URL, or leave it empty'],
+    ['javascript:alert(1)', 'Enter a complete http:// or https:// click URL, or leave it empty'],
+    ['https://me:secret@example.com/', 'Remove the username and password from the click URL'],
+  ])('refuses the click URL %s with a visible error, before any request', async (url, problem) => {
+    await openPopup('?mode=page');
+    fill({ click: url });
+    $<HTMLTextAreaElement>('#message-input').value = 'Keep me';
+    $('#send-btn').click();
+    await vi.waitFor(() => expect($('#status').textContent).toBe(problem));
+    expect($('#click-error').textContent).toBe(problem);
+    expect($('#click-error').hidden).toBe(false);
+    expect(click().getAttribute('aria-invalid')).toBe('true');
+    expect($<HTMLDetailsElement>('#more-options').open).toBe(true);
+    expect(requests).toEqual([]);
+    expect($<HTMLTextAreaElement>('#message-input').value).toBe('Keep me');
+
+    fill({ click: 'https://example.com/page' });
+    expect($('#click-error').hidden).toBe(true);
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.headers.get('X-Click')).toBe('https://example.com/page');
+  });
+
+  it('sends the options with each attachment', async () => {
+    await queueFiles(['a.txt'], ['b.txt']);
+    await openPopup('?mode=page');
+    fill({ click: 'https://example.com/', markdown: true, delay: '10m' });
+    expect($('#delay-hint').textContent).toContain('It refuses a delay longer than it keeps attachments (3 hours by default).');
+    $('#send-btn').click();
+    await vi.waitFor(() => expect($('#status').textContent).toBe('2 notifications scheduled. They appear in the Inbox when delivered.'));
+    expect(requests.map(({ headers }) => [headers.get('X-Filename'), ...optionHeaders(headers)])).toEqual([
+      ['a.txt', 'https://example.com/', 'yes', '10m'],
+      ['b.txt', 'https://example.com/', 'yes', '10m'],
+    ]);
+    expect(await queuedNames()).toEqual([]);
+  });
+
+  it('sends the options with the ZIP', async () => {
+    await fakeBrowser.storage.sync.set({ sendAsZipEnabled: true });
+    await queueFiles(['a.txt'], ['b.txt']);
+    answerWithDelivery(3600);
+    await openPopup('?mode=page');
+    fill({ click: 'https://example.com/', markdown: true, delay: '1h' });
+    $('#send-btn').click();
+    await vi.waitFor(() => expect($('#status').textContent).toMatch(/^ZIP scheduled for .+\. It appears in the Inbox when delivered\.$/));
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.headers.get('Content-Type')).toBe('application/zip');
+    expect(optionHeaders(requests[0]!.headers)).toEqual(['https://example.com/', 'yes', '1h']);
+  });
+
+  it("shows the server's reason when it refuses the delay, and keeps the form", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({ code: 40006, http: 400, error: 'invalid delay parameter: too large, please refer to the docs' }, { status: 400 }),
+      ),
+    );
+    await openPopup('?mode=page');
+    fill({ delay: '__custom', custom: '9 days' });
+    $<HTMLTextAreaElement>('#message-input').value = 'Keep me';
+    $('#send-btn').click();
+    await vi.waitFor(() =>
+      expect($('#status').textContent).toBe('Error: HTTP 400: invalid delay parameter: too large, please refer to the docs'),
+    );
+    expect($<HTMLTextAreaElement>('#message-input').value).toBe('Keep me');
+    expect([delaySelect().value, delayInput().value]).toEqual(['__custom', '9 days']);
+    expect(await draft()).toMatchObject({ message: 'Keep me', delay: '9 days' });
+  });
+
+  it('explains that a delayed message with a lost answer may be scheduled without showing in the Inbox', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('response connection lost');
+      }),
+    );
+    await openPopup('?mode=page');
+    fill({ delay: '30m' });
+    $('#send-btn').click();
+    await vi.waitFor(() =>
+      expect($('#status').textContent).toBe(
+        'Delivery is uncertain: the server may have scheduled the message. It only appears in the Inbox when it is delivered, so sending again can deliver it twice.',
+      ),
+    );
+    expect($('#status').classList.contains('warning')).toBe(true);
+    expect(await draft()).toMatchObject({ delay: '30m' });
+  });
+
+  it('saves the options in the draft and restores them', async () => {
+    await openPopup('?mode=page');
+    fill({ click: 'https://example.com/a', markdown: true, delay: '3h' });
+    await vi.waitFor(async () => expect(await draft()).toMatchObject({ click: 'https://example.com/a', markdown: true, delay: '3h' }));
+
+    vi.resetModules();
+    document.body.innerHTML = body;
+    await openPopup('?mode=page');
+    expect([click().value, markdown().checked, delaySelect().value, delayInput().hidden]).toEqual([
+      'https://example.com/a',
+      true,
+      '3h',
+      true,
+    ]);
+    expect($('#more-options-active').textContent).toBe('(URL, Markdown, delay)');
+
+    fill({ delay: '__custom', custom: 'tomorrow 9am' });
+    await vi.waitFor(async () => expect(await draft()).toMatchObject({ delay: 'tomorrow 9am' }));
+    vi.resetModules();
+    document.body.innerHTML = body;
+    await openPopup('?mode=page');
+    expect([delaySelect().value, delayInput().value, delayInput().hidden]).toEqual(['__custom', 'tomorrow 9am', false]);
+  });
+
+  it('ignores malformed options in a stored draft', async () => {
+    await fakeBrowser.storage.local.set({ draftState: { message: 'm', click: 7, markdown: 'yes', delay: ['1h'] } });
+    await openPopup();
+    expect([click().value, markdown().checked, delaySelect().value]).toEqual(['', false, '']);
+    expect($<HTMLTextAreaElement>('#message-input').value).toBe('m');
+  });
+
+  it('keeps options edited while a send is in progress', async () => {
+    const { promise, resolve } = Promise.withResolvers<Response>();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => promise),
+    );
+    await openPopup('?mode=page');
+    $<HTMLTextAreaElement>('#message-input').value = 'first';
+    const { send } = await import('@/entrypoints/popup/send');
+    const pending = send();
+    await flush();
+    fill({ click: 'https://example.com/next' });
+    await flush();
+    resolve(new Response(''));
+    await pending;
+    expect(click().value).toBe('https://example.com/next');
+    expect(await draft()).toMatchObject({ click: 'https://example.com/next' });
+  });
+
+  it('sends the options the form had when Send was pressed, not ones edited while the draft was saved', async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) => Promise.resolve(new Response('')));
+    vi.stubGlobal('fetch', fetchMock);
+    await openPopup('?mode=page');
+    $<HTMLTextAreaElement>('#message-input').value = 'first';
+    const answer = vi.mocked(fakeBrowser.runtime.sendMessage).getMockImplementation() as (request: unknown) => Promise<unknown>;
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+    vi.mocked(fakeBrowser.runtime.sendMessage).mockImplementation((async (request: { action?: string }) => {
+      if (request.action === 'saveDraft') await gate;
+      return answer(request);
+    }) as never);
+    const { send } = await import('@/entrypoints/popup/send');
+    const pending = send();
+    await flush();
+    fill({ click: 'https://example.com/next' });
+    release();
+    await pending;
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(post?.[1]?.body).toBe('first');
+    expect(new Headers(post?.[1]?.headers).has('X-Click')).toBe(false);
+  });
+
+  it('remembers on this device whether the section is open', async () => {
+    await openPopup();
+    const section = $<HTMLDetailsElement>('#more-options');
+    section.open = true;
+    section.dispatchEvent(new Event('toggle'));
+    await flush();
+    expect(await fakeBrowser.storage.local.get('sendOptionsOpen')).toEqual({ sendOptionsOpen: true });
+    expect(await fakeBrowser.storage.sync.get('sendOptionsOpen')).toEqual({});
+
+    vi.resetModules();
+    document.body.innerHTML = body;
+    await openPopup();
+    expect($<HTMLDetailsElement>('#more-options').open).toBe(true);
+  });
+});
+
 describe('settings', () => {
   it('asks before leaving unsaved server and credential edits', async () => {
     const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
@@ -885,6 +1364,94 @@ describe('settings', () => {
     $('.topic-remove').click();
     await flush();
     expect(await fakeBrowser.storage.sync.get('syncDeletionTopics')).toEqual({ syncDeletionTopics: ['coolify'] });
+  });
+
+  it('stages send defaults per topic until Apply, and drops them with a removed topic', async () => {
+    await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'coolify', priority: 4, tags: ['deploy'] }] });
+    await openPopup();
+    await openSettings();
+    await flush();
+    const priorities = () => [...document.querySelectorAll<HTMLSelectElement>('#topic-settings-rows td:nth-child(4) select')];
+    const tagFields = () => [...document.querySelectorAll<HTMLInputElement>('#topic-settings-rows td:nth-child(5) input')];
+    const stored = async () => (await fakeBrowser.storage.sync.get('topicSendDefaults')).topicSendDefaults;
+    expect(priorities().map((select) => [select.getAttribute('aria-label'), select.value])).toEqual([
+      ['Send priority for alerts', ''],
+      ['Send priority for coolify', '4'],
+      ['Send priority for inbox', ''],
+    ]);
+    expect(tagFields().map((input) => [input.getAttribute('aria-label'), input.value, input.disabled])).toEqual([
+      ['Send tags for alerts', '', true],
+      ['Send tags for coolify', 'deploy', false],
+      ['Send tags for inbox', '', true],
+    ]);
+    expect([...priorities()[0]!.options].map((option) => option.textContent)).toEqual([
+      'Last used',
+      'Min',
+      'Low',
+      'Default',
+      'High',
+      'Urgent',
+    ]);
+    expect($<HTMLButtonElement>('#apply-topic-settings').disabled).toBe(true);
+
+    priorities()[0]!.value = '5';
+    priorities()[0]!.dispatchEvent(new Event('change'));
+    expect(tagFields()[0]!.disabled).toBe(false);
+    tagFields()[0]!.value = ' warning, server ,, warning';
+    tagFields()[0]!.dispatchEvent(new Event('input'));
+    priorities()[1]!.value = '';
+    priorities()[1]!.dispatchEvent(new Event('change'));
+    expect(tagFields()[1]!.disabled).toBe(true);
+    expect($<HTMLButtonElement>('#apply-topic-settings').disabled).toBe(false);
+    await flush();
+    expect(await stored()).toEqual([{ topic: 'coolify', priority: 4, tags: ['deploy'] }]);
+
+    $('#apply-topic-settings').click();
+    await vi.waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
+    expect(await stored()).toEqual([{ topic: 'alerts', priority: 5, tags: ['warning', 'server'] }]);
+    expect(tagFields()[0]!.value).toBe('warning, server');
+    expect($<HTMLButtonElement>('#apply-topic-settings').disabled).toBe(true);
+    // Other per-topic settings were not invented along the way
+    expect(await fakeBrowser.storage.sync.get(['notifyRules', 'syncDeletionTopics'])).toEqual({ notifyRules: [], syncDeletionTopics: [] });
+
+    // Remove "alerts" (the first topic badge)
+    $('.topic-remove').click();
+    await vi.waitFor(async () => expect(await stored()).toEqual([]));
+  });
+
+  it('undoes a staged send default that is set back to the saved one, and leaves the others alone on Apply', async () => {
+    await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'coolify', priority: 4, tags: ['deploy'] }] });
+    await openPopup();
+    await openSettings();
+    await flush();
+    const priority = $<HTMLSelectElement>('#topic-settings-rows tr:nth-child(2) td:nth-child(4) select');
+    priority.value = '1';
+    priority.dispatchEvent(new Event('change'));
+    expect($<HTMLButtonElement>('#apply-topic-settings').disabled).toBe(false);
+    priority.value = '4';
+    priority.dispatchEvent(new Event('change'));
+    expect($<HTMLButtonElement>('#apply-topic-settings').disabled).toBe(true);
+
+    // Applying a rule only doesn't rewrite the send defaults (another view may be editing them)
+    const set = vi.spyOn(fakeBrowser.storage.sync, 'set');
+    const rule = $<HTMLSelectElement>('#topic-settings-rows td:nth-child(3) select');
+    rule.value = 'off';
+    rule.dispatchEvent(new Event('change'));
+    $('#apply-topic-settings').click();
+    await vi.waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
+    expect(set.mock.calls.flatMap(([items]) => Object.keys(items))).not.toContain('topicSendDefaults');
+  });
+
+  it('applies new send defaults to the Send form at once', async () => {
+    await openPopup('?mode=page');
+    await openSettings();
+    await flush();
+    const priority = $<HTMLSelectElement>('#topic-settings-rows tr:nth-child(3) td:nth-child(4) select'); // inbox, the send topic
+    priority.value = '4';
+    priority.dispatchEvent(new Event('change'));
+    $('#apply-topic-settings').click();
+    await vi.waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
+    expect($('#priority-chips .chip.active').dataset.priority).toBe('4');
   });
 
   const select = (id: string) => $<HTMLSelectElement>(id);
