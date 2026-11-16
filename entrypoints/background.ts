@@ -4,6 +4,7 @@
 import { browser } from 'wxt/browser';
 import { handleContextMenuClick, updateContextMenu } from '@/utils/context-menu';
 import {
+  clearNotifications,
   handleNotificationButton,
   handleNotificationClick,
   notifyCatchUp,
@@ -13,17 +14,17 @@ import {
 import { clearComposerOnStartup, handlePopupRequest } from '@/utils/messages';
 import { AUTH_ORIGINS_KEY, CREDENTIALS_KEY, getConfig, serverPermissionPattern } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
+import { addPickedFiles } from '@/utils/stored-files';
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics, parseSyncDeletionTopics } from '@/utils/sync-modes';
 
 const ALARM_NAME = 'receiver';
-/** The alarm's name while receiving used a WebSocket; cleared on update */
-const OLD_ALARM_NAME = 'ws-keepalive';
 
 export default defineBackground(() => {
   const receiver = createReceiver({
     onNewMessage: (message) => void notifyNewMessage(message),
     onCatchUp: (messages) => void notifyCatchUp(messages).catch(() => console.warn('Could not show catch-up notifications')),
     onConnected: () => void updateUnreadBadge(),
+    onRemoved: (ids) => void clearNotifications(ids),
   });
 
   // Whenever the service worker starts (browser start, install, or woken by any event)
@@ -33,7 +34,6 @@ export default defineBackground(() => {
     void updateContextMenu();
     // Reconnects and polls once a minute, also after the service worker was stopped
     void browser.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
-    void browser.alarms.clear(OLD_ALARM_NAME);
   }
 
   browser.runtime.onInstalled.addListener(setUp);
@@ -84,7 +84,7 @@ export default defineBackground(() => {
   browser.notifications.onButtonClicked.addListener((id, index) => void handleNotificationButton(id, index));
   browser.notifications.onClicked.addListener((id) => void handleNotificationClick(id));
   if (import.meta.env.MODE === 'e2e') {
-    Object.assign(globalThis, { __ntfyClickNotification: handleNotificationClick });
+    Object.assign(globalThis, { __ntfyClickNotification: handleNotificationClick, __ntfyAddPickedFiles: addPickedFiles });
   }
 
   // From the popup: a sync (when it opens, and on the Receive tab), and read and delete actions

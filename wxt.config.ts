@@ -19,7 +19,9 @@ export default defineConfig({
     name: 'ntfy Desk',
     description:
       'Send and receive ntfy notifications: desktop notifications, a message list per topic, file attachments, priority and tags',
-    // unlimitedStorage: picked attachments wait in storage.local as data URLs (utils/stored-files.ts)
+    // unlimitedStorage: storage.local holds up to 8 MiB of history plus up to 200,000 deleted ids and the sync
+    // state, beyond Chrome's 10 MB storage.local quota. It also lifts the quota for the IndexedDB attachment
+    // queue (up to 50 MiB, utils/stored-files.ts).
     permissions: ['activeTab', 'storage', 'unlimitedStorage', 'contextMenus', 'scripting', 'notifications', 'alarms'],
     // tabs: only for "Use tab URL" in the extension's own tab
     optional_permissions: ['tabs'],

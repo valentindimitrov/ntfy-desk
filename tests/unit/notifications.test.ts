@@ -5,19 +5,23 @@ import {
   handleNotificationButton,
   handleNotificationClick,
   notificationButtons,
+  clearNotifications,
   notifyCatchUp,
+  notifyNewMessage,
   showDesktopNotification,
   updateUnreadBadge,
 } from '@/utils/notifications';
+import type { StoredMessage } from '@/utils/history';
 import type { NtfyMessage } from '@/utils/ntfy';
 
 type Options = Browser.notifications.NotificationCreateOptions;
 
-const message = (id: string, extra: Partial<NtfyMessage> = {}): NtfyMessage => ({
+const message = (id: string, extra: Partial<NtfyMessage> = {}): StoredMessage => ({
   id,
   event: 'message',
   topic: 'alerts',
   time: 1,
+  serverOrigin: 'https://ntfy.example',
   ...extra,
 });
 
@@ -28,8 +32,8 @@ beforeEach(() => {
 describe('desktop notifications', () => {
   it('shows the title with the priority, and keeps high priority until dismissed', () => {
     const create = mockResolved(fakeBrowser.notifications, 'create', '');
-    showDesktopNotification(message('a', { title: 'Disk full', message: '91%', priority: 5 }));
-    showDesktopNotification(message('b', { priority: 2 }));
+    void showDesktopNotification(message('a', { title: 'Disk full', message: '91%', priority: 5 }));
+    void showDesktopNotification(message('b', { priority: 2 }));
 
     const [id, options] = callsOf<[string, Options]>(create)[0]!;
     expect(id).toBe('a');
@@ -45,14 +49,14 @@ describe('desktop notifications', () => {
 
   it('shows Markdown messages as plain text', () => {
     const create = mockResolved(fakeBrowser.notifications, 'create', '');
-    showDesktopNotification(message('md', { message: '**Disk** at [91%](https://x.example)', content_type: 'text/markdown' }));
+    void showDesktopNotification(message('md', { message: '**Disk** at [91%](https://x.example)', content_type: 'text/markdown' }));
     expect(callsOf<[string, Options]>(create)[0]![1].message).toBe('Disk at 91%');
   });
 
   it('offers an attachment button for http(s) attachments only', () => {
     const create = mockResolved(fakeBrowser.notifications, 'create', '');
-    showDesktopNotification(message('good', { attachment: { url: 'https://ntfy.example/file/a.png' } }));
-    showDesktopNotification(message('bad', { attachment: { url: 'javascript:alert(1)' } }));
+    void showDesktopNotification(message('good', { attachment: { url: 'https://ntfy.example/file/a.png' } }));
+    void showDesktopNotification(message('bad', { attachment: { url: 'javascript:alert(1)' } }));
     const buttons = callsOf<[string, Options]>(create).map((call) => call[1].buttons);
     expect(buttons).toEqual([[{ title: '🔗 Open Attachment' }], undefined]);
   });
@@ -188,7 +192,7 @@ describe('desktop notifications', () => {
     const create = mockResolved(fakeBrowser.notifications, 'create', '');
     vi.stubEnv('BROWSER', 'firefox');
     try {
-      showDesktopNotification(message('firefox', { priority: 5, attachment: { url: 'https://ntfy.example/file/a.png' } }));
+      void showDesktopNotification(message('firefox', { priority: 5, attachment: { url: 'https://ntfy.example/file/a.png' } }));
       const [, options] = callsOf<[string, Options]>(create)[0]!;
       expect(options.title).toBe('Notification [⇈ Urgent]');
       expect(options).not.toHaveProperty('requireInteraction');
@@ -210,6 +214,37 @@ describe('desktop notifications', () => {
     await handleNotificationButton('bad', 0);
     await handleNotificationButton('good', 0);
     expect(create.mock.calls).toEqual([[{ url: 'https://ntfy.example/f' }]]);
+  });
+});
+
+describe('dismissal order', () => {
+  it('never shows a notification dismissed while or before it was prepared', async () => {
+    const order: string[] = [];
+    vi.spyOn(fakeBrowser.notifications, 'create').mockImplementation(((id: string) => {
+      order.push(`create ${id}`);
+      return Promise.resolve(id);
+    }) as never);
+    vi.spyOn(fakeBrowser.notifications, 'clear').mockImplementation(((id: string) => {
+      order.push(`clear ${id}`);
+      return Promise.resolve(true);
+    }) as never);
+
+    // The topic rule is still being read when the message is marked read
+    const shown = notifyNewMessage(message('pending'));
+    const cleared = clearNotifications(['pending']);
+    await Promise.all([shown, cleared]);
+    // Dismissed before it was shown: it isn't shown at all, and the dismissal still runs
+    expect(order).toEqual(['clear pending']);
+
+    await clearNotifications(['early']);
+    await notifyNewMessage(message('early'));
+    await notifyCatchUp([message('early')]);
+    expect(order.filter((entry) => entry.startsWith('create'))).toEqual([]);
+
+    // One not dismissed is shown, and a later dismissal follows it
+    await Promise.all([notifyNewMessage(message('kept')), Promise.resolve().then(() => undefined)]);
+    await clearNotifications(['kept']);
+    expect(order.slice(-2)).toEqual(['create kept', 'clear kept']);
   });
 });
 

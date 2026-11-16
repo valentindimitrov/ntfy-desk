@@ -4,11 +4,11 @@ import { browser, type Browser } from 'wxt/browser';
 import { sendToBackground, type Draft } from '@/utils/messages';
 import { getConfig, isHttpUrl, PublishUncertainError, sendAttachment, sendNotification, splitCredentials } from '@/utils/ntfy';
 import {
-  STORED_FILES_KEY,
+  STORED_FILES_REVISION_KEY,
   addPickedFiles,
-  decodeDataUrl,
   dispatchStoredUpload,
   formatFileSize,
+  listStoredFiles,
   readStoredFiles,
   removeStoredFiles,
   type StoredFile,
@@ -287,7 +287,7 @@ export async function restoreDraft(): Promise<void> {
 
 export async function loadAttachments(): Promise<void> {
   try {
-    state.attachments = await readStoredFiles();
+    state.attachments = await listStoredFiles();
   } catch (error) {
     console.error('Error loading stored files:', error);
     state.attachments = [];
@@ -535,7 +535,8 @@ async function sendNow(): Promise<void> {
     if (files.length > 1 && elements.zipCheckbox.checked) {
       while (files.length > 1) {
         const ids = files.map(({ id }) => id);
-        const zip = await createZip(files.map((file) => ({ name: file.name, data: decodeDataUrl(file.data) })));
+        const entries = await Promise.all(files.map(async (file) => ({ name: file.name, data: await file.blob.arrayBuffer() })));
+        const zip = await createZip(entries);
         const filename = getZipFilename();
         const sent = await dispatchStoredUpload(ids, () =>
           sendAttachment(server, topic, { data: zip, filename, contentType: 'application/zip', message, title, priority, tags }),
@@ -545,7 +546,7 @@ async function sendNow(): Promise<void> {
           return;
         }
         // A file disappeared during compression. Rebuild using only the original IDs still queued.
-        const current = new Set((await readStoredFiles()).map(({ id }) => id));
+        const current = new Set((await listStoredFiles()).map(({ id }) => id));
         files = files.filter(({ id }) => current.has(id));
       }
     }
@@ -556,7 +557,9 @@ async function sendNow(): Promise<void> {
     let filesNotCleared = false;
     for (const file of files) {
       try {
-        const data = decodeDataUrl(file.data) as BodyInit;
+        // slice(): the same bytes without the picked file's type, so fetch adds no Content-Type
+        // header (ntfy can take text/markdown there as the message format); ntfy detects the type itself
+        const data = file.blob.slice();
         const dispatched = await dispatchStoredUpload([file.id], () =>
           sendAttachment(server, topic, { data, filename: file.name, message, title, priority, tags }),
         );
@@ -650,9 +653,9 @@ export function setupSend(): void {
     persistDraft();
   });
 
-  // The file picker window writes the attachments to storage
+  // The file picker window and other views change the queue and then its revision
   browser.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[STORED_FILES_KEY]) {
+    if (area === 'local' && changes[STORED_FILES_REVISION_KEY]) {
       void loadAttachments();
     }
   });

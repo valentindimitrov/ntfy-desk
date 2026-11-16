@@ -339,12 +339,13 @@ export async function getStoredAuth(): Promise<Pick<NtfyConfig, 'accessToken' | 
 
 /**
  * Server URLs and topics come from storage.sync; the access token and the username and password stay
- * in storage.local, so browser sync doesn't copy them. A synced URL that still carries user:password@
- * (saved by an earlier version) is moved: credentials to storage.local, the URL without them.
+ * in storage.local, so browser sync doesn't copy them. A synced URL is used without userinfo, query
+ * string or fragment (cleaned in storage.sync too); credentials found in it are discarded, never used.
  *
  * The token and password are used only with the server origins approved on this device (in its
  * settings): a server URL changed through browser sync gets no credentials until the user confirms
- * (heldBackFrom). Without approvals stored yet (an earlier version), the current servers are approved.
+ * (heldBackFrom). Until this device records approvals (the first token or password saved without
+ * changing the URLs), the servers configured then are approved.
  */
 export async function getConfig(): Promise<NtfyConfig> {
   const [synced, local] = await Promise.all([
@@ -354,14 +355,9 @@ export async function getConfig(): Promise<NtfyConfig> {
   const main = splitCredentials(isHttpUrl(synced.apiUrl) ? synced.apiUrl : '');
   const fallback = splitCredentials(isHttpUrl(synced.fallbackUrl) ? synced.fallbackUrl : '');
   const stored = local[CREDENTIALS_KEY];
-  const credentials = isCredentials(stored) ? stored : (main.credentials ?? fallback.credentials);
+  const credentials = isCredentials(stored) ? stored : null;
 
-  if (main.credentials || fallback.credentials) {
-    if (!isCredentials(stored)) {
-      await setCredentials(credentials);
-    }
-  }
-  // Remove incomplete URL edits and strip userinfo, query strings and fragments from older URLs.
+  // Remove incomplete URL edits, and userinfo, query strings and fragments from URLs synced from elsewhere.
   const cleanedUrls = {
     ...(synced.apiUrl !== undefined && synced.apiUrl !== main.url && { apiUrl: main.url }),
     ...(synced.fallbackUrl !== undefined && synced.fallbackUrl !== fallback.url && { fallbackUrl: fallback.url }),
@@ -407,14 +403,14 @@ function base64Encode(value: string): string {
 }
 
 /**
- * Authorization header value: Bearer with the access token, else Basic with the username and password
- * (else with credentials still in the URL); '' without authentication
+ * Authorization header value: Bearer with the access token, else Basic with the username and password;
+ * '' without authentication. Userinfo in the URL is never used.
  */
 export function buildAuthHeaderValue(server: NtfyServer): string {
   if (server.accessToken) {
     return `Bearer ${server.accessToken}`;
   }
-  const credentials = server.credentials ?? splitCredentials(server.apiUrl).credentials;
+  const credentials = server.credentials;
   if (credentials && (credentials.username || credentials.password)) {
     return `Basic ${base64Encode(`${credentials.username}:${credentials.password}`)}`;
   }
@@ -486,6 +482,50 @@ export function isNoResponse(error: unknown): boolean {
   return error instanceof TypeError || (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'));
 }
 
+/** Most of an error response read for ntfy's JSON error, and the longest error text shown */
+const MAX_ERROR_BODY = 4096;
+const MAX_ERROR_TEXT = 200;
+
+/** The `error` text of ntfy's JSON error body ({"code":42901,"http":429,"error":"..."}); '' if there's none */
+async function readErrorText(response: Response): Promise<string> {
+  const body = response.body;
+  if (!body) return '';
+  const reader = body.getReader();
+  const parts: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (bytes <= MAX_ERROR_BODY) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      bytes += value.byteLength;
+    }
+    if (bytes > MAX_ERROR_BODY) {
+      await reader.cancel().catch(() => {});
+      return '';
+    }
+    const json: unknown = JSON.parse(new TextDecoder().decode(await new Blob(parts as BlobPart[]).arrayBuffer()));
+    const error = isObject(json) ? json.error : undefined;
+    if (typeof error !== 'string') return '';
+    // eslint-disable-next-line no-control-regex
+    const text = error.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+    return text.length > MAX_ERROR_TEXT ? `${text.slice(0, MAX_ERROR_TEXT - 1)}…` : text;
+  } catch {
+    return '';
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * "HTTP <status>: <ntfy's error text>", else the status text (empty over HTTP/2), else "HTTP <status>".
+ * The prefix stays: the receiver reads the status from it and shows only that.
+ */
+export async function httpError(response: Response): Promise<Error> {
+  const detail = (await readErrorText(response)) || response.statusText.trim();
+  return new Error(detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`);
+}
+
 export class PublishUncertainError extends Error {
   constructor() {
     super('Delivery is uncertain. Check the Inbox before retrying.');
@@ -512,7 +552,7 @@ async function post(url: string, headers: Headers, body: BodyInit, timeout: numb
     throw error;
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    throw await httpError(response);
   }
   return response;
 }
@@ -646,9 +686,8 @@ export async function getNotifications(
   {
     includeDeletions = false,
     signal = AbortSignal.timeout(TIMEOUTS.poll),
-    messageIds,
     savedMessages = [],
-  }: { includeDeletions?: boolean; signal?: AbortSignal; messageIds?: ReadonlySet<string>; savedMessages?: NtfyMessage[] } = {},
+  }: { includeDeletions?: boolean; signal?: AbortSignal; savedMessages?: NtfyMessage[] } = {},
 ) {
   if (!server.apiUrl) {
     throw new Error('API URL is not configured');
@@ -663,14 +702,16 @@ export async function getNotifications(
     signal,
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    throw await httpError(response);
   }
 
   const retained = new Map<NtfyMessage, { length: number; order: number }>();
   const saved = new Map(savedMessages.map((message) => [message.id, message]));
   const sequences = new Set(savedMessages.map(sequenceOf));
-  // A bounded tail is enough for new publishes. Keep older deletions and provenance
-  // that can still affect saved rows, in the same order as the tail.
+  // A bounded tail is enough for new publishes. Keep older deletions of saved sequences, and the
+  // publishes of saved rows (on every topic), in the same order as the tail: within one second, the
+  // saved row's position decides whether a deletion applies to it and whether a publish of its
+  // sequence is an update of it.
   const protectedEvents = new Map<string, { event: NtfyMessage; order: number }>();
   let order = 0;
   let buffered = 0;
@@ -690,17 +731,15 @@ export async function getNotifications(
         if (
           !message ||
           message.topic !== topic ||
-          (messageIds && !messageIds.has(message.id)) ||
           (message.event !== 'message' && !(includeDeletions && message.event === 'message_delete'))
         )
           return;
 
         const position = order++;
-        if (includeDeletions && saved.size > 0) {
+        if (saved.size > 0) {
           const existing = saved.get(message.id);
           const sequence = sequenceOf(message);
           if (message.event === 'message' && existing?.time === message.time && !protectedEvents.has(`publish:${message.id}`)) {
-            sequences.add(sequence);
             const { id, topic, time, event, sequence_id } = message;
             protectedEvents.set(`publish:${id}`, { event: { id, topic, time, event, sequence_id }, order: position });
           } else if (message.event === 'message_delete' && sequences.has(sequence)) {
@@ -723,8 +762,13 @@ export async function getNotifications(
   if (!complete && retained.size === 0) throw new Error('Response too large');
   const byPosition = new Map([...protectedEvents.values()].map(({ event, order }) => [order, event]));
   for (const [event, position] of retained) byPosition.set(position.order, event);
+  const full = new Set([...retained.keys()].map(({ id }) => id));
   return {
     events: [...byPosition].sort(([a], [b]) => a - b).map(([, event]) => event),
+    /** Publishes of saved rows outside the retained tail: their position only, without content */
+    positionOnly: [...protectedEvents.values()]
+      .filter(({ event }) => event.event === 'message' && !full.has(event.id))
+      .map(({ event }) => event.id),
     serverOrigin: new URL(response.url || url).origin,
     truncated: truncated || !complete,
     scanLimited: !complete,

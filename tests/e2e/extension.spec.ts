@@ -294,11 +294,10 @@ test.describe('sending', () => {
     serviceWorker,
   }) => {
     await configure({ topics: 'alerts' });
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({
-        storedFiles: [{ id: 'shared', name: 'shared.txt', type: 'text/plain', size: 6, data: 'data:text/plain;base64,c2hhcmVk' }],
-      }),
-    );
+    await serviceWorker.evaluate(() => {
+      const worker = globalThis as unknown as { __ntfyAddPickedFiles: (files: File[]) => Promise<void> };
+      return worker.__ntfyAddPickedFiles([new File(['shared'], 'shared.txt', { type: 'text/plain' })]);
+    });
     const first = await openPopup('?mode=page');
     const second = await openPopup('?mode=page');
     await expect(first.locator('#file-preview')).toContainText('shared.txt');
@@ -561,11 +560,18 @@ test.describe('sending', () => {
     await expect(message).toHaveValue('Check disk space');
 
     await page.getByRole('button', { name: 'alerts', exact: true }).click();
-    await page.getByRole('searchbox', { name: 'Search messages' }).press('ControlRight+Enter');
+    // The shortcut sends only from inside the composer
+    const search = page.getByRole('searchbox', { name: 'Search messages' });
+    await search.press('Control+Enter');
+    await search.press('Meta+Enter');
     await expect(message).toHaveValue('Check disk space');
-    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    expect(ntfy.published).toEqual([]);
+    await message.press('Control+Enter');
     await expect(page.locator('#status')).toHaveText('Notification sent!');
     expect(ntfy.published).toMatchObject([{ topic: 'alerts', body: 'Check disk space' }]);
+    await message.fill('Sent with Cmd');
+    await message.press('Meta+Enter');
+    await expect.poll(() => ntfy.published.map(({ body }) => body)).toEqual(['Check disk space', 'Sent with Cmd']);
   });
 
   test('keeps the toolbar draft when the composer collapses or the inbox topic changes', async ({

@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { MAX_HISTORY_PER_TOPIC, getHistoryState, getTopicSyncStates, recordMessage } from '@/utils/history';
-import { clearComposerOnStartup, handlePopupRequest } from '@/utils/messages';
+import { handlePopupRequest } from '@/utils/messages';
 import { isNoResponse, PublishUncertainError, sendAttachment, sendNotification, type NtfyMessage } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 import { parseTopicRules, ruleFor, storedTopicRules } from '@/utils/rules';
@@ -17,6 +17,7 @@ let notified: string[];
 const newReceiver = () => createReceiver({ onNewMessage: (message) => notified.push(message.id) });
 const lastStream = () => FakeStream.instances.at(-1)!;
 const path = (url: string) => new URL(url).pathname;
+const source = { origin: 'https://ntfy.example', origins: ['https://ntfy.example'] };
 
 async function configure(topics: string) {
   await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics });
@@ -57,9 +58,9 @@ describe('#4 sync state and history are written together', () => {
     const message: NtfyMessage = { id: 'm1', event: 'message', topic: 'alerts', time: 1 };
     // The first write fails; later ones go through to the real storage
     vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementationOnce(() => Promise.reject(new Error('quota')));
-    await expect(recordMessage(message)).rejects.toThrow('quota');
+    await expect(recordMessage(message, source)).rejects.toThrow('quota');
 
-    expect(await recordMessage(message)).toBe(true);
+    expect((await recordMessage(message, source)).added).toEqual([message]);
     expect((await getHistoryState()).receivedNotifications.map((m) => m.id)).toEqual(['m1']);
   });
 });
@@ -111,9 +112,9 @@ describe('#7 read access revoked for one topic', () => {
 describe('#8 the history limit keeps the newest messages by time', () => {
   it("doesn't let a late older message push out a newer one", async () => {
     for (let i = 0; i < MAX_HISTORY_PER_TOPIC; i++) {
-      await recordMessage({ id: `new${i}`, event: 'message', topic: 'alerts', time: 1000 + i });
+      await recordMessage({ id: `new${i}`, event: 'message', topic: 'alerts', time: 1000 + i }, source);
     }
-    await recordMessage({ id: 'late', event: 'message', topic: 'alerts', time: 1 });
+    await recordMessage({ id: 'late', event: 'message', topic: 'alerts', time: 1 }, source);
     const ids = (await getHistoryState()).receivedNotifications.map((m) => m.id);
     expect(ids).toHaveLength(MAX_HISTORY_PER_TOPIC);
     expect(ids).not.toContain('late');
@@ -139,7 +140,7 @@ describe('#9 multi-line text in headers', () => {
 describe('#11 topic names that are Object.prototype properties', () => {
   it('records messages and keeps rules for topics named constructor and __proto__', async () => {
     for (const topic of ['constructor', '__proto__', 'toString']) {
-      expect(await recordMessage({ id: `m-${topic}`, event: 'message', topic, time: 1 })).toBe(true);
+      expect((await recordMessage({ id: `m-${topic}`, event: 'message', topic, time: 1 }, source)).added).toHaveLength(1);
     }
     expect([...(await getTopicSyncStates()).keys()].sort()).toEqual(['__proto__', 'constructor', 'toString']);
 
@@ -152,7 +153,13 @@ describe('#11 topic names that are Object.prototype properties', () => {
 describe('#12 read and delete actions from several views', () => {
   it('applies concurrent actions one after the other, so none is lost', async () => {
     await fakeBrowser.storage.local.set({
-      receivedNotifications: ['a', 'b', 'c', 'd'].map((id) => ({ id, event: 'message', topic: 'alerts', time: 1 })),
+      receivedNotifications: ['a', 'b', 'c', 'd'].map((id) => ({
+        id,
+        event: 'message',
+        topic: 'alerts',
+        time: 1,
+        serverOrigin: source.origin,
+      })),
     });
     await Promise.all([
       handlePopupRequest({ action: 'setRead', ids: ['a'], read: true }, async () => {}),
@@ -173,11 +180,6 @@ describe('#12 read and delete actions from several views', () => {
 });
 
 describe('draft cleanup from several views', () => {
-  it('clears the draft and files on browser startup', async () => {
-    await fakeBrowser.storage.local.set({ draftState: { message: 'Old draft' }, storedFiles: [{ name: 'old.txt' }] });
-    await clearComposerOnStartup();
-    expect(await fakeBrowser.storage.local.get(['draftState', 'storedFiles'])).toEqual({});
-  });
   it('clears the sent revision only if it is still current', async () => {
     const sync = async () => {};
     const draft = { title: '', message: 'Sending this', topic: 'alerts', tags: [], priority: 3, revision: 'first' };

@@ -4,7 +4,7 @@ import { browser } from 'wxt/browser';
 import { getConfig, getStoredAuth, type Credentials, type NtfyMessage } from '@/utils/ntfy';
 import { getTopicRules, type TopicRules } from '@/utils/rules';
 import type { ReceiverStatus } from '@/utils/status';
-import type { StoredFile } from '@/utils/stored-files';
+import type { StoredFileInfo } from '@/utils/stored-files';
 import { getSyncDeletionTopics } from '@/utils/sync-modes';
 import { getElements, type Elements } from './dom';
 
@@ -36,7 +36,7 @@ export interface PopupState {
   // Send
   tags: string[];
   selectedPriority: number;
-  attachments: StoredFile[];
+  attachments: StoredFileInfo[];
   isSending: boolean;
   /** The tab title last put in the Title field automatically */
   autoTitle: string;
@@ -45,8 +45,10 @@ export interface PopupState {
 
   // Inbox
   receiveFilter: string | null; // null means All topics
-  readMessageIds: string[];
-  deletedMessageIds: string[];
+  /** The history as last read from storage, re-filtered in memory for each search keystroke */
+  history: NtfyMessage[];
+  readMessageIds: Set<string>;
+  deletedMessageIds: Set<string>;
   /** Messages shown in the inbox, for Mark all read and Delete all */
   currentNotifications: NtfyMessage[];
   /** The background's connection state */
@@ -89,17 +91,16 @@ export const state: PopupState = {
   autoTitle: '',
   autoMessage: '',
   receiveFilter: null,
-  readMessageIds: [],
-  deletedMessageIds: [],
+  history: [],
+  readMessageIds: new Set(),
+  deletedMessageIds: new Set(),
   currentNotifications: [],
   receiverStatus: null,
   serverAccessMissing: false,
 };
 
 export async function loadSettings(): Promise<void> {
-  // getConfig first: it moves credentials out of synced URLs, which getStoredAuth then finds
-  const [config, items] = await Promise.all([getConfig(), browser.storage.sync.get([...SYNC_KEYS])]);
-  const stored = await getStoredAuth();
+  const [config, items, stored] = await Promise.all([getConfig(), browser.storage.sync.get([...SYNC_KEYS]), getStoredAuth()]);
   state.apiUrl = config.apiUrl;
   state.fallbackUrl = config.fallbackUrl;
   state.accessToken = stored.accessToken;
@@ -124,10 +125,8 @@ export async function loadSettings(): Promise<void> {
 
 export async function loadReceiveFilter(): Promise<void> {
   const { receiveTopicFilter: stored } = await browser.storage.local.get('receiveTopicFilter');
-  // Previous versions stored a plain string and used "all" for All topics.
-  if (typeof stored === 'string' && stored !== 'all') state.receiveFilter = stored;
-  else if (stored && typeof stored === 'object' && 'topic' in stored && typeof stored.topic === 'string')
-    state.receiveFilter = stored.topic;
+  // { topic } for a specific topic, null for All topics
+  if (stored && typeof stored === 'object' && 'topic' in stored && typeof stored.topic === 'string') state.receiveFilter = stored.topic;
 }
 
 export function inboxTopic(): string | null {

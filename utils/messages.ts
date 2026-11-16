@@ -5,6 +5,7 @@
 import { browser } from 'wxt/browser';
 import { deleteReceivedMessages, type DeletionSyncResult, type ServerDeletionIntent } from './delete';
 import { setRead } from './history';
+import { clearNotifications } from './notifications';
 import { clearStoredFiles } from './stored-files';
 
 export interface Draft {
@@ -55,7 +56,8 @@ function updateDraft(task: () => Promise<void>): Promise<void> {
 /** Clear unsent work only when the browser profile starts, including after a crash. */
 export function clearComposerOnStartup(): Promise<void> {
   return updateDraft(async () => {
-    await browser.storage.local.remove('draftState');
+    // storedFiles: the attachment queue of earlier builds (data URLs), now in IndexedDB
+    await browser.storage.local.remove(['draftState', 'storedFiles']);
     await clearStoredFiles();
   });
 }
@@ -66,7 +68,10 @@ export function handlePopupRequest(request: unknown, sync: () => Promise<void>):
     Record<'action' | 'ids' | 'read' | 'draft' | 'revision' | 'server', unknown>
   >;
   if (action === 'sync') return sync();
-  if (action === 'setRead' && isStringList(ids) && typeof read === 'boolean') return setRead(ids, read);
+  if (action === 'setRead' && isStringList(ids) && typeof read === 'boolean') {
+    // A message marked read no longer needs its desktop notification
+    return setRead(ids, read).then(() => (read ? void clearNotifications(ids) : undefined));
+  }
   if (action === 'delete' && isStringList(ids) && (server === undefined || isServerDeletionIntent(server))) {
     return deleteReceivedMessages(ids, server);
   }

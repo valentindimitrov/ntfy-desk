@@ -36,7 +36,7 @@ describe('credentials in server URLs', () => {
     expect(splitCredentials('not a url')).toEqual({ url: 'not a url', credentials: null });
   });
 
-  it('moves credentials saved in synced URLs to local storage, and syncs the URLs without them', async () => {
+  it('strips userinfo from synced URLs without adopting it as credentials', async () => {
     await fakeBrowser.storage.sync.set({
       apiUrl: 'https://alice:secret@ntfy.lan',
       fallbackUrl: 'https://alice:secret@ntfy.example.com',
@@ -46,17 +46,18 @@ describe('credentials in server URLs', () => {
     expect(config).toMatchObject({
       apiUrl: 'https://ntfy.lan',
       fallbackUrl: 'https://ntfy.example.com',
-      credentials: { username: 'alice', password: 'secret' },
+      credentials: null,
     });
     expect(await fakeBrowser.storage.sync.get(['apiUrl', 'fallbackUrl'])).toEqual({
       apiUrl: 'https://ntfy.lan',
       fallbackUrl: 'https://ntfy.example.com',
     });
-    expect(await fakeBrowser.storage.local.get(CREDENTIALS_KEY)).toEqual({ [CREDENTIALS_KEY]: { username: 'alice', password: 'secret' } });
+    expect(await fakeBrowser.storage.local.get(CREDENTIALS_KEY)).toEqual({});
     expect(JSON.stringify(await fakeBrowser.storage.sync.get(null))).not.toContain('secret');
+    expect(JSON.stringify(await fakeBrowser.storage.local.get(null))).not.toContain('secret');
   });
 
-  it('keeps credentials already stored locally over ones found in a synced URL', async () => {
+  it('keeps using the credentials stored locally when a synced URL carries others', async () => {
     await setCredentials({ username: 'local', password: 'kept' });
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://old:stale@ntfy.lan' });
     expect((await getConfig()).credentials).toEqual({ username: 'local', password: 'kept' });
@@ -120,7 +121,8 @@ describe('authentication', () => {
     const credentials = { username: 'usér', password: 'p@ss' };
     expect(buildAuthHeaderValue({ apiUrl: 'https://ntfy.example', accessToken: 'tk_x', credentials })).toBe('Bearer tk_x');
     expect(buildAuthHeaderValue({ apiUrl: 'https://ntfy.example', accessToken: '', credentials })).toBe(basic('usér:p@ss'));
-    expect(buildAuthHeaderValue({ apiUrl: 'https://us%C3%A9r:p%40ss@ntfy.example', accessToken: '' })).toBe(basic('usér:p@ss'));
+    // Userinfo left in a URL is never used
+    expect(buildAuthHeaderValue({ apiUrl: 'https://us%C3%A9r:p%40ss@ntfy.example', accessToken: '' })).toBe('');
     expect(buildAuthHeaderValue({ apiUrl: 'https://ntfy.example', accessToken: '', credentials: null })).toBe('');
     expect(buildAuthHeaderValue({ apiUrl: 'not a url', accessToken: '' })).toBe('');
   });
@@ -218,5 +220,46 @@ describe('requests', () => {
     const { events: messages } = await getNotifications(server, 'a', 10);
     expect(calls[0]!.url).toBe('https://ntfy.example/a/json?poll=1&since=10');
     expect(messages.map((m) => m.id)).toEqual(['m1']);
+  });
+});
+
+describe('HTTP error messages', () => {
+  const server = { apiUrl: 'https://ntfy.example', accessToken: '' };
+  const respond = (response: () => Response) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response()),
+    );
+  const publishError = async () => {
+    try {
+      await sendNotification(server, 'inbox', { message: 'x' });
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return 'sent';
+  };
+
+  it("shows ntfy's error text when the status text is empty (HTTP/2)", async () => {
+    respond(() => Response.json({ code: 42901, http: 429, error: 'limit reached: too many requests' }, { status: 429 }));
+    expect(await publishError()).toBe('HTTP 429: limit reached: too many requests');
+    await expect(getNotifications(server, 'inbox')).rejects.toThrow('HTTP 429: limit reached: too many requests');
+  });
+
+  it('falls back to the status text, then to the status alone', async () => {
+    respond(() => new Response('<html>busy</html>', { status: 503, statusText: 'Service Unavailable' }));
+    expect(await publishError()).toBe('HTTP 503: Service Unavailable');
+    respond(() => new Response('', { status: 429 }));
+    expect(await publishError()).toBe('HTTP 429');
+    respond(() => Response.json({ error: { nested: 'object' } }, { status: 400 }));
+    expect(await publishError()).toBe('HTTP 400');
+  });
+
+  it('caps the body it reads and the text it shows, as plain text', async () => {
+    respond(() => Response.json({ error: 'x'.repeat(8000) }, { status: 400 }));
+    expect(await publishError()).toBe('HTTP 400');
+    respond(() => Response.json({ error: `line\n<b>bold</b>${'y'.repeat(400)}` }, { status: 400 }));
+    const message = await publishError();
+    expect(message.startsWith('HTTP 400: line <b>bold</b>yyy')).toBe(true);
+    expect(message.length).toBeLessThanOrEqual('HTTP 400: '.length + 200);
   });
 });

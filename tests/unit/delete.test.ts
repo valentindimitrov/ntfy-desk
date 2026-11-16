@@ -43,34 +43,16 @@ describe('outbound deletion sync', () => {
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer tk_test');
   });
 
-  it('finds a legacy row in a busy replay and skips messages belonging to a different server', async () => {
+  it('counts a message delivered by another server as failed and deletes only the verified one', async () => {
     await fakeBrowser.storage.local.set({
-      receivedNotifications: [
-        stored('old', { serverOrigin: 'https://old.example', sequence_id: 'shared' }),
-        stored('legacy', { serverOrigin: undefined }),
-        stored('missing', { serverOrigin: undefined }),
-      ],
+      receivedNotifications: [stored('old', { serverOrigin: 'https://old.example', sequence_id: 'shared' }), stored('current')],
     });
-    const replay = [
-      stored('legacy', { sequence_id: 'recovered' }),
-      ...Array.from({ length: 1000 }, (_, index) => stored(`new-${index}`, { time: 1235 + index })),
-    ]
-      .map((message) => JSON.stringify(message))
-      .join('\n');
-    const fetchMock = vi.fn(async (_url: string, init: RequestInit) =>
-      init.method === 'GET' ? new Response(replay) : new Response(null, { status: 200 }),
-    );
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response(null, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    expect(await deleteReceivedMessages(['old', 'legacy', 'missing'], intent('old', 'legacy', 'missing'))).toEqual({
-      denied: 0,
-      failed: 2,
-    });
-    expect((await getHistoryState()).deletedMessageIds).toEqual(['old', 'legacy', 'missing']);
-    expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method])).toEqual([
-      [`${origin}/alerts/json?poll=1&since=1234`, 'GET'],
-      [`${origin}/alerts/recovered`, 'DELETE'],
-    ]);
+    expect(await deleteReceivedMessages(['old', 'current'], intent('old', 'current'))).toEqual({ denied: 0, failed: 1 });
+    expect((await getHistoryState()).deletedMessageIds).toEqual(['old', 'current']);
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method])).toEqual([[`${origin}/alerts/current`, 'DELETE']]);
   });
 
   it('rejects a stored message ID that would escape the delete endpoint', async () => {
@@ -105,4 +87,25 @@ describe('outbound deletion sync', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('desktop notifications of read and deleted messages', () => {
+  it('dismisses them when messages are marked read or deleted, but not when marked unread', async () => {
+    await fakeBrowser.storage.local.set({ receivedNotifications: [stored('a'), stored('b'), stored('c')] });
+    const clear = vi.spyOn(fakeBrowser.notifications, 'clear').mockResolvedValue(true as never);
+    const sync = vi.fn();
+    await handlePopupRequest({ action: 'setRead', ids: ['a'], read: true }, sync);
+    await handlePopupRequest({ action: 'setRead', ids: ['a'], read: false }, sync);
+    await handlePopupRequest({ action: 'delete', ids: ['b', 'c'] }, sync);
+    await vi.waitFor(() => expect(clear.mock.calls).toEqual([['a'], ['b'], ['c']]));
+  });
+
+  it('applies the read or delete action even when dismissing fails', async () => {
+    await fakeBrowser.storage.local.set({ receivedNotifications: [stored('a'), stored('b')] });
+    vi.spyOn(fakeBrowser.notifications, 'clear').mockRejectedValue(new Error('no notifications'));
+    const sync = vi.fn();
+    await handlePopupRequest({ action: 'setRead', ids: ['a'], read: true }, sync);
+    await handlePopupRequest({ action: 'delete', ids: ['b'] }, sync);
+    expect(await getHistoryState()).toMatchObject({ readMessageIds: ['a'], deletedMessageIds: ['b'] });
+  });
 });

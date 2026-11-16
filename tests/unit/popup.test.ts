@@ -5,8 +5,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { installIndexedDb, queuedNames, queueFiles } from './helpers/indexed-db';
 import { mockResolved, mockWebLocks } from './helpers/mock';
 import { handlePopupRequest } from '@/utils/messages';
+import type { StoredMessage } from '@/utils/history';
 import type { NtfyMessage } from '@/utils/ntfy';
 
 // Vitest runs from the project root
@@ -17,10 +19,11 @@ const body = html.slice(bodyStart, html.indexOf('</body>')).replace(/<script[^>]
 let requests: { url: string; headers: Headers; body: unknown }[];
 let closed: boolean;
 
-const message = (id: string, topic: string, minutesAgo: number, extra: Partial<NtfyMessage> = {}): NtfyMessage => ({
+const message = (id: string, topic: string, minutesAgo: number, extra: Partial<NtfyMessage> = {}): StoredMessage => ({
   id,
   event: 'message',
   topic,
+  serverOrigin: 'https://ntfy.example',
   time: Math.floor(Date.now() / 1000) - minutesAgo * 60,
   title: id,
   message: `body of ${id}`,
@@ -45,6 +48,7 @@ beforeEach(async () => {
   vi.resetModules();
   fakeBrowser.reset();
   mockWebLocks();
+  installIndexedDb();
   document.body.innerHTML = body;
   document.body.className = '';
   requests = [];
@@ -104,9 +108,9 @@ describe('Inbox', () => {
     expect(deletedMessageIds).toEqual(['a1', 'a2']);
   });
 
-  it('distinguishes a topic named all from the legacy All topics filter', async () => {
+  it('distinguishes a topic named all from the All topics filter', async () => {
     await fakeBrowser.storage.sync.set({ topics: 'all,inbox' });
-    await fakeBrowser.storage.local.set({ receiveTopicFilter: 'all' });
+    await fakeBrowser.storage.local.set({ receiveTopicFilter: null });
     await openPopup('?mode=page');
     const destination = $<HTMLSelectElement>('#topic-select');
     expect(destination.disabled).toBe(false);
@@ -220,7 +224,7 @@ describe('Inbox', () => {
   });
 
   it('shows and marks read the message a notification click opened', async () => {
-    await fakeBrowser.storage.local.set({ receiveTopicFilter: 'coolify' });
+    await fakeBrowser.storage.local.set({ receiveTopicFilter: { topic: 'coolify' } });
     await openPopup('?mode=page&tab=receive&message=a1');
     const focused = $('.notification-item.focused');
     expect(focused.dataset.id).toBe('a1'); // shown although another topic was selected
@@ -246,6 +250,32 @@ describe('Inbox', () => {
     search.dispatchEvent(new Event('input'));
     await flush();
     expect($('.notifications-empty').textContent).toBe('No messages match the search');
+  });
+
+  it('filters the loaded history on search input without reading storage again', async () => {
+    await openPopup('?tab=receive');
+    const get = vi.spyOn(fakeBrowser.storage.local, 'get');
+    const search = $<HTMLInputElement>('#notifications-search');
+    search.value = 'coolify';
+    search.dispatchEvent(new Event('input'));
+    expect([...document.querySelectorAll('.notification-title')].map((t) => t.textContent)).toEqual(['c1']);
+    expect(get).not.toHaveBeenCalled();
+
+    // A storage change still reloads the history
+    const { receivedNotifications } = await fakeBrowser.storage.local.get('receivedNotifications');
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [message('c2', 'coolify', 1), ...(receivedNotifications as NtfyMessage[])],
+    });
+    await vi.waitFor(() => expect([...document.querySelectorAll('.notification-title')].map((t) => t.textContent)).toEqual(['c2', 'c1']));
+  });
+
+  it('shows a visible error when the popup cannot start', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(fakeBrowser.storage.sync, 'get').mockRejectedValue(new Error('storage unavailable'));
+    await openPopup();
+    const banner = $('.startup-error');
+    expect(banner.getAttribute('role')).toBe('alert');
+    expect(banner.textContent).toContain('ntfy Desk could not start: storage unavailable');
   });
 
   it('renders Markdown messages, and leaves other messages as plain text', async () => {
@@ -315,7 +345,7 @@ describe('Inbox', () => {
   });
 
   it('keeps the heading in place when the list is empty', async () => {
-    await fakeBrowser.storage.local.set({ receiveTopicFilter: 'inbox' });
+    await fakeBrowser.storage.local.set({ receiveTopicFilter: { topic: 'inbox' } });
     await openPopup('?tab=receive');
     expect($('.notifications-empty').textContent).toBe('No recent notifications');
     expect($('#notifications-control-bar').style.visibility).toBe('hidden');
@@ -324,8 +354,7 @@ describe('Inbox', () => {
 
 describe('Send form', () => {
   it('skips a queued file removed in another view before its upload starts', async () => {
-    const file = (id: string) => ({ id, name: `${id}.txt`, type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' });
-    await fakeBrowser.storage.local.set({ storedFiles: [file('first'), file('removed')] });
+    await queueFiles(['first.txt'], ['removed.txt']);
     await openPopup('?mode=page');
     const { promise, resolve } = Promise.withResolvers<void>();
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
@@ -334,10 +363,11 @@ describe('Send form', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const { send } = await import('@/entrypoints/popup/send');
-    const { removeStoredFiles } = await import('@/utils/stored-files');
+    const { listStoredFiles, removeStoredFiles } = await import('@/utils/stored-files');
+    const removed = (await listStoredFiles()).find(({ name }) => name === 'removed.txt')!.id;
     const pending = send();
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    await removeStoredFiles(['removed']);
+    await removeStoredFiles([removed]);
     resolve();
     await pending;
     expect(fetchMock.mock.calls.map(([, init]) => new Headers(init.headers).get('X-Filename'))).toEqual(['first.txt']);
@@ -352,7 +382,8 @@ describe('Send form', () => {
     await openPopup();
     $<HTMLTextAreaElement>('#message-input').value = 'Already published';
     const { send } = await import('@/entrypoints/popup/send');
-    vi.useFakeTimers();
+    // setImmediate stays real: fake-indexeddb schedules its events with it
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
     try {
       await send();
       await vi.advanceTimersByTimeAsync(4000);
@@ -366,8 +397,7 @@ describe('Send form', () => {
   });
 
   it('keeps failed attachments and the draft after a partial send, then retries only the failed file', async () => {
-    const file = (name: string) => ({ name, type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' });
-    await fakeBrowser.storage.local.set({ storedFiles: [file('sent.txt'), file('retry.txt')] });
+    await queueFiles(['sent.txt'], ['retry.txt']);
     await openPopup();
     const sent: string[] = [];
     let fail = true;
@@ -383,25 +413,22 @@ describe('Send form', () => {
     const { send } = await import('@/entrypoints/popup/send');
     await send();
     expect(sent).toEqual(['sent.txt', 'retry.txt']);
-    expect(await fakeBrowser.storage.local.get(['storedFiles', 'draftState'])).toMatchObject({
-      storedFiles: [{ name: 'retry.txt' }],
-      draftState: { message: 'My draft' },
-    });
+    expect(await queuedNames()).toEqual(['retry.txt']);
+    expect(await fakeBrowser.storage.local.get('draftState')).toMatchObject({ draftState: { message: 'My draft' } });
     expect($('#status').textContent).toContain('1 of 2 attachments sent');
     expect($<HTMLButtonElement>('#send-btn').disabled).toBe(false);
     expect(closed).toBe(false);
     fail = false;
     await send();
     expect(sent).toEqual(['sent.txt', 'retry.txt', 'retry.txt']);
-    expect(await fakeBrowser.storage.local.get(['storedFiles', 'draftState'])).toEqual({});
+    expect(await queuedNames()).toEqual([]);
+    expect(await fakeBrowser.storage.local.get('draftState')).toEqual({});
     await vi.waitFor(() => expect(closed).toBe(true));
   });
 
   it('selects the fallback before dispatching the saved attachment when the primary is unreachable', async () => {
     await fakeBrowser.storage.sync.set({ fallbackUrl: 'https://fallback.example' });
-    await fakeBrowser.storage.local.set({
-      storedFiles: [{ name: 'a.txt', type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' }],
-    });
+    await queueFiles(['a.txt']);
     await openPopup('?mode=page');
     const fetchMock = vi.fn(async (url: string) => {
       if (url.startsWith('https://ntfy.example/')) throw new TypeError('network error');
@@ -417,7 +444,7 @@ describe('Send form', () => {
       'https://fallback.example/inbox',
     ]);
     expect($('#status').textContent).toBe('Notification sent!');
-    expect(await fakeBrowser.storage.local.get('storedFiles')).toEqual({});
+    expect(await queuedNames()).toEqual([]);
   });
 
   it('preserves the draft and reports uncertainty after a lost publish response', async () => {
@@ -494,19 +521,16 @@ describe('Send form', () => {
 
   it('restores unsent work when extension session storage was cleared', async () => {
     await fakeBrowser.storage.session.clear();
-    await fakeBrowser.storage.local.set({
-      draftState: { title: 'Unsent draft' },
-      storedFiles: [{ name: 'saved.txt', type: 'text/plain', size: 1, data: 'data:text/plain;base64,eA==' }],
-    });
+    await fakeBrowser.storage.local.set({ draftState: { title: 'Unsent draft' } });
+    await queueFiles(['saved.txt']);
     await openPopup();
     expect($<HTMLInputElement>('#title-input').value).toBe('Unsent draft');
     expect($('#file-preview').textContent).toContain('saved.txt');
   });
 
   it('sends two attachments as one ZIP when that option is on', async () => {
-    const file = (name: string) => ({ name, type: 'text/plain', size: 5, data: `data:text/plain;base64,${btoa('hello')}` });
     await fakeBrowser.storage.sync.set({ sendAsZipEnabled: true });
-    await fakeBrowser.storage.local.set({ storedFiles: [file('a.txt'), file('b.txt')] });
+    await queueFiles(['a.txt', 'hello'], ['b.txt', 'hello']);
     await openPopup();
     expect(document.querySelectorAll('.file-preview-item')).toHaveLength(2);
     expect($<HTMLInputElement>('#zip-checkbox').checked).toBe(true);
@@ -517,7 +541,26 @@ describe('Send form', () => {
     expect(requests[0]!.headers.get('X-Filename')).toMatch(/^ntfy-files-\d{8}-\d{6}\.zip$/);
     // Let the popup's close timer run inside this test
     await vi.waitFor(() => expect(closed).toBe(true));
-    expect(await fakeBrowser.storage.local.get('storedFiles')).toEqual({});
+    expect(await queuedNames()).toEqual([]);
+  });
+
+  it.each([
+    ['Ctrl', { ctrlKey: true }],
+    ['Cmd', { metaKey: true }],
+  ])('sends with %s + Enter from the composer only', async (_, modifier) => {
+    await openPopup('?mode=page');
+    const press = (target: HTMLElement) =>
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...modifier }));
+    const input = $<HTMLTextAreaElement>('#message-input');
+    input.value = 'shortcut';
+    $('#notifications-search').focus();
+    press($('#notifications-search'));
+    await flush();
+    expect(requests).toEqual([]);
+    input.focus();
+    press(input);
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]!.body).toBe('shortcut');
   });
 
   it('sends once when Send is clicked twice quickly (review #10)', async () => {

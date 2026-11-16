@@ -106,6 +106,19 @@ describe('sending', () => {
     expect(published[0]!.headers.get('X-Title')).toBe('A story');
   });
 
+  it.each(['data:image/png;base64,iVBORw0KGgo=', 'blob:https://news.example/1234'])(
+    'reports a failure for an image that is not http(s) (%s)',
+    async (srcUrl) => {
+      await fakeBrowser.storage.sync.set({ topics: 'inbox' });
+      await updateContextMenu();
+      const request = vi.spyOn(fakeBrowser.permissions, 'request');
+      await click(idFor('Image (inbox)'), { srcUrl, mediaType: 'image' });
+      expect(published).toEqual([]);
+      expect(request).not.toHaveBeenCalled();
+      expect(fakeBrowser.action.setBadgeText).toHaveBeenLastCalledWith({ text: '✗' });
+    },
+  );
+
   it('refuses a stale menu item when its topic or server was replaced', async () => {
     await fakeBrowser.storage.sync.set({ topics: 'inbox' });
     await updateContextMenu();

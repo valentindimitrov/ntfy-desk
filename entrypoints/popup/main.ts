@@ -75,16 +75,12 @@ async function openInTab(): Promise<void> {
   window.close();
 }
 
-/** Right Ctrl + Enter sends while focus is in the composer. */
+/** Ctrl + Enter (either Ctrl key) or Cmd + Enter sends while focus is in the composer. */
 function setupKeyboardShortcut(): void {
-  let rightCtrlDown = false;
   document.addEventListener('keydown', (event) => {
-    if (event.code === 'ControlRight') {
-      rightCtrlDown = true;
-    }
     if (
       event.key === 'Enter' &&
-      rightCtrlDown &&
+      (event.ctrlKey || event.metaKey) &&
       elements.sendSection.open &&
       elements.mainContent.contains(document.activeElement) &&
       elements.sendBtn.offsetParent !== null &&
@@ -93,14 +89,6 @@ function setupKeyboardShortcut(): void {
       event.preventDefault();
       elements.sendBtn.click();
     }
-  });
-  document.addEventListener('keyup', (event) => {
-    if (event.code === 'ControlRight') {
-      rightCtrlDown = false;
-    }
-  });
-  window.addEventListener('blur', () => {
-    rightCtrlDown = false;
   });
 }
 
@@ -154,4 +142,14 @@ async function init(): Promise<void> {
   requestSync();
 }
 
-void init();
+/** A failed start would leave a half-built page without a word: say so at the top of the page. */
+function showStartupError(error: unknown): void {
+  console.error('ntfy Desk could not start:', error);
+  const banner = document.createElement('div');
+  banner.className = 'status visible error startup-error';
+  banner.setAttribute('role', 'alert');
+  banner.textContent = `ntfy Desk could not start: ${error instanceof Error ? error.message : String(error)}. Close and reopen it.`;
+  document.body.prepend(banner);
+}
+
+init().catch(showStartupError);

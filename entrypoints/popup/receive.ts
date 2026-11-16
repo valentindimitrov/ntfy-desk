@@ -33,7 +33,7 @@ function formatTime(unixTime: number, now = new Date()): string {
 /** All topics, then each configured topic, with unread counts */
 function renderTopicSidebar(messages: NtfyMessage[], selected: string | null): void {
   const unreadCount = (topic: string | null) =>
-    messages.filter((m) => (topic === null || m.topic === topic) && !state.readMessageIds.includes(m.id)).length;
+    messages.filter((m) => (topic === null || m.topic === topic) && !state.readMessageIds.has(m.id)).length;
 
   elements.topicSidebar.replaceChildren(
     ...[null, ...state.topics].map((topic) => {
@@ -101,7 +101,7 @@ function applyPendingFocus(): void {
   if (!item) return;
   pendingFocus = false;
   item.scrollIntoView({ block: 'center' });
-  if (!state.readMessageIds.includes(id)) {
+  if (!state.readMessageIds.has(id)) {
     const readButton = item.querySelector<HTMLElement>('.read-btn');
     if (readButton) void toggleRead(id, item, readButton);
   }
@@ -147,7 +147,7 @@ function renderMessage(message: NtfyMessage): HTMLElement {
   item.dataset.id = message.id;
   item.classList.toggle('focused', message.id === focusedId);
   item.dataset.priority = String(message.priority ?? 3);
-  const isRead = state.readMessageIds.includes(message.id);
+  const isRead = state.readMessageIds.has(message.id);
   item.classList.toggle('read', isRead);
 
   const header = document.createElement('div');
@@ -282,8 +282,34 @@ function renderMessageSafely(message: NtfyMessage): HTMLElement {
   }
 }
 
-/** The received messages of all topics, like the unread badge counts them, filtered by the topic list */
+function showLoadError(error: unknown): void {
+  console.error('Error loading notifications:', error);
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'notifications-error';
+  errorDiv.textContent = `Error: ${(error as Error).message}`;
+  elements.notificationsList.replaceChildren(errorDiv);
+}
+
+/** Read the history from storage, then render it */
 export async function loadNotifications(): Promise<void> {
+  if (!isConfigured()) {
+    renderNotifications();
+    return;
+  }
+  try {
+    const { receivedNotifications, readMessageIds, deletedMessageIds } = await getHistoryState();
+    state.history = receivedNotifications;
+    state.readMessageIds = new Set(readMessageIds);
+    state.deletedMessageIds = new Set(deletedMessageIds);
+  } catch (error) {
+    showLoadError(error);
+    return;
+  }
+  renderNotifications();
+}
+
+/** The received messages of all topics, like the unread badge counts them, filtered by the topic list and search */
+function renderNotifications(): void {
   if (!isConfigured()) {
     elements.topicSidebar.replaceChildren();
     elements.notificationsControlBar.style.visibility = 'hidden';
@@ -293,11 +319,7 @@ export async function loadNotifications(): Promise<void> {
   }
 
   try {
-    const { receivedNotifications, readMessageIds, deletedMessageIds } = await getHistoryState();
-    state.readMessageIds = readMessageIds;
-    state.deletedMessageIds = deletedMessageIds;
-    const deleted = new Set(deletedMessageIds);
-    const all = receivedNotifications.filter((m) => !deleted.has(m.id));
+    const all = state.history.filter((m) => !state.deletedMessageIds.has(m.id));
     const focused = document.activeElement;
 
     const topic = inboxTopic();
@@ -322,27 +344,20 @@ export async function loadNotifications(): Promise<void> {
     restoreInboxFocus(focused);
     applyPendingFocus();
   } catch (error) {
-    console.error('Error loading notifications:', error);
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'notifications-error';
-    errorDiv.textContent = `Error: ${(error as Error).message}`;
-    elements.notificationsList.replaceChildren(errorDiv);
+    showLoadError(error);
   }
 }
 
 async function toggleRead(id: string, item: HTMLElement, button: HTMLElement): Promise<void> {
   clearStatus(elements.receiveActionStatus);
-  const index = state.readMessageIds.indexOf(id);
-  if (index > -1) {
-    state.readMessageIds.splice(index, 1);
-  } else {
-    state.readMessageIds.push(id);
-  }
-  item.classList.toggle('read', index === -1);
-  button.title = index === -1 ? 'Mark as Unread' : 'Mark as Read';
+  const read = !state.readMessageIds.has(id);
+  if (read) state.readMessageIds.add(id);
+  else state.readMessageIds.delete(id);
+  item.classList.toggle('read', read);
+  button.title = read ? 'Mark as Unread' : 'Mark as Read';
   button.setAttribute('aria-label', button.title);
   try {
-    await sendToBackground({ action: 'setRead', ids: [id], read: index === -1 });
+    await sendToBackground({ action: 'setRead', ids: [id], read });
   } catch (error) {
     console.error('Error saving the read state:', error);
   }
@@ -357,8 +372,8 @@ async function deleteMessage(id: string, item: HTMLElement, server?: ServerDelet
   clearStatus(elements.receiveActionStatus);
   try {
     // Shown at once; the background applies it and the storage change refreshes every open view
-    state.deletedMessageIds = [...new Set([...state.deletedMessageIds, id])];
-    state.readMessageIds = state.readMessageIds.filter((other) => other !== id);
+    state.deletedMessageIds.add(id);
+    state.readMessageIds.delete(id);
     item.remove();
     showDeletionResult(await sendToBackground({ action: 'delete', ids: [id], server }));
     if (elements.notificationsList.children.length === 0) {
@@ -398,9 +413,9 @@ async function copyLink(url: string, button: HTMLElement): Promise<void> {
 
 async function markAllRead(): Promise<void> {
   clearStatus(elements.receiveActionStatus);
-  const unread = state.currentNotifications.filter((m) => !state.readMessageIds.includes(m.id));
+  const unread = state.currentNotifications.filter((m) => !state.readMessageIds.has(m.id));
   if (unread.length === 0) return;
-  state.readMessageIds.push(...unread.map((m) => m.id));
+  for (const { id } of unread) state.readMessageIds.add(id);
   try {
     await sendToBackground({ action: 'setRead', ids: unread.map((m) => m.id), read: true });
     showReceiveStatus('All marked as read', 'success');
@@ -422,8 +437,10 @@ async function deleteAll(): Promise<void> {
   }
 
   clearStatus(elements.receiveActionStatus);
-  state.deletedMessageIds = [...new Set([...state.deletedMessageIds, ...ids])];
-  state.readMessageIds = state.readMessageIds.filter((id) => !ids.includes(id));
+  for (const id of ids) {
+    state.deletedMessageIds.add(id);
+    state.readMessageIds.delete(id);
+  }
   try {
     showDeletionResult(await sendToBackground({ action: 'delete', ids, server }), 'All notifications deleted');
   } catch (error) {
@@ -492,7 +509,8 @@ export function setupReceive(): void {
   });
 
   elements.markAllReadBtn.addEventListener('click', () => void markAllRead());
-  elements.notificationsSearch.addEventListener('input', () => void loadNotifications());
+  // Searching re-filters the history already loaded; storage changes below reload it
+  elements.notificationsSearch.addEventListener('input', renderNotifications);
   elements.deleteAllBtn.addEventListener('click', () => void deleteAll());
 
   // New messages from the background, and read or delete actions from another popup or tab

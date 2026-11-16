@@ -56,6 +56,8 @@ export interface ReceiverEvents {
   onNewMessage(message: NtfyMessage): void;
   /** A completed catch-up delivers its saved messages together for notification grouping. */
   onCatchUp?(messages: NtfyMessage[]): void;
+  /** Stored messages removed by a server deletion or replaced by an update (their desktop notifications go too) */
+  onRemoved?(ids: string[]): void;
   /** The subscription opened */
   onConnected?(): void;
 }
@@ -189,7 +191,9 @@ export function createReceiver(events: ReceiverEvents) {
       return;
     }
     try {
-      if (await recordMessage(message, source)) events.onNewMessage(message);
+      const { added, removed } = await recordMessage(message, source);
+      if (removed.length > 0) events.onRemoved?.(removed);
+      if (added.length > 0) events.onNewMessage(message);
     } catch (error) {
       console.error('Error processing a live message:', error);
     }
@@ -244,7 +248,10 @@ export function createReceiver(events: ReceiverEvents) {
       }
       if (!isCurrent()) return;
 
+      // Cleared before the abort, so nothing still reading treats it as current. The abort releases
+      // a response body left unread (an HTTP error) or a read loop that ended with an error.
       subscription = null;
+      current.controller.abort();
       stopKeepalive();
       stopIdleTimer();
       // Refused before it opened (e.g. 403 after read access to a topic was revoked): check the
@@ -312,10 +319,11 @@ export function createReceiver(events: ReceiverEvents) {
     const origins = serverOrigins(configured.apiUrl, configured.fallbackUrl);
     const topicState = (topic: string) => topicStateForServer(states.get(topic), origins);
     const saved = new Map<string, NtfyMessage[]>();
-    if (topics.some((topic) => syncDeletions.has(topic))) {
+    // Saved rows of every topic: a poll keeps their position in the server's order (updates, deletions)
+    {
       const { receivedNotifications } = await getHistoryState();
       for (const message of receivedNotifications) {
-        if (!syncDeletions.has(message.topic) || (message.serverOrigin && !origins.includes(message.serverOrigin))) continue;
+        if (!topics.includes(message.topic) || !origins.includes(message.serverOrigin)) continue;
         const rows = saved.get(message.topic) ?? [];
         rows.push(message);
         saved.set(message.topic, rows);
@@ -361,7 +369,7 @@ export function createReceiver(events: ReceiverEvents) {
           const complete = !replay.scanLimited && !replay.serverTruncated && replay.truncationKnown;
           const last = replay.events.at(-1)?.time ?? since;
           const canContinue = replay.scanLimited && !replay.serverTruncated && last > since;
-          await recordDeletionReplay(
+          const removed = await recordDeletionReplay(
             topic,
             replay.events,
             { origin: replay.serverOrigin, origins },
@@ -373,6 +381,7 @@ export function createReceiver(events: ReceiverEvents) {
               retryAt: !complete && !canContinue ? Date.now() + INCOMPLETE_REPLAY_RETRY : undefined,
             },
           );
+          if (removed.length > 0) events.onRemoved?.(removed);
           if (replay.truncated) truncatedTopics.add(topic);
           if (!replay.truncationKnown) unverifiedDeletionTopics.add(topic);
         } catch (error) {
@@ -384,46 +393,32 @@ export function createReceiver(events: ReceiverEvents) {
       try {
         const started = Date.now();
         const watermark = state?.since ?? null;
-        let emptyPollAt = state?.emptyPollAt;
-        let since = watermark ?? sinceEmptyPoll(started, emptyPollAt);
-        const options = { includeDeletions, savedMessages };
-        let replay = await getNotifications(config, topic, since, options);
-        // Older versions could seed an empty topic with the browser's clock. Recover a cursor
-        // without a matching event if we can't verify its time and the replay wasn't limited.
-        const legacyEmpty =
-          watermark !== null &&
-          emptyPollAt === undefined &&
-          state?.truncatedAt === undefined &&
-          state?.seen.every(([, time]) => time > watermark) &&
-          !replay.truncated &&
-          (replay.serverTime === undefined || watermark * 1000 > replay.serverTime);
-        if (legacyEmpty) {
-          emptyPollAt = (watermark + EMPTY_POLL_OVERLAP) * 1000;
-          since = sinceEmptyPoll(started, emptyPollAt);
-          replay = await getNotifications(config, topic, since, options);
-        }
+        const emptyPollAt = state?.emptyPollAt;
+        const since = watermark ?? sinceEmptyPoll(started, emptyPollAt);
+        const replay = await getNotifications(config, topic, since, { includeDeletions, savedMessages });
         // A single second can fill even the scan limit. Skip that second only if the
         // bounded replay couldn't move the inclusive cursor forward.
-        const empty = (watermark === null || legacyEmpty) && replay.events.length === 0 && !replay.truncated;
+        const empty = watermark === null && replay.events.length === 0 && !replay.truncated;
         const emptyStart =
           empty && replay.serverTime !== undefined ? Math.max(1, Math.floor(replay.serverTime / 1000) - EMPTY_POLL_OVERLAP) : undefined;
         const advanceTo =
           replay.scanLimited && typeof since === 'number' && replay.events.every((event) => event.time <= since)
             ? Math.floor(since) + 1
             : emptyStart;
-        const messages = await recordPoll(
+        const { added: messages, removed } = await recordPoll(
           topic,
           replay.events,
           { origin: replay.serverOrigin, origins },
           {
             truncated: replay.truncated,
+            positionOnly: replay.positionOnly,
             advanceTo,
             emptyPollAt: empty ? (emptyPollAt ?? started) : emptyPollAt,
-            resetWatermark: legacyEmpty,
           },
         );
         if (replay.truncated) truncatedTopics.add(topic);
         if (includeDeletions && !replay.truncationKnown) unverifiedDeletionTopics.add(topic);
+        if (removed.length > 0) events.onRemoved?.(removed);
         if (events.onCatchUp) catchUpMessages.push(...messages);
         else for (const message of messages) events.onNewMessage(message);
       } catch (error) {

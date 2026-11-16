@@ -13,7 +13,6 @@ const PRIORITY_LABELS: Record<number, string> = {
   4: '↑ High',
   5: '⇈ Urgent',
 };
-const CATCH_UP_PREFIX = 'catch-up:';
 const CATCH_UP_ID = 'catch-up-summary';
 const CATCH_UP_KEY = 'catchUpSummary';
 const MAX_INDIVIDUAL_CATCH_UP = 5;
@@ -24,13 +23,24 @@ interface CatchUpSummary {
   urgent: boolean;
 }
 
-let summaryQueue: Promise<unknown> = Promise.resolve();
+let notificationQueue: Promise<unknown> = Promise.resolve();
 
+/**
+ * One queue for creating, summarizing and dismissing notifications: a dismissal requested while a
+ * notification is still being prepared (its topic rule is read first) runs after it is shown.
+ */
 function updateSummary<T>(task: () => Promise<T>): Promise<T> {
-  const result = summaryQueue.then(task);
-  summaryQueue = result.catch(() => {});
+  const result = notificationQueue.then(task);
+  notificationQueue = result.catch(() => {});
   return result;
 }
+
+const MAX_DISMISSED = 5000;
+/**
+ * Ids dismissed in this run of the background (read, deleted or replaced), newest last. A message is
+ * announced at most once, so one dismissed before its notification was queued is never shown.
+ */
+const dismissed = new Set<string>();
 
 async function readSummary(): Promise<CatchUpSummary | undefined> {
   const stored = await browser.storage.session.get(CATCH_UP_KEY);
@@ -62,7 +72,7 @@ export function notificationButtons(message: NtfyMessage): NotificationButton[] 
   return buttons.slice(0, 2);
 }
 
-export function showDesktopNotification(message: NtfyMessage): void {
+export async function showDesktopNotification(message: NtfyMessage): Promise<void> {
   const label = message.priority ? PRIORITY_LABELS[message.priority] : undefined;
   const options: Browser.notifications.NotificationCreateOptions = {
     type: 'basic',
@@ -77,14 +87,16 @@ export function showDesktopNotification(message: NtfyMessage): void {
     const buttons = notificationButtons(message);
     if (buttons.length > 0) options.buttons = buttons.map(({ title }) => ({ title }));
   }
-  void browser.notifications.create(message.id, options);
+  await browser.notifications.create(message.id, options);
 }
 
 /** A desktop notification for a new message, if its topic's rule allows it */
-export async function notifyNewMessage(message: NtfyMessage): Promise<void> {
-  if (shouldNotify(message, await getTopicRules())) {
-    showDesktopNotification(message);
-  }
+export function notifyNewMessage(message: NtfyMessage): Promise<void> {
+  return updateSummary(async () => {
+    if (shouldNotify(message, await getTopicRules()) && !dismissed.has(message.id)) {
+      await showDesktopNotification(message);
+    }
+  });
 }
 
 function summaryOptions(summary: CatchUpSummary): Browser.notifications.NotificationCreateOptions {
@@ -101,7 +113,7 @@ function summaryOptions(summary: CatchUpSummary): Browser.notifications.Notifica
 export function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
   return updateSummary(async () => {
     const rules = await getTopicRules();
-    const eligible = messages.filter((message) => shouldNotify(message, rules));
+    const eligible = messages.filter((message) => shouldNotify(message, rules) && !dismissed.has(message.id));
     const first = eligible[0];
     if (!first) return;
     const current: CatchUpSummary = {
@@ -128,7 +140,7 @@ export function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
       }
     }
     if (current.count <= MAX_INDIVIDUAL_CATCH_UP) {
-      eligible.forEach(showDesktopNotification);
+      await Promise.all(eligible.map(showDesktopNotification));
       return;
     }
     await browser.notifications.create(CATCH_UP_ID, summaryOptions(current));
@@ -139,6 +151,29 @@ export function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
 async function findMessage(id: string): Promise<NtfyMessage | undefined> {
   const { receivedNotifications } = await getHistoryState();
   return receivedNotifications.find((message) => message.id === id);
+}
+
+/** Dismiss the desktop notifications of these messages (read, deleted or replaced). Never rejects. */
+export function clearNotifications(ids: string[]): Promise<void> {
+  for (const id of ids) {
+    dismissed.delete(id);
+    dismissed.add(id);
+  }
+  for (const id of dismissed) {
+    if (dismissed.size <= MAX_DISMISSED) break;
+    dismissed.delete(id);
+  }
+  return updateSummary(async () => {
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          await browser.notifications.clear(id);
+        } catch {
+          // No such notification, or notifications unavailable: nothing to dismiss
+        }
+      }),
+    );
+  });
 }
 
 /** A notification button: open its URL (http(s) only), and dismiss the notification if the action says so */
@@ -165,10 +200,6 @@ export async function handleNotificationClick(notificationId: string): Promise<v
     return;
   }
   await browser.notifications.clear(notificationId);
-  if (notificationId.startsWith(CATCH_UP_PREFIX)) {
-    await openExtensionTab({ topic: notificationId.slice(CATCH_UP_PREFIX.length) });
-    return;
-  }
   const message = await findMessage(notificationId);
   if (message && isHttpUrl(message.click)) {
     await browser.tabs.create({ url: message.click });

@@ -1,5 +1,6 @@
-import { deleteMessages, type StoredMessage } from './history';
-import { deleteNotification, getConfig, getNotifications, isNtfyPathPart, sequenceOf, serverOrigins, type NtfyServer } from './ntfy';
+import { deleteMessages } from './history';
+import { clearNotifications } from './notifications';
+import { deleteNotification, getConfig, sequenceOf, serverOrigins } from './ntfy';
 import { pickServer } from './servers';
 import { getSyncDeletionTopics } from './sync-modes';
 
@@ -16,38 +17,10 @@ export interface ServerDeletionIntent {
   fallbackUrl: string;
 }
 
-/** Verify older messages whose source origin was not saved. One bounded replay per topic. */
-async function verifyLegacyMessages(server: NtfyServer, messages: StoredMessage[], origins: string[]): Promise<Map<string, string>> {
-  const topics = new Map<string, number>();
-  for (const message of messages) {
-    if (!message.serverOrigin && isNtfyPathPart(message.topic)) {
-      topics.set(message.topic, Math.min(topics.get(message.topic) ?? Infinity, message.time));
-    }
-  }
-
-  const wanted = new Map(messages.map((message) => [message.id, message]));
-  const messageIds = new Set(wanted.keys());
-  const sequences = new Map<string, string>();
-  const signal = AbortSignal.timeout(10_000);
-  for (const [topic, time] of topics) {
-    if (signal.aborted) break;
-    try {
-      const { events, serverOrigin } = await getNotifications(server, topic, Math.max(1, Math.floor(time)), { signal, messageIds });
-      if (!origins.includes(serverOrigin)) continue;
-      for (const event of events) {
-        const stored = wanted.get(event.id);
-        if (stored?.topic === topic && stored.time === event.time) sequences.set(event.id, sequenceOf(event));
-      }
-    } catch {
-      // Without verification, the local delete still applies and the caller reports the unsynced deletion.
-    }
-  }
-  return sequences;
-}
-
 /** Apply the local delete first, then ask ntfy to delete eligible sequences. */
 export async function deleteReceivedMessages(ids: string[], intent?: ServerDeletionIntent): Promise<DeletionSyncResult> {
   const messages = await deleteMessages(ids);
+  void clearNotifications(ids);
   const result: DeletionSyncResult = { denied: 0, failed: 0 };
   if (!intent || messages.length === 0) return result;
 
@@ -63,21 +36,19 @@ export async function deleteReceivedMessages(ids: string[], intent?: ServerDelet
   if (eligible.length === 0) return result;
   if (!config.apiUrl || config.heldBackFrom.length > 0) return { ...result, failed: eligible.length };
 
-  const server = await pickServer(config);
-  const legacy = await verifyLegacyMessages(server, eligible, origins);
+  // Only messages delivered by the configured server or its fallback can be deleted there.
   const targets = new Map<string, { topic: string; sequence: string }>();
   for (const message of eligible) {
-    const sequence = message.serverOrigin
-      ? origins.includes(message.serverOrigin)
-        ? sequenceOf(message)
-        : undefined
-      : legacy.get(message.id);
-    if (!sequence) {
+    if (!origins.includes(message.serverOrigin)) {
       result.failed++;
       continue;
     }
+    const sequence = sequenceOf(message);
     targets.set(`${message.topic}/${sequence}`, { topic: message.topic, sequence });
   }
+  if (targets.size === 0) return result;
+
+  const server = await pickServer(config);
 
   // Bounded concurrency for Delete all. A timed-out write may already have applied on the server.
   const pending = [...targets.values()];

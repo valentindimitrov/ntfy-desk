@@ -3,7 +3,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { sendImageFromUrl } from '@/utils/ntfy';
-import { addPickedFiles, MAX_ATTACHMENT_BYTES, MAX_QUEUED_ATTACHMENT_BYTES, readStoredFiles } from '@/utils/stored-files';
+import { clearComposerOnStartup } from '@/utils/messages';
+import {
+  STORED_FILES_REVISION_KEY,
+  addPickedFiles,
+  dispatchStoredUpload,
+  listStoredFiles,
+  MAX_ATTACHMENT_BYTES,
+  MAX_QUEUED_ATTACHMENT_BYTES,
+  readStoredFiles,
+  removeStoredFiles,
+} from '@/utils/stored-files';
+import { installIndexedDb, queuedNames, queueFiles } from './helpers/indexed-db';
 import { mockWebLocks } from './helpers/mock';
 
 function sizedFile(name: string, size: number): File {
@@ -13,37 +24,91 @@ function sizedFile(name: string, size: number): File {
 beforeEach(() => {
   fakeBrowser.reset();
   mockWebLocks();
+  installIndexedDb();
 });
 
 describe('attachment queue', () => {
-  it('rejects an oversized file before reading any file in the selection', async () => {
-    const read = vi.spyOn(FileReader.prototype, 'readAsDataURL');
+  it('rejects an oversized file before storing any file in the selection', async () => {
     await expect(addPickedFiles([new File(['x'], 'small.txt'), sizedFile('large.bin', MAX_ATTACHMENT_BYTES + 1)])).rejects.toThrow(
       '20 MiB',
     );
-    expect(read).not.toHaveBeenCalled();
     expect(await readStoredFiles()).toEqual([]);
   });
 
-  it('checks the combined budget against files queued by another picker before encoding', async () => {
-    const read = vi.spyOn(FileReader.prototype, 'readAsDataURL');
-    await fakeBrowser.storage.local.set({
-      storedFiles: [{ id: 'prior', name: 'queued.bin', size: MAX_QUEUED_ATTACHMENT_BYTES - 1, type: '', data: 'data:;base64,eA==' }],
-    });
+  it('checks the combined budget against files queued by another picker', async () => {
+    await addPickedFiles([
+      sizedFile('queued.bin', MAX_ATTACHMENT_BYTES),
+      sizedFile('queued.bin', MAX_ATTACHMENT_BYTES),
+      sizedFile('queued.bin', MAX_QUEUED_ATTACHMENT_BYTES - 2 * MAX_ATTACHMENT_BYTES - 1),
+    ]);
     const results = await Promise.allSettled([
       addPickedFiles([new File(['a'], 'first.txt')]),
       addPickedFiles([new File(['b'], 'second.txt')]),
     ]);
     expect(results.map(({ status }) => status)).toEqual(['fulfilled', 'rejected']);
     expect(results[1]).toMatchObject({ reason: expect.objectContaining({ message: expect.stringContaining('50 MiB') }) });
-    expect(read).toHaveBeenCalledTimes(1);
-    expect((await readStoredFiles()).map(({ name }) => name)).toEqual(['queued.bin', 'first.txt']);
+    expect(await queuedNames()).toEqual(['queued.bin', 'queued.bin', 'queued.bin', 'first.txt']);
   });
 
   it('bounds the number of empty files as well as their total size', async () => {
-    const read = vi.spyOn(FileReader.prototype, 'readAsDataURL');
     await expect(addPickedFiles(Array.from({ length: 101 }, (_, i) => new File([], String(i))))).rejects.toThrow('100 files');
-    expect(read).not.toHaveBeenCalled();
+    expect(await readStoredFiles()).toEqual([]);
+  });
+
+  it('keeps the bytes as a Blob in IndexedDB, in the order picked, and lists metadata only', async () => {
+    await queueFiles(['b.txt', 'second'], ['a.txt', 'first']);
+    const files = await readStoredFiles();
+    expect(files.map(({ name, type, size }) => [name, type, size])).toEqual([
+      ['b.txt', 'text/plain', 6],
+      ['a.txt', 'text/plain', 5],
+    ]);
+    expect(await files[0]!.blob.text()).toBe('second');
+    expect(await listStoredFiles()).toEqual(files.map(({ id, name, type, size }) => ({ id, name, type, size })));
+    expect(await fakeBrowser.storage.local.get('storedFiles')).toEqual({});
+  });
+
+  it('removes only the given ids, leaving files added meanwhile', async () => {
+    await queueFiles(['sent.txt']);
+    const [sent] = await listStoredFiles();
+    await queueFiles(['added.txt']);
+    await removeStoredFiles([sent!.id]);
+    expect(await queuedNames()).toEqual(['added.txt']);
+  });
+
+  it('changes the revision key after each edit so other views reload', async () => {
+    const revisions: unknown[] = [];
+    fakeBrowser.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[STORED_FILES_REVISION_KEY]) revisions.push(changes[STORED_FILES_REVISION_KEY].newValue);
+    });
+    await queueFiles(['a.txt']);
+    await removeStoredFiles([(await listStoredFiles())[0]!.id]);
+    expect(revisions).toHaveLength(2);
+    expect(new Set(revisions).size).toBe(2);
+  });
+
+  it('starts an upload only while its files are queued, and releases the lock before it completes', async () => {
+    await queueFiles(['a.txt']);
+    const [file] = await listStoredFiles();
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const upload = vi.fn(() => promise);
+    const dispatched = dispatchStoredUpload([file!.id], upload);
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    // The queue stays editable while the request runs
+    await queueFiles(['b.txt']);
+    resolve();
+    expect(await dispatched).toBe(true);
+
+    const skipped = vi.fn(async () => {});
+    expect(await dispatchStoredUpload(['gone'], skipped)).toBe(false);
+    expect(skipped).not.toHaveBeenCalled();
+  });
+
+  it('clears the queue and a leftover data URL queue of earlier builds on browser startup', async () => {
+    await queueFiles(['a.txt']);
+    await fakeBrowser.storage.local.set({ draftState: { message: 'Old draft' }, storedFiles: [{ name: 'old.txt' }] });
+    await clearComposerOnStartup();
+    expect(await queuedNames()).toEqual([]);
+    expect(await fakeBrowser.storage.local.get(['draftState', 'storedFiles'])).toEqual({});
   });
 });
 

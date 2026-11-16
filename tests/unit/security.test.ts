@@ -49,7 +49,7 @@ describe('#1 credentials are bound to the servers approved on this device', () =
     await fakeBrowser.storage.local.set({ accessToken: 'tk_x' });
   });
 
-  it('approves the current servers once, for settings saved by an earlier version', async () => {
+  it('approves the current servers once, when this device has no approvals stored yet', async () => {
     expect(await getConfig()).toMatchObject({ accessToken: 'tk_x', heldBackFrom: [] });
     expect(await fakeBrowser.storage.local.get(AUTH_ORIGINS_KEY)).toEqual({
       [AUTH_ORIGINS_KEY]: ['https://ntfy.lan', 'https://ntfy.example.com'],
@@ -125,11 +125,17 @@ describe('#3 malformed messages from the server', () => {
     expect(parsed?.attachment).toEqual({ name: 'a.png', url: 'https://ntfy.example/file/a.png' });
   });
 
-  it('cleans messages stored by an earlier version when reading them', async () => {
+  it('cleans stored messages again when reading them', async () => {
     await fakeBrowser.storage.local.set({
-      receivedNotifications: [{ id: 'bad', event: 'message', topic: 'a', time: 1, actions: {} }, { id: 'no-time' }, 'junk'],
+      receivedNotifications: [
+        { id: 'bad', event: 'message', topic: 'a', time: 1, actions: {}, serverOrigin: 'https://ntfy.example' },
+        { id: 'no-time', serverOrigin: 'https://ntfy.example' },
+        'junk',
+      ],
     });
-    expect((await getHistoryState()).receivedNotifications).toEqual([{ id: 'bad', event: 'message', topic: 'a', time: 1 }]);
+    expect((await getHistoryState()).receivedNotifications).toEqual([
+      { id: 'bad', event: 'message', topic: 'a', time: 1, serverOrigin: 'https://ntfy.example' },
+    ]);
   });
 });
 
@@ -237,6 +243,23 @@ describe('#4 a hostile server cannot fill storage', () => {
     expect(notified).not.toContain('m1');
   });
 
+  it('applies a same-second update whose earlier version fell outside the retained tail of the poll', async () => {
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: 'a' });
+    const old = server.publish('a', 10000, { sequence_id: 'job' });
+    const notified: string[] = [];
+    const receiver = createReceiver({ onNewMessage: (m) => notified.push(m.id) });
+    await receiver.sync(); // first, silent sync stores the earlier version
+    for (let i = 0; i < MAX_POLL_EVENTS; i++) server.publish('a', 10000);
+    const next = server.publish('a', 10000, { sequence_id: 'job' });
+    await receiver.sync();
+    const stored = (await getHistoryState()).receivedNotifications;
+    expect(stored.map(({ id }) => id)).toContain(next.id);
+    expect(stored.map(({ id }) => id)).not.toContain(old.id);
+    expect(notified).toContain(next.id);
+    // The earlier version's position came without content: nothing empty was stored in its place
+    expect(stored.every((row) => row.id !== old.id)).toBe(true);
+  });
+
   it('caps the size of the history, dropping the oldest messages first', () => {
     const big = 'x'.repeat(MAX_MESSAGE_JSON - 200);
     const messages: NtfyMessage[] = Array.from({ length: 400 }, (_, i) => ({
@@ -255,20 +278,22 @@ describe('#4 a hostile server cannot fill storage', () => {
   it('parses one stream or poll line with the same checks', async () => {
     expect(parseMessageJson('not json')).toBeNull();
     expect(parseMessageJson(JSON.stringify({ id: 'm', event: 'message', topic: 'a', time: 1 }))).not.toBeNull();
-    expect(await recordMessage({ id: 'ok', event: 'message', topic: 'a', time: 1 })).toBe(true);
+    const source = { origin: 'https://ntfy.example', origins: ['https://ntfy.example'] };
+    expect((await recordMessage({ id: 'ok', event: 'message', topic: 'a', time: 1 }, source)).added).toHaveLength(1);
   });
 });
 
-describe('#7 a malformed escape in a synced URL', () => {
-  it("doesn't stop the move of the credentials out of storage.sync", async () => {
+describe('#7 userinfo in a synced URL', () => {
+  it('strips it from storage.sync, even with a malformed escape, and never uses it as credentials', async () => {
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://user:bad%@ntfy.example', topics: 'a' });
     const config = await getConfig();
     expect(config.apiUrl).toBe('https://ntfy.example');
-    expect(config.credentials).toEqual({ username: 'user', password: 'bad%' });
+    expect(config.credentials).toBeNull();
     expect(JSON.stringify(await fakeBrowser.storage.sync.get(null))).not.toContain('bad');
+    expect(JSON.stringify(await fakeBrowser.storage.local.get(null))).not.toContain('bad');
   });
 
-  it('clears an incomplete URL saved by an older version and preserves valid settings', async () => {
+  it('clears an incomplete synced URL and preserves valid settings', async () => {
     await fakeBrowser.storage.sync.set({
       apiUrl: 'https://example-user:dummy-text@',
       fallbackUrl: 'https://fallback.example',
@@ -276,6 +301,22 @@ describe('#7 a malformed escape in a synced URL', () => {
     });
     expect(await getConfig()).toMatchObject({ apiUrl: '', fallbackUrl: 'https://fallback.example', topics: ['a'] });
     expect(await fakeBrowser.storage.sync.get(null)).toEqual({ apiUrl: '', fallbackUrl: 'https://fallback.example', topics: 'a' });
+  });
+});
+
+describe('server error text', () => {
+  it('shows only the status code of a failed poll in the sync status, not text the server chose', async () => {
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://ntfy.example', topics: 'a' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.endsWith('/auth') ? new Response() : Response.json({ code: 42901, error: 'visit https://evil.example' }, { status: 429 }),
+      ),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createReceiver({ onNewMessage: () => {} }).sync();
+    const { receiverStatus } = await fakeBrowser.storage.session.get('receiverStatus');
+    expect(receiverStatus).toMatchObject({ syncErrors: [['a', 'HTTP 429']] });
   });
 });
 

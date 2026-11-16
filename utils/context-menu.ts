@@ -110,6 +110,12 @@ export async function handleContextMenuClick(info: Browser.contextMenus.OnClickD
   if (!clicked) return;
   const [kind, topic, apiUrl, fallbackUrl] = clicked;
 
+  // Only http(s) images can be fetched and sent; a data: or blob: image is reported as a failure
+  if (kind === SEND_IMAGE_ID && !isHttpUrl(info.srcUrl)) {
+    showSendResult(false);
+    return;
+  }
+
   // Ask for access to the image's site while the click still counts as a user gesture
   // (checking permissions.contains first is async and would lose it)
   if (kind === SEND_IMAGE_ID && isHttpUrl(info.srcUrl)) {
