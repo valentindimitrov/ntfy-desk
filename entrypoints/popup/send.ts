@@ -15,7 +15,15 @@ import {
   splitCredentials,
   type PublishOptions,
 } from '@/utils/ntfy';
-import { SEND_DEFAULTS_KEY, isPriority, parseSendDefaults, sameSendDefaults, type SendDefaults } from '@/utils/send-defaults';
+import {
+  SEND_DEFAULTS_KEY,
+  isPriority,
+  parseRememberedPriority,
+  parseRememberedTags,
+  parseSendDefaults,
+  sameSendDefaults,
+  type SendDefaults,
+} from '@/utils/send-defaults';
 import {
   STORED_FILES_REVISION_KEY,
   addPickedFiles,
@@ -28,18 +36,7 @@ import {
 } from '@/utils/stored-files';
 import { pickServer } from '@/utils/servers';
 import { createZip } from '@/utils/zip';
-import {
-  elements,
-  inboxTopic,
-  isConfigured,
-  isPageMode,
-  parseRememberedPriority,
-  parseRememberedTags,
-  saveLocal,
-  saveSync,
-  state,
-  type PageInfo,
-} from './state';
+import { elements, inboxTopic, isConfigured, isPageMode, saveLocal, saveSync, state, type PageInfo } from './state';
 import { clearStatus, moveItem, setupDragAndDrop, showSettingsStatus, showStatus } from './ui';
 
 export async function setupSendPanel(): Promise<void> {

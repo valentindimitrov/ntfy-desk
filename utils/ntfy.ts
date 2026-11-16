@@ -91,6 +91,14 @@ export function serverPermissionPattern(url: string): string | null {
   return `${parsed.protocol}//${parsed.hostname}/*`;
 }
 
+/**
+ * Held while approvals are first recorded and while an import replaces the servers (utils/backup.ts),
+ * so neither sees the other half done. Don't call getConfig while holding it.
+ */
+export function withAuthOriginsLock<T>(task: () => Promise<T>): Promise<T> {
+  return navigator.locks.request('ntfy-auth-origins', task);
+}
+
 /** Approve the token and password for these server origins */
 export async function setAuthOrigins(origins: string[]): Promise<void> {
   await browser.storage.local.set({ [AUTH_ORIGINS_KEY]: origins });
@@ -381,8 +389,22 @@ export async function getConfig(): Promise<NtfyConfig> {
     if (Array.isArray(approved)) {
       heldBackFrom = origins.filter((origin) => !approved.includes(origin));
     } else if (origins.length > 0) {
-      // Not with no server yet: the URL arriving later would then be held back
-      await setAuthOrigins(origins);
+      // Not with no server yet: the URL arriving later would then be held back.
+      // Checked again under the lock an import holds: this read may have seen an import's servers
+      // without the approvals it recorded first, and must not approve those servers.
+      heldBackFrom = await withAuthOriginsLock(async () => {
+        const [urls, recorded] = await Promise.all([
+          browser.storage.sync.get(['apiUrl', 'fallbackUrl']),
+          browser.storage.local.get([AUTH_ORIGINS_KEY]),
+        ]);
+        const now: unknown = recorded[AUTH_ORIGINS_KEY];
+        if (Array.isArray(now)) return origins.filter((origin) => !now.includes(origin));
+        const current = serverOrigins(...[urls.apiUrl, urls.fallbackUrl].map((url) => splitCredentials(isHttpUrl(url) ? url : '').url));
+        // The servers changed meanwhile: nothing is approved by this read, the next one decides
+        if (current.length !== origins.length || !current.every((origin) => origins.includes(origin))) return origins;
+        await setAuthOrigins(origins);
+        return [];
+      });
     }
   }
   const held = heldBackFrom.length > 0;

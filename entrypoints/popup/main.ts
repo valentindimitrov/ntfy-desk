@@ -58,7 +58,16 @@ function showMainView(): void {
   applyPagePrefill();
 }
 
+/** A link to a group of the Settings (the toolbar popup sends import and export here) */
+async function showSettingsFromLink(): Promise<void> {
+  // An open settings form may hold unsaved edits: leave it as it is
+  if (!elements.settingsView.classList.contains('active')) await showSettingsView();
+  elements.backupSection.scrollIntoView({ block: 'start' });
+  elements.importSettingsBtn.focus();
+}
+
 async function focusInboxFromLink(params: URLSearchParams): Promise<void> {
+  if (params.get('settings') === 'backup') return showSettingsFromLink();
   const message = params.get('message');
   const topic = params.get('topic');
   if (!message && topic === null) return;

@@ -22,6 +22,7 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Open in a tab**. Open ntfy Desk in its own browser tab to use the full viewport.
 - **Inbox display**. Keep 50, 100, 250 or 500 messages per topic, show message times as "5m ago" or as the date and time, and choose comfortable or compact rows.
 - **Keyboard**. Ctrl + Enter (Cmd + Enter on a Mac) sends when focus is in the expanded Send form. Two shortcuts are set in the browser's own shortcut settings: one opens ntfy Desk (Alt + Shift + N is suggested, where it is free), and **Send this page to ntfy** (no key until you choose one) publishes the current page's URL and title to the topic last chosen in the Send form, or the first topic. The toolbar icon shows ✓, ✗ or ? as for a right-click send.
+- **Backup**. Export the settings to a JSON file and import them in another browser or profile, without browser sync. The file has no token, password or messages.
 - **Dark mode**. See the [privacy policy](PRIVACY.md) for data and permissions.
 
 ## Install
@@ -47,6 +48,7 @@ Use an HTTPS server and a topic with access controls for sensitive messages. Any
 8. **Inbox**. **Messages kept per topic** is 100 by default. A lower value removes each topic's oldest messages right away, and a higher one doesn't bring them back; all topics together stay within 8 MiB. **Message times** shows relative times (the default) or always the local date and time. **Density** tightens the message rows without hiding anything.
 9. **Fill in the current tab** (under Sending): puts the page's title in the Title field and its URL in the Message field (from the context menu, the page URL becomes the title). In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
 10. **Keyboard shortcuts** lists the current keys. **Change shortcuts** opens the browser's page for them (`chrome://extensions/shortcuts` in Chromium browsers, **Manage Extension Shortcuts** in Firefox).
+11. **Backup**. **Export settings** downloads `ntfy-desk-settings-<date>.json` with the server and fallback URL, the topics with their topic settings, and every preference. It never contains the access token, the username and password or received messages, but it does list your server addresses and topic names, which is all it takes to read a topic on a server without access control, so treat it as private. **Import settings** reads such a file, shows the server URLs and the number of topics it brings, and after **Replace settings** replaces all of these settings (it doesn't merge; a setting the file lacks returns to its default). Values the file holds that aren't valid are named and left out. Your token and password stay on the device, and aren't sent to an imported server this device hasn't approved until you choose **Use them with this server** under Server. Importing needs a file dialog, so from the toolbar popup it continues in the extension's tab; in Firefox so does exporting.
 
 ### Receiving and the browser
 

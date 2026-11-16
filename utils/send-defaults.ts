@@ -46,6 +46,16 @@ export function splitTags(text: string): string[] {
   return parseTags(text.split(','));
 }
 
+/** storage.sync `priority`: the priority used last; the default for anything else */
+export function parseRememberedPriority(stored: unknown): Priority {
+  return isPriority(stored) ? stored : DEFAULT_PRIORITY;
+}
+
+/** storage.sync `lastTags`: the tags used last */
+export function parseRememberedTags(stored: unknown): string[] {
+  return Array.isArray(stored) ? stored.filter((tag): tag is string => typeof tag === 'string') : [];
+}
+
 /** Stored as a list of { topic, priority, tags } (not an object keyed by topic); invalid entries are dropped */
 export function parseSendDefaults(stored: unknown): TopicSendDefaults {
   const defaults: TopicSendDefaults = new Map();

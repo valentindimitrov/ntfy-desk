@@ -15,22 +15,30 @@ async function findExtensionTab(): Promise<{ tabId: number; windowId: number; ur
 }
 
 /**
- * Switch to the extension's tab, or open it. With a message, the inbox highlights it.
+ * Switch to the extension's tab, or open it. With a message, the inbox highlights it. With settings,
+ * the tab shows that group of the Settings (import and export need a page that stays open).
  */
 export async function openExtensionTab({
   message,
   topic,
   allTopics,
-}: { message?: string; topic?: string; allTopics?: boolean } = {}): Promise<void> {
+  settings,
+}: { message?: string; topic?: string; allTopics?: boolean; settings?: 'backup' } = {}): Promise<void> {
   const open = await findExtensionTab();
   const url = new URL(open?.url ?? pageUrl());
-  const focusInbox = Boolean(message || topic || allTopics);
-  if (focusInbox) {
-    // A new fragment focuses the Inbox without reloading the composer, even on a repeated click.
-    url.hash = new URLSearchParams({ ...(message ? { message } : { topic: topic ?? '' }), focus: crypto.randomUUID() }).toString();
+  const link: Record<string, string> | null = settings
+    ? { settings }
+    : message
+      ? { message }
+      : topic || allTopics
+        ? { topic: topic ?? '' }
+        : null;
+  if (link) {
+    // A new fragment focuses the Inbox (or the settings group) without reloading the composer, even on a repeated click.
+    url.hash = new URLSearchParams({ ...link, focus: crypto.randomUUID() }).toString();
   }
   if (open) {
-    await browser.tabs.update(open.tabId, focusInbox ? { active: true, url: url.href } : { active: true });
+    await browser.tabs.update(open.tabId, link ? { active: true, url: url.href } : { active: true });
     await browser.windows.update(open.windowId, { focused: true });
     return;
   }

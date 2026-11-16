@@ -1,7 +1,7 @@
 // Settings view: server and fallback URL, token or username and password, topics, notification rules,
 // badge, notification, history and inbox display preferences, include-URL option, theme and the
 // keyboard shortcuts. Per-topic options (message sync, desktop notifications, send defaults) are
-// staged until Apply.
+// staged until Apply. Backup exports the synced settings to a file and imports one after a confirmation.
 
 import { browser } from 'wxt/browser';
 import {
@@ -29,7 +29,19 @@ import {
   storedTopicRules,
   type NotifyRule,
 } from '@/utils/rules';
+import {
+  BackupError,
+  THEMES,
+  backupFileName,
+  buildBackup,
+  importSettings,
+  previewImport,
+  readBackupFile,
+  type ImportPreview,
+  type ParsedBackup,
+} from '@/utils/backup';
 import { getShortcuts, openShortcutSettings } from '@/utils/commands';
+import { openExtensionTab } from '@/utils/extension-tab';
 import { DEFAULT_PREFERENCES, PREFERENCE_KEYS, getPreferences, parsePreferences, type Preferences } from '@/utils/preferences';
 import {
   PRIORITIES,
@@ -46,7 +58,7 @@ import {
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics } from '@/utils/sync-modes';
 import { loadNotifications } from './receive';
 import { updateTopicOptions } from './send';
-import { elements, isConfigured, saveReceiveFilter, saveSync, state, type Theme } from './state';
+import { elements, isConfigured, isPageMode, saveReceiveFilter, saveSync, state, type Theme } from './state';
 import { clearStatus, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
 
 async function editSettings<T>(task: () => Promise<T>): Promise<T> {
@@ -569,9 +581,135 @@ function fillServerFields(): void {
   elements.passwordInput.value = state.credentials?.password ?? '';
 }
 
+// ==================
+// Backup: export and import
+// ==================
+
+/** The file picked for import, validated, and what it would change; null when nothing waits for confirmation */
+let pendingImport: { backup: ParsedBackup; preview: ImportPreview } | null = null;
+
+/** The toolbar popup can't keep a file dialog open: the Backup group of the extension's tab takes over */
+async function continueInTab(): Promise<void> {
+  try {
+    await openExtensionTab({ settings: 'backup' });
+    window.close();
+  } catch {
+    showSettingsStatus('Could not open ntfy Desk in a tab. Open it with the header button, then use Backup there.', 'error');
+  }
+}
+
+/**
+ * A download of text the page made itself: a Blob URL on a link with `download`, which needs no
+ * permission. Firefox's toolbar popup hands it to the tab instead: the popup closes when a save
+ * dialog takes the focus, which discards the Blob before it is written.
+ */
+async function exportSettings(): Promise<void> {
+  if (!isPageMode && import.meta.env.BROWSER === 'firefox') return continueInTab();
+  try {
+    const name = backupFileName();
+    const url = URL.createObjectURL(new Blob([`${JSON.stringify(await buildBackup(), null, 2)}\n`], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    showSettingsStatus(`Settings exported as ${name}`, 'success');
+  } catch {
+    showSettingsStatus('Could not export the settings', 'error');
+  }
+}
+
+function closeImportConfirm(): void {
+  pendingImport = null;
+  elements.importConfirm.hidden = true;
+  elements.importConfirmList.replaceChildren();
+}
+
+const shownUrl = (url: string) => url || 'none';
+const replaced = (from: string, to: string) => (from === to ? `${to} (unchanged)` : `${to} (now ${from})`);
+
+/** What the import will change, for the user to confirm. The file's values are shown with textContent only. */
+function showImportConfirm(fileName: string): void {
+  if (!pendingImport) return;
+  const { backup, preview } = pendingImport;
+  const shortName = fileName.length > 80 ? `${fileName.slice(0, 77)}…` : fileName;
+  const exported = backup.exportedAt ? `, exported ${backup.exportedAt.toLocaleString()}` : '';
+  elements.importConfirmTitle.textContent = `Replace the settings with those from ${shortName}${exported}?`;
+  const lines = [
+    `Server URL: ${replaced(shownUrl(preview.apiUrl.from), shownUrl(preview.apiUrl.to))}`,
+    `Fallback URL: ${replaced(shownUrl(preview.fallbackUrl.from), shownUrl(preview.fallbackUrl.to))}`,
+    `Topics: ${replaced(String(preview.topics.from), String(preview.topics.to))}`,
+    'All other settings are replaced too: topic settings, notifications, inbox, sending, appearance and layout. A setting the file lacks returns to its default.',
+    'Your token and password stay as they are. Received messages are not part of the file.',
+  ];
+  if (preview.historyPerTopic.to < preview.historyPerTopic.from) {
+    lines.push(
+      `Messages kept per topic: ${preview.historyPerTopic.to} (now ${preview.historyPerTopic.from}). Older messages beyond ${preview.historyPerTopic.to} per topic are deleted.`,
+    );
+  }
+  if (preview.heldBackFrom.length > 0) {
+    lines.push(`Your token and password aren't sent to ${preview.heldBackFrom.join(', ')} until you confirm that under Server.`);
+  }
+  if (backup.urlPartsRemoved) lines.push('A username, password, query string or fragment in a server URL of the file is ignored.');
+  if (backup.skipped.length > 0) lines.push(`Not valid in the file, so not imported: ${backup.skipped.join(', ')}.`);
+  elements.importConfirmList.replaceChildren(
+    ...lines.map((line) => {
+      const item = document.createElement('li');
+      item.textContent = line;
+      return item;
+    }),
+  );
+  elements.importConfirm.hidden = false;
+  elements.importConfirmTitle.focus();
+}
+
+async function pickImportFile(): Promise<void> {
+  const file = elements.importSettingsInput.files?.[0];
+  elements.importSettingsInput.value = '';
+  if (!file) return;
+  closeImportConfirm();
+  clearStatus(elements.settingsStatus);
+  try {
+    const backup = await readBackupFile(file);
+    pendingImport = { backup, preview: await previewImport(backup.settings) };
+    showImportConfirm(file.name);
+  } catch (error) {
+    closeImportConfirm();
+    showSettingsStatus(error instanceof BackupError ? error.message : 'Could not read the file', 'error');
+  }
+}
+
+async function confirmImport(): Promise<void> {
+  const pending = pendingImport;
+  if (!pending || elements.importConfirmBtn.disabled) return;
+  elements.importConfirmBtn.disabled = true;
+  try {
+    await editSettings(() => importSettings(pending.backup.settings, pending.preview.baseline));
+    closeImportConfirm();
+    // The form, the topic table and this view's state now show what was imported, not what was there
+    // before: a later "Save server settings" starts from the imported values.
+    await populateSettings();
+    state.lastTopic = pending.backup.settings.lastTopic || undefined;
+    const held = state.heldBackFrom.length > 0;
+    showSettingsStatus(
+      held ? 'Settings imported. Confirm the server under Server before your token and password are used.' : 'Settings imported',
+      held ? 'warning' : 'success',
+    );
+  } catch (error) {
+    closeImportConfirm();
+    showSettingsStatus(error instanceof BackupError ? error.message : 'Could not import the settings. Nothing was changed.', 'error');
+  } finally {
+    elements.importConfirmBtn.disabled = false;
+  }
+}
+
 /** Refresh shared settings when opening the editor, leaving the draft untouched. */
 export async function populateSettings(): Promise<void> {
   clearStatus(elements.settingsStatus);
+  closeImportConfirm();
   const [config, { theme }] = await Promise.all([getConfig(), browser.storage.sync.get('theme')]);
   const auth = await getStoredAuth();
   Object.assign(state, {
@@ -622,6 +760,18 @@ export function setupSettings(): void {
     if (elements.settingsView.classList.contains('active')) void renderShortcuts();
   });
   elements.applyTopicSettings.addEventListener('click', () => void applyTopicSettings());
+  elements.exportSettingsBtn.addEventListener('click', () => void exportSettings());
+  // Called directly from the click: opening a file dialog needs a user gesture
+  elements.importSettingsBtn.addEventListener('click', () => {
+    if (isPageMode) elements.importSettingsInput.click();
+    else void continueInTab();
+  });
+  elements.importSettingsInput.addEventListener('change', () => void pickImportFile());
+  elements.importConfirmBtn.addEventListener('click', () => void confirmImport());
+  elements.importCancelBtn.addEventListener('click', () => {
+    closeImportConfirm();
+    elements.importSettingsBtn.focus();
+  });
   elements.serverAccessBtn.addEventListener('click', requestServerAccess);
   elements.heldBackBtn.addEventListener('click', () => void approveServers());
   for (const input of [elements.urlInput, elements.fallbackUrlInput, elements.tokenInput, elements.usernameInput, elements.passwordInput]) {
@@ -645,6 +795,21 @@ export function setupSettings(): void {
     saveSetting({ theme });
   });
   browser.storage.onChanged.addListener((changes, area) => {
+    // Changed in another view, by an import or through browser sync
+    if (area === 'sync' && changes.theme) {
+      const theme = changes.theme.newValue;
+      state.theme = (THEMES as readonly unknown[]).includes(theme) ? (theme as Theme) : 'auto';
+      applyTheme();
+    }
+    if (area === 'sync' && changes.includeUrl) {
+      state.includeUrl = changes.includeUrl.newValue === true;
+      elements.includeUrlCheckbox.checked = state.includeUrl;
+    }
+    if (area === 'sync' && changes.sendAnotherEnabled) {
+      state.sendAnotherEnabled = changes.sendAnotherEnabled.newValue === true;
+      elements.sendAnotherCheckbox.checked = state.sendAnotherEnabled;
+    }
+    if (area === 'sync' && changes.sendAsZipEnabled) state.sendAsZipEnabled = changes.sendAsZipEnabled.newValue === true;
     if (area === 'sync' && PREFERENCE_KEYS.some((key) => changes[key])) {
       // A removed key reads as its default
       updatePreferences(

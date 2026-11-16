@@ -4,7 +4,14 @@ import { browser } from 'wxt/browser';
 import { getConfig, getStoredAuth, type Credentials, type NtfyMessage } from '@/utils/ntfy';
 import { DEFAULT_PREFERENCES, getPreferences, type Preferences } from '@/utils/preferences';
 import { getTopicRules, type TopicRules } from '@/utils/rules';
-import { DEFAULT_PRIORITY, getSendDefaults, isPriority, type Priority, type TopicSendDefaults } from '@/utils/send-defaults';
+import {
+  DEFAULT_PRIORITY,
+  getSendDefaults,
+  parseRememberedPriority,
+  parseRememberedTags,
+  type Priority,
+  type TopicSendDefaults,
+} from '@/utils/send-defaults';
 import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFileInfo } from '@/utils/stored-files';
 import { getSyncDeletionTopics } from '@/utils/sync-modes';
@@ -143,16 +150,6 @@ export async function loadSettings(): Promise<void> {
     getPreferences(),
     getSendDefaults(),
   ]);
-}
-
-/** storage.sync `priority`: the priority used last; the default for anything else */
-export function parseRememberedPriority(stored: unknown): Priority {
-  return isPriority(stored) ? stored : DEFAULT_PRIORITY;
-}
-
-/** storage.sync `lastTags`: the tags used last */
-export function parseRememberedTags(stored: unknown): string[] {
-  return Array.isArray(stored) ? stored.filter((tag): tag is string => typeof tag === 'string') : [];
 }
 
 export async function loadReceiveFilter(): Promise<void> {

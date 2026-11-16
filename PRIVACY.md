@@ -8,6 +8,7 @@ ntfy Desk sends and receives notifications through the ntfy server you configure
 - **Content you send.** Sending a notification transfers its topic, title, message, priority, tags and attachments to the selected ntfy server. If you use tab prefill or a right-click command, a notification can include a page title, URL, selected text, link text or image. Use HTTPS and access-controlled topics for sensitive content. Your server operator controls server logs, retention and who can read your topics. [ntfy topic access](https://docs.ntfy.sh/config/#access-control)
 - **Sites you interact with.** Sending an image from a page may request access to its site and download the image for the notification. Clicking links opens their destinations in your browser. Image previews in the inbox load from the ntfy server's attachment route.
 - **Browser sync.** If your browser syncs extension preferences, it can sync server addresses, topic names and preferences through its sync service. The addresses are stored without embedded credentials.
+- **Settings files you export.** **Export settings** saves a file to your downloads with your server addresses, topic names and preferences. It is created in the browser and sent nowhere. It contains no token, username, password or messages. Topic names can be enough to read a topic on a server without access control, so share the file with that in mind. Importing a file reads it in the browser; your stored credentials are not sent to a server from an imported file until you confirm it in Settings.
 
 ## What stays in extension storage
 

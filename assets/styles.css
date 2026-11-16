@@ -911,6 +911,48 @@ body:has(#settings-view.active) #back-btn {
   gap: 0 16px;
 }
 
+/* Settings: export and import */
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.import-confirm {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.import-confirm[hidden] {
+  display: none;
+}
+
+.import-confirm-title {
+  margin: 0 0 6px 0;
+  font-weight: 600;
+}
+
+.import-confirm-list {
+  margin: 0 0 8px 0;
+  padding-left: 18px;
+}
+
+.import-confirm-list li {
+  margin-bottom: 3px;
+}
+
+.import-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-confirm .import-confirm-actions .chip {
+  margin-top: 0;
+}
+
 .shortcut-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

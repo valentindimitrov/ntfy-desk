@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { installIndexedDb, queuedNames, queueFiles } from './helpers/indexed-db';
-import { mockResolved, mockWebLocks } from './helpers/mock';
+import { callsOf, mockResolved, mockWebLocks } from './helpers/mock';
 import { handlePopupRequest } from '@/utils/messages';
 import type { StoredMessage } from '@/utils/history';
 import type { NtfyMessage } from '@/utils/ntfy';
@@ -1465,7 +1465,16 @@ describe('settings', () => {
     await openPopup();
     await openSettings();
     const headings = [...document.querySelectorAll('#settings-view .settings-section > h2')].map((heading) => heading.textContent);
-    expect(headings).toEqual(['Server', 'Topics', 'Notifications', 'Inbox', 'Sending', 'Appearance and layout', 'Keyboard shortcuts']);
+    expect(headings).toEqual([
+      'Server',
+      'Topics',
+      'Notifications',
+      'Inbox',
+      'Sending',
+      'Appearance and layout',
+      'Keyboard shortcuts',
+      'Backup',
+    ]);
     for (const section of document.querySelectorAll('#settings-view .settings-section')) {
       expect(document.getElementById(section.getAttribute('aria-labelledby')!)?.tagName).toBe('H2');
     }
@@ -1623,5 +1632,344 @@ describe('settings', () => {
     await openPopup('?tab=receive');
     const coolify = [...document.querySelectorAll('.topic-filter-btn')].find((b) => b.textContent?.startsWith('coolify'))!;
     expect(coolify.querySelector('.topic-muted')?.textContent).toBe('🔕');
+  });
+});
+
+describe('settings: backup', () => {
+  const backupFile = (settings: unknown, name = 'ntfy-desk-settings-2026-11-01.json', extra: Record<string, unknown> = {}) =>
+    new File(
+      [JSON.stringify({ format: 'ntfy-desk-settings', version: 1, exportedAt: '2026-11-01T10:00:00.000Z', settings, ...extra })],
+      name,
+      {
+        type: 'application/json',
+      },
+    );
+
+  /** The file dialog's result: the chosen file on the input, then its change event */
+  async function pick(file: File): Promise<void> {
+    const input = $<HTMLInputElement>('#import-settings-input');
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    input.dispatchEvent(new Event('change'));
+    await flush();
+  }
+
+  const confirmLines = () => [...document.querySelectorAll('#import-confirm-list li')].map((line) => line.textContent);
+  const IMPORTED = {
+    apiUrl: 'https://imported.example',
+    fallbackUrl: 'https://imported-fallback.example',
+    topics: ['alerts', 'news'],
+    notifyRules: [['news', 'off']],
+    topicSendDefaults: [{ topic: 'news', priority: 2, tags: ['newspaper'] }],
+    theme: 'dark',
+    includeUrl: true,
+    sendAnotherEnabled: true,
+    historyPerTopic: 500,
+    inboxDensity: 'compact',
+    freezeDividers: true,
+    lastTopic: 'news',
+  };
+
+  it('downloads the settings as a JSON file from the extension tab, without the token', async () => {
+    await fakeBrowser.storage.local.set({ serverCredentials: { username: 'secret-user', password: 'secret-password' } });
+    const blobs: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      blobs.push(blob as Blob);
+      return 'blob:settings';
+    });
+    const clicked: { href: string; download: string }[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push({ href: this.href, download: this.download });
+    });
+    await openPopup('?mode=page');
+    await openSettings();
+    $('#export-settings-btn').click();
+    await vi.waitFor(() => expect(clicked).toHaveLength(1));
+
+    expect(clicked[0]).toEqual({ href: 'blob:settings', download: expect.stringMatching(/^ntfy-desk-settings-\d{4}-\d\d-\d\d\.json$/) });
+    const text = await blobs[0]!.text();
+    expect(blobs[0]!.type).toBe('application/json');
+    expect(JSON.parse(text)).toMatchObject({
+      format: 'ntfy-desk-settings',
+      version: 1,
+      settings: { apiUrl: 'https://ntfy.example', topics: ['alerts', 'coolify', 'inbox'], lastTopic: 'inbox' },
+    });
+    expect(text).not.toMatch(/tk_x|secret|accessToken|serverCredentials|authOrigins/);
+    expect($('#settings-status').textContent).toMatch(/^Settings exported as ntfy-desk-settings-/);
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect($('#backup-hint').textContent).toContain('never holds the token');
+    expect($('#backup-hint').textContent).not.toContain('safe to share');
+  });
+
+  it('downloads from the toolbar popup too (Chromium), and sends the import to the extension tab', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:settings');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    const create = mockResolved(fakeBrowser.tabs, 'create', {});
+    mockResolved(fakeBrowser.runtime, 'getContexts', []);
+    await openPopup();
+    await openSettings();
+    $('#export-settings-btn').click();
+    await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    expect(create).not.toHaveBeenCalled();
+    expect(closed).toBe(false);
+
+    // A file dialog would close the popup: the Backup group of the tab takes over
+    $('#import-settings-btn').click();
+    await vi.waitFor(() => expect(closed).toBe(true));
+    expect(inputClick).not.toHaveBeenCalled();
+    const [{ url }] = callsOf<[{ url: string }]>(create)[0]!;
+    expect(url).toMatch(/\/popup\.html\?mode=page#settings=backup&focus=/);
+  });
+
+  it("hands the export to the extension tab from Firefox's toolbar popup", async () => {
+    vi.stubEnv('BROWSER', 'firefox');
+    try {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:settings');
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      const create = mockResolved(fakeBrowser.tabs, 'create', {});
+      mockResolved(fakeBrowser.runtime, 'getContexts', []);
+      await openPopup();
+      await openSettings();
+      $('#export-settings-btn').click();
+      await vi.waitFor(() => expect(closed).toBe(true));
+      expect(click).not.toHaveBeenCalled();
+      expect(callsOf<[{ url: string }]>(create)[0]![0].url).toMatch(/\/popup\.html\?mode=page#settings=backup&focus=/);
+
+      // The tab can't be opened: the popup stays and says what to do
+      closed = false;
+      create.mockRejectedValue(new Error('blocked'));
+      $('#export-settings-btn').click();
+      await vi.waitFor(() => expect($('#settings-status').textContent).toContain('Could not open ntfy Desk in a tab'));
+      expect(closed).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('opens the file dialog directly in the extension tab, and the Backup group from a link', async () => {
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    const create = mockResolved(fakeBrowser.tabs, 'create', {});
+    await openPopup('?mode=page');
+    expect($('#settings-view').classList.contains('active')).toBe(false);
+    location.hash = 'settings=backup&focus=1';
+    window.dispatchEvent(new Event('hashchange'));
+    await vi.waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true));
+    await vi.waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
+
+    // A link arriving again leaves a form in progress alone
+    $<HTMLInputElement>('#url-input').value = 'https://typed.example';
+    location.hash = 'settings=backup&focus=2';
+    window.dispatchEvent(new Event('hashchange'));
+    await flush();
+    expect($<HTMLInputElement>('#url-input').value).toBe('https://typed.example');
+
+    $('#import-settings-btn').click();
+    expect(inputClick).toHaveBeenCalledTimes(1);
+    expect(create).not.toHaveBeenCalled();
+    location.hash = '';
+  });
+
+  it('shows what an import replaces and writes nothing until it is confirmed', async () => {
+    await fakeBrowser.storage.local.set({ accessToken: '' });
+    await openPopup('?mode=page');
+    await openSettings();
+    const before = await fakeBrowser.storage.sync.get();
+    expect($('#import-confirm').hidden).toBe(true);
+    await pick(backupFile(IMPORTED));
+
+    expect($('#import-confirm').hidden).toBe(false);
+    expect($('#import-confirm-title').textContent).toMatch(
+      /^Replace the settings with those from ntfy-desk-settings-2026-11-01\.json, exported .*2026.*\?$/,
+    );
+    expect(confirmLines()).toEqual([
+      'Server URL: https://imported.example (now https://ntfy.example)',
+      'Fallback URL: https://imported-fallback.example (now none)',
+      'Topics: 2 (now 3)',
+      'All other settings are replaced too: topic settings, notifications, inbox, sending, appearance and layout. A setting the file lacks returns to its default.',
+      'Your token and password stay as they are. Received messages are not part of the file.',
+    ]);
+    expect(await fakeBrowser.storage.sync.get()).toEqual(before);
+
+    $('#import-cancel-btn').click();
+    await flush();
+    expect($('#import-confirm').hidden).toBe(true);
+    expect(confirmLines()).toEqual([]);
+    // Nothing is left to confirm
+    $('#import-confirm-btn').click();
+    await flush();
+    expect(await fakeBrowser.storage.sync.get()).toEqual(before);
+  });
+
+  it('replaces the settings on confirmation and shows them in the form and the views at once', async () => {
+    await fakeBrowser.storage.local.set({ accessToken: '' });
+    await fakeBrowser.storage.sync.set({ notifyRules: [['coolify', 'off']], badgeScope: 'notifying', messageTimes: 'absolute' });
+    await openPopup('?mode=page');
+    await openSettings();
+    // Server edits in progress don't survive the import either
+    $<HTMLInputElement>('#url-input').value = 'https://typed.example';
+    await pick(backupFile(IMPORTED));
+    $('#import-confirm-btn').click();
+    await vi.waitFor(() => expect($('#settings-status').textContent).toBe('Settings imported'));
+
+    expect(await fakeBrowser.storage.sync.get()).toMatchObject({
+      apiUrl: 'https://imported.example',
+      fallbackUrl: 'https://imported-fallback.example',
+      topics: 'alerts,news',
+      notifyRules: [['news', 'off']],
+      topicSendDefaults: [{ topic: 'news', priority: 2, tags: ['newspaper'] }],
+      syncDeletionTopics: [],
+      badgeScope: 'all',
+      messageTimes: 'relative',
+      historyPerTopic: 500,
+      lastTopic: 'news',
+    });
+    expect($('#import-confirm').hidden).toBe(true);
+    expect($<HTMLInputElement>('#url-input').value).toBe('https://imported.example');
+    expect($<HTMLInputElement>('#fallback-url-input').value).toBe('https://imported-fallback.example');
+    expect([...document.querySelectorAll('.topic-badge')].map((badge) => badge.firstChild?.textContent)).toEqual(['alerts', 'news']);
+    expect($<HTMLSelectElement>('[aria-label="Desktop notifications for news"]').value).toBe('off');
+    expect($<HTMLSelectElement>('[aria-label="Send priority for news"]').value).toBe('2');
+    expect($<HTMLSelectElement>('#history-limit-select').value).toBe('500');
+    expect($<HTMLSelectElement>('#badge-scope-select').value).toBe('all');
+    expect($<HTMLInputElement>('#include-url-checkbox').checked).toBe(true);
+    expect($<HTMLInputElement>('#send-another-checkbox').checked).toBe(true);
+    expect($<HTMLInputElement>('#freeze-dividers-checkbox').checked).toBe(true);
+    expect(document.body.dataset.theme).toBe('dark');
+    expect(document.body.dataset.density).toBe('compact');
+
+    // No stale form state: saving the server settings now keeps the imported servers
+    $('#save-server-settings').click();
+    await vi.waitFor(() => expect($('#settings-status').textContent).toBe('Server settings saved'));
+    expect(await fakeBrowser.storage.sync.get(['apiUrl', 'fallbackUrl'])).toEqual({
+      apiUrl: 'https://imported.example',
+      fallbackUrl: 'https://imported-fallback.example',
+    });
+
+    // Back in the main view, the Send form offers the imported topics and the imported last topic
+    vi.stubGlobal('confirm', () => true);
+    $('#back-btn').click();
+    await flush();
+    const destination = $<HTMLSelectElement>('#topic-select');
+    expect([...destination.options].map((option) => option.value)).toEqual(['alerts', 'news']);
+    expect(destination.value).toBe('news');
+  });
+
+  it('holds the stored token back from an imported server until it is confirmed under Server', async () => {
+    // The token is stored and this device never recorded approvals: the first-time approval must not apply
+    expect(await fakeBrowser.storage.local.get()).toEqual({ accessToken: 'tk_x' });
+    await openPopup('?mode=page');
+    await fakeBrowser.storage.local.remove('authOrigins');
+    await openSettings();
+    await pick(backupFile({ apiUrl: 'https://evil.example', topics: ['inbox'] }));
+    expect(confirmLines()).toContain("Your token and password aren't sent to https://evil.example until you confirm that under Server.");
+    $('#import-confirm-btn').click();
+    await vi.waitFor(() =>
+      expect($('#settings-status').textContent).toBe(
+        'Settings imported. Confirm the server under Server before your token and password are used.',
+      ),
+    );
+    expect($('#settings-status').className).toContain('warning');
+    expect(await fakeBrowser.storage.local.get()).toEqual({ accessToken: 'tk_x', authOrigins: ['https://ntfy.example'] });
+    expect($('#held-back-box').style.display).toBe('');
+    expect($('#held-back-text').textContent).toContain('https://evil.example');
+    expect($<HTMLInputElement>('#token-input').value).toBe('tk_x');
+
+    // A send from this view goes out without the token
+    vi.stubGlobal('confirm', () => true);
+    $('#back-btn').click();
+    await flush();
+    $<HTMLTextAreaElement>('#message-input').value = 'hi';
+    $('#send-btn').click();
+    await vi.waitFor(() => expect(requests.some((r) => r.url === 'https://evil.example/inbox')).toBe(true));
+    expect(requests.filter((r) => r.url.startsWith('https://evil.example')).some((r) => r.headers.has('Authorization'))).toBe(false);
+
+    // The existing confirmation approves it
+    await openSettings();
+    $('#held-back-btn').click();
+    await flush();
+    expect(await fakeBrowser.storage.local.get('authOrigins')).toEqual({ authOrigins: ['https://evil.example'] });
+  });
+
+  it('names what a file holds that is not imported, and shows file text as text', async () => {
+    await openPopup('?mode=page');
+    await openSettings();
+    await pick(
+      backupFile(
+        { apiUrl: 'https://user:pass@ntfy.example/?auth=x', topics: ['inbox', '<b>bold</b>'], theme: 'neon', historyPerTopic: 7 },
+        '<img src=x onerror=alert(1)>.json',
+      ),
+    );
+    expect($('#import-confirm-title').textContent).toContain('<img src=x onerror=alert(1)>.json');
+    expect($('#import-confirm').querySelector('img, b')).toBeNull();
+    expect(confirmLines().slice(0, 3)).toEqual([
+      'Server URL: https://ntfy.example/ (now https://ntfy.example)',
+      'Fallback URL: none (unchanged)',
+      'Topics: 1 (now 3)',
+    ]);
+    expect(confirmLines().slice(-2)).toEqual([
+      'A username, password, query string or fragment in a server URL of the file is ignored.',
+      'Not valid in the file, so not imported: topics (1 invalid name), theme, messages kept per topic.',
+    ]);
+    // The same origin as the approved one: nothing is held back
+    expect(confirmLines().join(' ')).not.toContain("aren't sent");
+  });
+
+  it('refuses a file that is not a settings file, without a confirmation', async () => {
+    await openPopup('?mode=page');
+    await openSettings();
+    const before = await fakeBrowser.storage.sync.get();
+    const refused: [File, string][] = [
+      [new File(['not json'], 'notes.json'), 'This file is not valid JSON.'],
+      [new File(['{"format":"other"}'], 'other.json'), 'This is not an ntfy Desk settings file.'],
+      [backupFile({}, 'newer.json', { version: 2 }), 'This settings file was made by a newer version of ntfy Desk'],
+      [new File(['x'.repeat(256 * 1024 + 1)], 'huge.json'), 'This file is too large to be an ntfy Desk settings file (over 256 KiB).'],
+    ];
+    for (const [file, text] of refused) {
+      await pick(file);
+      expect($('#settings-status').textContent).toContain(text);
+      expect($('#settings-status').className).toContain('error');
+      expect($('#import-confirm').hidden).toBe(true);
+    }
+    // A refused file replaces a confirmation that was waiting
+    await pick(backupFile(IMPORTED));
+    expect($('#import-confirm').hidden).toBe(false);
+    await pick(new File(['[]'], 'list.json'));
+    expect($('#import-confirm').hidden).toBe(true);
+    $('#import-confirm-btn').click();
+    await flush();
+    expect(await fakeBrowser.storage.sync.get()).toEqual(before);
+  });
+
+  it('stops when the settings changed while the confirmation was open', async () => {
+    await openPopup('?mode=page');
+    await openSettings();
+    await pick(backupFile(IMPORTED));
+    await fakeBrowser.storage.sync.set({ topics: 'alerts,coolify,inbox,added' });
+    $('#import-confirm-btn').click();
+    await vi.waitFor(() =>
+      expect($('#settings-status').textContent).toBe('The settings changed while the import was waiting. Choose the file again.'),
+    );
+    expect($('#import-confirm').hidden).toBe(true);
+    expect(await fakeBrowser.storage.sync.get(['apiUrl', 'topics'])).toEqual({
+      apiUrl: 'https://ntfy.example',
+      topics: 'alerts,coolify,inbox,added',
+    });
+  });
+
+  it('waits for the settings lock, so an import cannot interleave with another settings edit', async () => {
+    await openPopup('?mode=page');
+    await openSettings();
+    await pick(backupFile(IMPORTED));
+    let release = () => {};
+    const held = navigator.locks.request('ntfy-settings', () => new Promise<void>((resolve) => (release = resolve)));
+    await flush();
+    $('#import-confirm-btn').click();
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.example' });
+    expect($<HTMLButtonElement>('#import-confirm-btn').disabled).toBe(true);
+    release();
+    await held;
+    await vi.waitFor(() => expect($('#settings-status').textContent).toContain('Settings imported'));
+    expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://imported.example' });
   });
 });

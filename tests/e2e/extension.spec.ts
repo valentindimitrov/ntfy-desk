@@ -1,3 +1,6 @@
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Page, Worker } from '@playwright/test';
 import type { Browser } from 'wxt/browser';
 import { expect, test } from './fixtures';
@@ -1213,6 +1216,208 @@ test.describe('customization', () => {
     await run('https://news.example/story');
     expect(await results()).toEqual(['✗', '✓']);
     expect(ntfy.published).toEqual([{ topic: 'alerts', body: 'https://news.example/story', headers: { title: 'A story' } }]);
+  });
+});
+
+test.describe('backup', () => {
+  test('exports the settings without the token, and imports the file again after a reset', async ({
+    ntfy,
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
+    await configure({ topics: 'alerts,backups', notifyRules: { backups: 'high' } });
+    await serviceWorker.evaluate(() =>
+      chrome.storage.sync.set({
+        theme: 'dark',
+        historyPerTopic: 250,
+        includeUrl: true,
+        lastTopic: 'backups',
+        topicSendDefaults: [{ topic: 'alerts', priority: 4, tags: ['warning'] }],
+      }),
+    );
+    await expect.poll(() => ntfy.subscriptions).toEqual([['alerts', 'backups']]);
+    const page = await openPopup('?mode=page');
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+
+    const exportFile = async () => {
+      const download = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Export settings' }).click();
+      const file = await download;
+      expect(file.suggestedFilename()).toMatch(/^ntfy-desk-settings-\d{4}-\d\d-\d\d\.json$/);
+      const saved = join(mkdtempSync(join(tmpdir(), 'ntfy-desk-export-')), file.suggestedFilename());
+      await file.saveAs(saved);
+      return saved;
+    };
+    const path = await exportFile();
+    const text = readFileSync(path, 'utf8');
+    const exported = JSON.parse(text) as { format: string; version: number; settings: Record<string, unknown> };
+    expect(exported).toMatchObject({ format: 'ntfy-desk-settings', version: 1 });
+    expect(exported.settings).toMatchObject({
+      apiUrl: ntfy.url,
+      topics: ['alerts', 'backups'],
+      notifyRules: [['backups', 'high']],
+      theme: 'dark',
+      historyPerTopic: 250,
+      topicSendDefaults: [{ topic: 'alerts', priority: 4, tags: ['warning'] }],
+    });
+    expect(text).not.toContain(ntfy.token);
+    expect(text).not.toMatch(/accessToken|serverCredentials|authOrigins/);
+
+    // Reset: no settings left, the receiver disconnects, the open form follows
+    await serviceWorker.evaluate(() => chrome.storage.sync.clear());
+    await expect(page.locator('.topic-badge')).toHaveCount(0);
+    await expect(page.locator('body')).toHaveAttribute('data-theme', 'auto');
+    const subscriptionsBefore = ntfy.subscriptions.length;
+
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Import settings' }).click();
+    await (await chooser).setFiles(path);
+    const confirmation = page.getByRole('group', { name: /^Replace the settings with those from ntfy-desk-settings-/ });
+    await expect(confirmation).toContainText(`Server URL: ${ntfy.url} (now none)`);
+    await expect(confirmation).toContainText('Topics: 2 (now 0)');
+    // Nothing is written before the confirmation
+    expect(await serviceWorker.evaluate(() => chrome.storage.sync.get(['apiUrl', 'topics']))).toEqual({});
+    await confirmation.getByRole('button', { name: 'Replace settings' }).click();
+    await expect(page.locator('#settings-status')).toHaveText('Settings imported');
+    await expect(confirmation).toBeHidden();
+
+    // The form shows the imported values, the same view applies them, and the background reconnects
+    await expect(page.locator('#url-input')).toHaveValue(ntfy.url);
+    await expect(page.locator('.topic-badge')).toHaveText(['alerts×', 'backups×']);
+    await expect(page.locator('#history-limit-select')).toHaveValue('250');
+    await expect(page.locator('#include-url-checkbox')).toBeChecked();
+    await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.getByRole('combobox', { name: 'Send priority for alerts' })).toHaveValue('4');
+    await expect(page.locator('#held-back-box')).toBeHidden();
+    await expect.poll(() => ntfy.subscriptions.length).toBeGreaterThan(subscriptionsBefore);
+    expect(ntfy.subscriptions.at(-1)).toEqual(['alerts', 'backups']);
+    expect(await serviceWorker.evaluate(() => chrome.storage.local.get(['authOrigins', 'accessToken']))).toEqual({
+      authOrigins: [ntfy.url],
+      accessToken: ntfy.token,
+    });
+
+    // A second export is the first one again
+    const again = JSON.parse(readFileSync(await exportFile(), 'utf8')) as typeof exported;
+    expect(again.settings).toEqual(exported.settings);
+
+    // "Save server settings" starts from the imported values
+    await page.getByRole('button', { name: 'Save server settings' }).click();
+    await expect(page.locator('#settings-status')).toHaveText('Server settings saved');
+    expect(await serviceWorker.evaluate(() => chrome.storage.sync.get('apiUrl'))).toEqual({ apiUrl: ntfy.url });
+  });
+
+  test('an imported server gets the stored token only after it is approved in Settings', async ({
+    ntfy,
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
+    const other = await startNtfyServer();
+    try {
+      // Both test servers accept the same token: a subscription on the other one would mean it was sent
+      expect(other.token).toBe(ntfy.token);
+      await configure({ topics: 'alerts' });
+      await expect.poll(() => ntfy.subscriptions).toEqual([['alerts']]);
+      const file = join(mkdtempSync(join(tmpdir(), 'ntfy-desk-import-')), 'settings.json');
+      writeFileSync(
+        file,
+        JSON.stringify({
+          format: 'ntfy-desk-settings',
+          version: 1,
+          exportedAt: '2026-11-01T10:00:00.000Z',
+          settings: {
+            apiUrl: `${other.url.replace('://', '://user:secret@')}?auth=abc`,
+            topics: ['alerts', 'not a topic'],
+            theme: 'neon',
+          },
+        }),
+      );
+
+      const page = await openPopup('?mode=page');
+      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      await page.locator('#import-settings-input').setInputFiles(file);
+      const confirmation = page.getByRole('group', { name: /^Replace the settings with those from settings\.json/ });
+      await expect(confirmation).toContainText(`Server URL: ${other.url} (now ${ntfy.url})`);
+      await expect(confirmation).toContainText(`Your token and password aren't sent to ${other.url} until you confirm that under Server.`);
+      await expect(confirmation).toContainText('A username, password, query string or fragment in a server URL of the file is ignored.');
+      await expect(confirmation).toContainText('Not valid in the file, so not imported: topics (1 invalid name), theme.');
+      await confirmation.getByRole('button', { name: 'Replace settings' }).click();
+      await expect(page.locator('#settings-status')).toContainText('Settings imported. Confirm the server under Server');
+
+      expect(await serviceWorker.evaluate(() => chrome.storage.sync.get(['apiUrl', 'topics', 'theme']))).toEqual({
+        apiUrl: other.url,
+        topics: 'alerts',
+        theme: 'auto',
+      });
+      expect(await serviceWorker.evaluate(() => chrome.storage.local.get('authOrigins'))).toEqual({ authOrigins: [ntfy.url] });
+      const approve = page.getByRole('button', { name: 'Use them with this server' });
+      await expect(approve).toBeVisible();
+      await expect(page.locator('#url-input')).toHaveValue(other.url);
+      // The background reconnected to the imported server, without the token: refused
+      await expect
+        .poll(() =>
+          serviceWorker.evaluate(
+            async () => ((await chrome.storage.session.get('receiverStatus')).receiverStatus as { server?: string } | undefined)?.server,
+          ),
+        )
+        .toBe(new URL(other.url).host);
+      expect(other.subscriptions).toEqual([]);
+
+      await approve.click();
+      await expect.poll(() => other.subscriptions).toContainEqual(['alerts']);
+    } finally {
+      await other.close();
+    }
+  });
+
+  test('the native toolbar popup downloads the export itself and hands the import to the tab', async ({
+    configure,
+    context,
+    openPopup,
+    serviceWorker,
+  }) => {
+    await configure({ topics: 'alerts' });
+    const tab = await openPopup('?mode=page');
+    // The toolbar popup is no Playwright page: its download is observed through the downloads folder
+    const downloads = mkdtempSync(join(tmpdir(), 'ntfy-desk-export-'));
+    const cdp = await context.newCDPSession(tab);
+    await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
+
+    await serviceWorker.evaluate(() => chrome.action.openPopup());
+    const inPopup = (selector: string) =>
+      tab.evaluate((selector) => {
+        const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
+        const element = popup?.document.querySelector<HTMLElement>(selector);
+        if (!element || element.getClientRects().length === 0) return false;
+        element.click();
+        return true;
+      }, selector);
+    // Its header gets the name once the page has set up its buttons
+    await expect
+      .poll(() =>
+        tab.evaluate(() => {
+          const [popup] = chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }) as (typeof window)[];
+          return popup?.document.querySelector('#header-text')?.textContent;
+        }),
+      )
+      .toBe('ntfy Desk');
+    expect(await inPopup('#settings-btn')).toBe(true);
+    await expect.poll(() => inPopup('#export-settings-btn')).toBe(true);
+    await expect.poll(() => readdirSync(downloads).filter((name) => !name.endsWith('.crdownload'))).toHaveLength(1);
+    const [name] = readdirSync(downloads);
+    expect(name).toMatch(/^ntfy-desk-settings-.*\.json$/);
+    expect(JSON.parse(readFileSync(join(downloads, name!), 'utf8'))).toMatchObject({
+      format: 'ntfy-desk-settings',
+      settings: { topics: ['alerts'] },
+    });
+
+    // Import needs a file dialog, which the popup can't keep open: the tab's Backup group takes over
+    await expect.poll(() => inPopup('#import-settings-btn')).toBe(true);
+    await expect(tab).toHaveURL(/#settings=backup&focus=/);
+    await expect(tab.getByRole('button', { name: 'Import settings' })).toBeFocused();
+    await expect(tab.getByRole('heading', { name: 'Backup' })).toBeInViewport();
+    await expect.poll(() => tab.evaluate(() => chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }).length)).toBe(0);
   });
 });
 

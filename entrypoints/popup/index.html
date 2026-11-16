@@ -501,6 +501,27 @@
           </p>
         </section>
 
+        <section class="settings-section" id="settings-backup" aria-labelledby="settings-backup-heading">
+          <h2 class="settings-heading" id="settings-backup-heading">Backup</h2>
+          <div class="backup-actions">
+            <button type="button" class="chip" id="export-settings-btn">⬇️ Export settings</button>
+            <button type="button" class="chip" id="import-settings-btn">⬆️ Import settings…</button>
+            <input type="file" id="import-settings-input" accept=".json,application/json" aria-label="Settings file to import" hidden />
+          </div>
+          <p class="form-hint" id="backup-hint">
+            The file holds your server addresses, topic names and preferences, which can be enough to read a topic on a server without
+            access control. It never holds the token, the password or messages. Importing replaces these settings.
+          </p>
+          <div class="form-warning import-confirm" id="import-confirm" role="group" aria-labelledby="import-confirm-title" hidden>
+            <p class="import-confirm-title" id="import-confirm-title" tabindex="-1"></p>
+            <ul class="import-confirm-list" id="import-confirm-list"></ul>
+            <div class="import-confirm-actions">
+              <button type="button" class="action-btn" id="import-confirm-btn">Replace settings</button>
+              <button type="button" class="chip" id="import-cancel-btn">Cancel</button>
+            </div>
+          </div>
+        </section>
+
         <div class="status" id="settings-status" role="status"></div>
       </div>
     </div>
