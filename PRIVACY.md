@@ -11,7 +11,7 @@ ntfy Desk sends and receives notifications through the ntfy server you configure
 
 ## What stays in extension storage
 
-The browser stores credentials and approved server origins, received history and read state, drafts, queued attachments, and pane layout on this device. The inbox keeps up to 100 messages per topic within its total history size limit. Drafts and queued attachments clear when the browser starts. A confirmed send clears the sent draft or attachments, while edits or new files added during the send stay available.
+The browser stores credentials and approved server origins, received history and read state, drafts, queued attachments, and pane layout on this device. The inbox keeps up to 100 messages per topic (50 to 500, as set in Settings) within its total history size limit. Drafts and queued attachments clear when the browser starts. A confirmed send clears the sent draft or attachments, while edits or new files added during the send stay available.
 
 You can clear saved credentials in Settings and remove messages from the inbox. **Sync server deletions** also requests deletion on your ntfy server when enabled for the topic and allowed by the server. To remove remaining local extension data, remove the extension from the browser. Data held by your browser's sync service or ntfy server is subject to that service's controls.
 

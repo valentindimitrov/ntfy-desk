@@ -27,6 +27,13 @@ export default defineConfig({
     optional_permissions: ['tabs'],
     // The ntfy server (authenticated requests) and sites of images sent from the context menu
     optional_host_permissions: ['<all_urls>'],
+    // Keyboard shortcuts, rebound in the browser's shortcut settings. Alt+Shift+N is valid in Chrome
+    // (Ctrl or Alt required, no Ctrl+Alt) and Firefox and isn't a shortcut of either browser; send-page
+    // has no default key, so nothing is published by an accidental key press.
+    commands: {
+      _execute_action: { suggested_key: { default: 'Alt+Shift+N' } },
+      'send-page': { description: 'Send this page to ntfy' },
+    },
     ...(browser === 'firefox' && {
       browser_specific_settings: {
         gecko: {

@@ -887,6 +887,170 @@ describe('settings', () => {
     expect(await fakeBrowser.storage.sync.get('syncDeletionTopics')).toEqual({ syncDeletionTopics: ['coolify'] });
   });
 
+  const select = (id: string) => $<HTMLSelectElement>(id);
+  const choose = (id: string, value: string) => {
+    select(id).value = value;
+    select(id).dispatchEvent(new Event('change'));
+  };
+  const PREFERENCES = ['badgeScope', 'keepUrgentOnScreen', 'historyPerTopic', 'messageTimes', 'inboxDensity'];
+
+  it('groups the settings under headings', async () => {
+    await openPopup();
+    await openSettings();
+    const headings = [...document.querySelectorAll('#settings-view .settings-section > h2')].map((heading) => heading.textContent);
+    expect(headings).toEqual(['Server', 'Topics', 'Notifications', 'Inbox', 'Sending', 'Appearance and layout', 'Keyboard shortcuts']);
+    for (const section of document.querySelectorAll('#settings-view .settings-section')) {
+      expect(document.getElementById(section.getAttribute('aria-labelledby')!)?.tagName).toBe('H2');
+    }
+    for (const control of document.querySelectorAll<HTMLSelectElement>('#settings-view select.form-select')) {
+      expect(document.querySelector(`label[for="${control.id}"]`)?.textContent).toBeTruthy();
+    }
+  });
+
+  it('shows the defaults, and the default in place of an invalid stored value', async () => {
+    await fakeBrowser.storage.sync.set({ badgeScope: 7, historyPerTopic: 99, messageTimes: 'iso', inboxDensity: 'compact' });
+    await openPopup();
+    expect(document.body.dataset.density).toBe('compact');
+    await openSettings();
+    expect(select('#badge-scope-select').value).toBe('all');
+    expect($<HTMLInputElement>('#keep-urgent-checkbox').checked).toBe(true);
+    expect(select('#history-limit-select').value).toBe('100');
+    expect(select('#message-times-select').value).toBe('relative');
+    expect(select('#density-select').value).toBe('compact');
+    expect([...select('#history-limit-select').options].map((option) => option.value)).toEqual(['50', '100', '250', '500']);
+  });
+
+  it('saves only the preference each control edits', async () => {
+    await openPopup();
+    await openSettings();
+    const set = vi.spyOn(fakeBrowser.storage.sync, 'set');
+    choose('#badge-scope-select', 'notifying');
+    $<HTMLInputElement>('#keep-urgent-checkbox').click();
+    choose('#history-limit-select', '500');
+    choose('#message-times-select', 'absolute');
+    choose('#density-select', 'compact');
+    await flush();
+    expect(set.mock.calls.map(([items]) => items)).toEqual([
+      { badgeScope: 'notifying' },
+      { keepUrgentOnScreen: false },
+      { historyPerTopic: 500 },
+      { messageTimes: 'absolute' },
+      { inboxDensity: 'compact' },
+    ]);
+    expect(await fakeBrowser.storage.sync.get(['topics', 'apiUrl'])).toEqual({
+      apiUrl: 'https://ntfy.example',
+      topics: 'alerts,coolify,inbox',
+    });
+  });
+
+  it('restores the control and reports it when a preference cannot be saved', async () => {
+    await openPopup();
+    await openSettings();
+    vi.spyOn(fakeBrowser.storage.sync, 'set').mockRejectedValueOnce(new Error('quota'));
+    choose('#density-select', 'compact');
+    await vi.waitFor(() => expect($('#settings-status').textContent).toBe('Failed to save settings'));
+    expect(select('#density-select').value).toBe('comfortable');
+    expect(document.body.dataset.density).toBe('comfortable');
+  });
+
+  it('shows message times as the local date and time when set so, also for a recent message', async () => {
+    const recent = message('recent', 'alerts', 5);
+    await fakeBrowser.storage.local.set({ receivedNotifications: [recent] });
+    await openPopup();
+    expect($('.notification-time').textContent).toBe('alerts · 5m ago');
+    expect(document.body.dataset.density).toBe('comfortable');
+
+    await openSettings();
+    choose('#message-times-select', 'absolute');
+    const absolute = new Date(recent.time * 1000).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    await vi.waitFor(() => expect($('.notification-time').textContent).toBe(`alerts · ${absolute}`));
+    expect(absolute).toContain(String(new Date(recent.time * 1000).getFullYear()));
+  });
+
+  it('follows preferences changed in another view or through sync, without a reload', async () => {
+    await fakeBrowser.storage.local.set({ receivedNotifications: [message('recent', 'alerts', 5)] });
+    await openPopup('?mode=page');
+    await fakeBrowser.storage.sync.set({ inboxDensity: 'compact', messageTimes: 'absolute', historyPerTopic: 250 });
+    await vi.waitFor(() => expect(document.body.dataset.density).toBe('compact'));
+    await vi.waitFor(() => expect($('.notification-time').textContent).not.toContain('ago'));
+    expect(select('#history-limit-select').value).toBe('250');
+    expect(select('#density-select').value).toBe('compact');
+
+    // An invalid value, and a removed key, read as the defaults
+    await fakeBrowser.storage.sync.set({ inboxDensity: 'tiny' });
+    await fakeBrowser.storage.sync.remove(['messageTimes', 'historyPerTopic']);
+    await vi.waitFor(() => expect(document.body.dataset.density).toBe('comfortable'));
+    await vi.waitFor(() => expect($('.notification-time').textContent).toBe('alerts · 5m ago'));
+    expect(select('#history-limit-select').value).toBe('100');
+    expect(await fakeBrowser.storage.sync.get(PREFERENCES)).toEqual({ inboxDensity: 'tiny' }); // reading never writes
+  });
+
+  it('keeps the inbox counts of every topic whatever the badge counts', async () => {
+    await fakeBrowser.storage.sync.set({ badgeScope: 'notifying', notifyRules: [['coolify', 'off']] });
+    await fakeBrowser.storage.local.set({ receivedNotifications: [message('a1', 'alerts', 2), message('c1', 'coolify', 3)] });
+    await openPopup();
+    const sidebar = [...document.querySelectorAll('.topic-filter-btn')].map((button) => button.textContent);
+    expect(sidebar).toEqual(['All topics2', 'alerts1', 'coolify🔕1', 'inbox']);
+  });
+
+  it('hides the keep-on-screen setting in Firefox, which has no such notification option', async () => {
+    await openPopup();
+    expect($('#keep-urgent-group').hidden).toBe(false);
+
+    vi.resetModules();
+    document.body.innerHTML = body;
+    vi.stubEnv('BROWSER', 'firefox');
+    try {
+      await openPopup();
+      expect($('#keep-urgent-group').hidden).toBe(true);
+      expect($('#badge-scope-select').closest<HTMLElement>('.form-group')!.hidden).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('lists the keyboard shortcuts and opens the browser page that changes them', async () => {
+    const getAll = mockResolved(fakeBrowser.commands, 'getAll', [
+      { name: '_execute_action', description: '', shortcut: 'Alt+Shift+N' },
+      { name: 'send-page', description: 'Send this page to ntfy', shortcut: '' },
+    ]);
+    const create = mockResolved(fakeBrowser.tabs, 'create', {});
+    await openPopup('?mode=page');
+    await openSettings();
+    await flush();
+    const rows = () =>
+      [...document.querySelectorAll('#shortcut-list dt')].map((name) => [name.textContent, name.nextElementSibling?.textContent]);
+    expect(rows()).toEqual([
+      ['Open ntfy Desk', 'Alt+Shift+N'],
+      ['Send this page to ntfy', 'Not set'],
+    ]);
+    expect($('#shortcut-list kbd').textContent).toBe('Alt+Shift+N');
+
+    $('#shortcut-settings-btn').click();
+    await flush();
+    expect(create.mock.calls).toEqual([[{ url: 'chrome://extensions/shortcuts' }]]);
+
+    // Back from the browser's page with a new binding
+    getAll.mockResolvedValue([{ name: 'send-page', description: 'Send this page to ntfy', shortcut: 'Ctrl+Shift+U' }]);
+    window.dispatchEvent(new Event('focus'));
+    await vi.waitFor(() => expect(rows()).toEqual([['Send this page to ntfy', 'Ctrl+Shift+U']]));
+  });
+
+  it('says where the shortcut settings are when the browser cannot open them', async () => {
+    vi.spyOn(fakeBrowser.tabs, 'create').mockRejectedValue(new Error('blocked') as never);
+    await openPopup('?mode=page');
+    await openSettings();
+    expect($('#shortcut-list').children).toHaveLength(0); // the fake browser reports no bindings
+    $('#shortcut-settings-btn').click();
+    await vi.waitFor(() => expect($('#shortcut-hint').textContent).toContain('chrome://extensions/shortcuts'));
+  });
+
   it('marks topics with notifications off in the Receive tab', async () => {
     await fakeBrowser.storage.sync.set({ notifyRules: [['coolify', 'off']] });
     await openPopup('?tab=receive');

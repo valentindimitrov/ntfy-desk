@@ -7,7 +7,7 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 
 ## Features
 
-- **Receive**. Live messages arrive over ntfy's JSON stream. The toolbar icon shows the unread count. When the browser starts, the extension catches up on messages still in the server's cache. High and urgent desktop notifications request to stay visible until dismissed.
+- **Receive**. Live messages arrive over ntfy's JSON stream. The toolbar icon shows the unread count, for all topics or only for those with desktop notifications on. When the browser starts, the extension catches up on messages still in the server's cache. High and urgent desktop notifications request to stay visible until dismissed; in Chromium browsers you can turn that off.
 - **Notification rules per topic**. Show all, set a minimum priority, or turn desktop notifications off. The inbox still lists the messages. A catch-up with more than five eligible notifications across the inbox shows one summary. Later catch-up adds to an open summary.
 - **Clickable notifications**. A click opens the message's link or highlights the message in the extension tab without reloading the composer. A summary opens the topic it covers or All topics when it covers several. Chromium can show up to two buttons for view actions and attachments.
 - **Connection state**. The header shows the active connection. The inbox shows reconnects, unreachable servers, send-only topics and failed fetches.
@@ -18,7 +18,8 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 - **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.
 - **Resizable panes**. Drag the dividers on either side of the inbox, or focus a divider and use the arrow keys. The toolbar popup and browser tab remember their pane widths separately. Select **Freeze dividers between sections All topics, Inbox, and Send notification** in Settings to lock them in both views.
 - **Open in a tab**. Open ntfy Desk in its own browser tab to use the full viewport.
-- **Keyboard**. Ctrl + Enter (Cmd + Enter on a Mac) sends when focus is in the expanded Send form.
+- **Inbox display**. Keep 50, 100, 250 or 500 messages per topic, show message times as "5m ago" or as the date and time, and choose comfortable or compact rows.
+- **Keyboard**. Ctrl + Enter (Cmd + Enter on a Mac) sends when focus is in the expanded Send form. Two shortcuts are set in the browser's own shortcut settings: one opens ntfy Desk (Alt + Shift + N is suggested, where it is free), and **Send this page to ntfy** (no key until you choose one) publishes the current page's URL and title to the topic last chosen in the Send form, or the first topic. The toolbar icon shows ✓, ✗ or ? as for a right-click send.
 - **Dark mode**. See the [privacy policy](PRIVACY.md) for data and permissions.
 
 ## Install
@@ -40,7 +41,10 @@ Use an HTTPS server and a topic with access controls for sensitive messages. Any
 4. **Allow access to this server** appears when credentials or deletion sync are configured and host access is missing. Access lets the extension send authenticated requests and read replay headers that the browser may otherwise hide. This applies to both sites when you use a fallback URL.
 5. **Topics**: enter names of up to 64 letters, digits, dashes or underscores. The extension receives from the topics your credentials can read. Topics with write-only access appear as send only.
 6. **Topic settings** lists message sync and desktop notification rules for each topic. Choose **Apply** to save both columns together. **Keep received messages** is the default and keeps deletes on this device. **Sync server deletions** checks saved messages against deletion events still available in ntfy's cache and follows future deletion events. Switching to an unrelated server preserves the previous server's history. Delete and Delete all request server deletion only for the messages the inbox indicated would also be deleted on the server, while the same server is still configured and deletion sync remains enabled. The local copy is removed even if the server denies deletion or the extension skips it or cannot confirm it. In those cases the inbox shows a warning. [ntfy deletion API](https://docs.ntfy.sh/publish/#deleting-notifications)
-7. **Fill in the current tab**: puts the page's title in the Title field and its URL in the Message field (from the context menu, the page URL becomes the title). In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
+7. **Notifications**. **Unread badge counts** chooses what the number on the toolbar icon covers: all topics (the default), or only topics whose desktop notifications aren't off. The inbox counts every topic either way. **Keep high and urgent notifications on screen until dismissed** is on by default; it is a Chromium option and isn't shown in Firefox.
+8. **Inbox**. **Messages kept per topic** is 100 by default. A lower value removes each topic's oldest messages right away, and a higher one doesn't bring them back; all topics together stay within 8 MiB. **Message times** shows relative times (the default) or always the local date and time. **Density** tightens the message rows without hiding anything.
+9. **Fill in the current tab** (under Sending): puts the page's title in the Title field and its URL in the Message field (from the context menu, the page URL becomes the title). In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
+10. **Keyboard shortcuts** lists the current keys. **Change shortcuts** opens the browser's page for them (`chrome://extensions/shortcuts` in Chromium browsers, **Manage Extension Shortcuts** in Firefox).
 
 ### Receiving and the browser
 

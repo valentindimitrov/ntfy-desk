@@ -16,7 +16,7 @@ import {
   updatePriorityUI,
   updateTopicOptions,
 } from './send';
-import { applyTheme, hasUnsavedServerEdits, populateSettings, setupSettings, updateServerAccessUI } from './settings';
+import { applyPreferences, applyTheme, hasUnsavedServerEdits, populateSettings, setupSettings, updateServerAccessUI } from './settings';
 import { elements, isConfigured, isPageMode, loadReceiveFilter, loadSettings, pageParams, saveReceiveFilter, state } from './state';
 import { setupTooltips, showStatus } from './ui';
 
@@ -109,6 +109,7 @@ async function init(): Promise<void> {
   elements.sendAnotherCheckbox.checked = state.sendAnotherEnabled;
   elements.includeUrlCheckbox.checked = state.includeUrl;
 
+  applyPreferences();
   setupSend();
   setupReceive();
   setupSettings();

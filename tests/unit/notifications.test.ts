@@ -47,6 +47,32 @@ describe('desktop notifications', () => {
     expect(low).toMatchObject({ title: 'Notification [↓ Low]', requireInteraction: false });
   });
 
+  it('lets high and urgent notifications time out when the setting is off, alone and in a summary', async () => {
+    const create = mockResolved(fakeBrowser.notifications, 'create', '');
+    const options = () => callsOf<[string, Options]>(create).at(-1)![1];
+
+    await notifyNewMessage(message('default-on', { priority: 5 }));
+    expect(options().requireInteraction).toBe(true);
+    await fakeBrowser.storage.sync.set({ keepUrgentOnScreen: 'yes' }); // not a boolean: the default applies
+    await notifyNewMessage(message('invalid', { priority: 4 }));
+    expect(options().requireInteraction).toBe(true);
+
+    await fakeBrowser.storage.sync.set({ keepUrgentOnScreen: false });
+    await notifyNewMessage(message('off', { priority: 5 }));
+    expect(options()).toMatchObject({ title: 'Notification [⇈ Urgent]', requireInteraction: false });
+    await notifyCatchUp([message('catch-up', { priority: 5 })]);
+    expect(options().requireInteraction).toBe(false);
+    await notifyCatchUp(Array.from({ length: 6 }, (_, index) => message(`burst${index}`, { priority: 5 })));
+    expect(create).toHaveBeenLastCalledWith(
+      'catch-up-summary',
+      expect.objectContaining({ title: '6 new notifications', requireInteraction: false }),
+    );
+
+    await fakeBrowser.storage.sync.set({ keepUrgentOnScreen: true });
+    await notifyNewMessage(message('on-again', { priority: 4 }));
+    expect(options().requireInteraction).toBe(true);
+  });
+
   it('shows Markdown messages as plain text', () => {
     const create = mockResolved(fakeBrowser.notifications, 'create', '');
     void showDesktopNotification(message('md', { message: '**Disk** at [91%](https://x.example)', content_type: 'text/markdown' }));
@@ -261,6 +287,51 @@ describe('unread badge', () => {
     expect(setText).toHaveBeenLastCalledWith({ text: '1' });
 
     await fakeBrowser.storage.local.set({ readMessageIds: ['a', 'c'] });
+    await updateUnreadBadge();
+    expect(setText).toHaveBeenLastCalledWith({ text: '' });
+  });
+
+  it('counts all topics by default, and only topics with desktop notifications on when set so', async () => {
+    const setText = vi.spyOn(fakeBrowser.action, 'setBadgeText').mockResolvedValue();
+    vi.spyOn(fakeBrowser.action, 'setBadgeBackgroundColor').mockResolvedValue();
+    await fakeBrowser.storage.local.set({
+      receivedNotifications: [
+        message('a'),
+        message('m1', { topic: 'muted' }),
+        message('m2', { topic: 'muted' }),
+        message('q', { topic: 'quiet' }),
+      ],
+    });
+    // "urgent" still shows some notifications: only "off" leaves a topic out
+    await fakeBrowser.storage.sync.set({
+      notifyRules: [
+        ['muted', 'off'],
+        ['quiet', 'urgent'],
+      ],
+    });
+    await updateUnreadBadge();
+    expect(setText).toHaveBeenLastCalledWith({ text: '4' });
+
+    await fakeBrowser.storage.sync.set({ badgeScope: 'notifying' });
+    await updateUnreadBadge();
+    expect(setText).toHaveBeenLastCalledWith({ text: '2' });
+
+    await fakeBrowser.storage.sync.set({ notifyRules: [['muted', 'all']] });
+    await updateUnreadBadge();
+    expect(setText).toHaveBeenLastCalledWith({ text: '4' });
+
+    await fakeBrowser.storage.sync.set({ badgeScope: 'everything', notifyRules: [['alerts', 'off']] }); // invalid: all topics
+    await updateUnreadBadge();
+    expect(setText).toHaveBeenLastCalledWith({ text: '4' });
+
+    await fakeBrowser.storage.sync.set({ badgeScope: 'notifying' });
+    await fakeBrowser.storage.sync.set({
+      notifyRules: [
+        ['alerts', 'off'],
+        ['muted', 'off'],
+        ['quiet', 'off'],
+      ],
+    });
     await updateUnreadBadge();
     expect(setText).toHaveBeenLastCalledWith({ text: '' });
   });

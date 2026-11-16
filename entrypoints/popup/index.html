@@ -241,109 +241,184 @@
     <!-- Settings View -->
     <div class="view" id="settings-view">
       <div class="main-content">
-        <div class="form-group">
-          <label class="form-label" for="url-input">Server URL</label>
-          <input type="text" class="form-input" id="url-input" placeholder="https://ntfy.sh" />
-          <p class="form-hint">Base URL of your ntfy server</p>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="fallback-url-input">Fallback URL (optional)</label>
-          <input type="text" class="form-input" id="fallback-url-input" placeholder="https://ntfy.example.com" />
-          <p class="form-hint">Another address of the same server, used when the main one doesn't answer</p>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="token-input">Access Token (optional)</label>
-          <input type="password" class="form-input" id="token-input" placeholder="tk_..." />
-          <p class="form-hint">For private topics or authenticated servers</p>
-        </div>
-
-        <div class="form-group">
-          <div class="form-label">Username and password (optional)</div>
-          <div class="credentials-row">
-            <input type="text" class="form-input" id="username-input" placeholder="Username" autocomplete="off" aria-label="Username" />
-            <input
-              type="password"
-              class="form-input"
-              id="password-input"
-              placeholder="Password"
-              autocomplete="new-password"
-              aria-label="Password"
-            />
+        <section class="settings-section" aria-labelledby="settings-server-heading">
+          <h2 class="settings-heading" id="settings-server-heading">Server</h2>
+          <div class="form-group">
+            <label class="form-label" for="url-input">Server URL</label>
+            <input type="text" class="form-input" id="url-input" placeholder="https://ntfy.sh" />
+            <p class="form-hint">Base URL of your ntfy server</p>
           </div>
-          <p class="form-hint">Instead of a token. Kept on this device only, not synced</p>
-          <p class="form-warning" id="insecure-warning" style="display: none">
-            ⚠️ This server URL uses http://: the token or password goes over the network unencrypted, readable by anyone on the way. Use
-            https:// where you can.
-          </p>
-          <div class="form-warning" id="held-back-box" style="display: none">
-            <p id="held-back-text"></p>
-            <button class="chip" id="held-back-btn">Use them with this server</button>
-          </div>
-          <button class="chip" id="server-access-btn" style="display: none">🔓 Allow access to this server</button>
-          <p class="form-hint" id="server-access-hint" style="display: none">Needed to send and receive with authentication</p>
-          <button class="action-btn" type="button" id="save-server-settings">Save server settings</button>
-        </div>
 
-        <div class="form-group">
-          <div class="form-label">Topics</div>
-          <div class="topics-container" id="topics-container">
-            <input type="text" class="topic-input-field" id="new-topic-input" />
-            <span class="topic-input-hint" id="topic-input-hint">Press enter to add topic</span>
+          <div class="form-group">
+            <label class="form-label" for="fallback-url-input">Fallback URL (optional)</label>
+            <input type="text" class="form-input" id="fallback-url-input" placeholder="https://ntfy.example.com" />
+            <p class="form-hint">Another address of the same server, used when the main one doesn't answer</p>
           </div>
-        </div>
 
-        <section class="form-group" id="topic-settings-group" aria-labelledby="topic-settings-heading" hidden>
-          <h2 class="section-title" id="topic-settings-heading">Topic settings</h2>
-          <div class="topic-settings-scroll">
-            <table class="topic-settings" aria-labelledby="topic-settings-heading">
-              <thead>
-                <tr>
-                  <th scope="col">Topic</th>
-                  <th scope="col">Message sync</th>
-                  <th scope="col">Desktop notifications</th>
-                </tr>
-              </thead>
-              <tbody id="topic-settings-rows"></tbody>
-            </table>
+          <div class="form-group">
+            <label class="form-label" for="token-input">Access Token (optional)</label>
+            <input type="password" class="form-input" id="token-input" placeholder="tk_..." />
+            <p class="form-hint">For private topics or authenticated servers</p>
           </div>
-          <p class="form-hint">
-            Sync server deletions checks saved messages for cached deletions and applies future deletions both ways when permissions allow.
-          </p>
-          <p class="form-hint">Messages below the desktop notification level still appear in the inbox.</p>
-          <div class="topic-settings-footer">
-            <button type="button" class="action-btn" id="apply-topic-settings" disabled>Apply</button>
-            <span class="form-hint" id="topic-settings-status" role="status"></span>
+
+          <div class="form-group">
+            <div class="form-label">Username and password (optional)</div>
+            <div class="credentials-row">
+              <input type="text" class="form-input" id="username-input" placeholder="Username" autocomplete="off" aria-label="Username" />
+              <input
+                type="password"
+                class="form-input"
+                id="password-input"
+                placeholder="Password"
+                autocomplete="new-password"
+                aria-label="Password"
+              />
+            </div>
+            <p class="form-hint">Instead of a token. Kept on this device only, not synced</p>
+            <p class="form-warning" id="insecure-warning" style="display: none">
+              ⚠️ This server URL uses http://: the token or password goes over the network unencrypted, readable by anyone on the way. Use
+              https:// where you can.
+            </p>
+            <div class="form-warning" id="held-back-box" style="display: none">
+              <p id="held-back-text"></p>
+              <button class="chip" id="held-back-btn">Use them with this server</button>
+            </div>
+            <button class="chip" id="server-access-btn" style="display: none">🔓 Allow access to this server</button>
+            <p class="form-hint" id="server-access-hint" style="display: none">Needed to send and receive with authentication</p>
+            <button class="action-btn" type="button" id="save-server-settings">Save server settings</button>
           </div>
         </section>
 
-        <div class="form-group">
+        <section class="settings-section" aria-labelledby="settings-topics-heading">
+          <h2 class="settings-heading" id="settings-topics-heading">Topics</h2>
+          <div class="form-group">
+            <div class="form-label">Topic names</div>
+            <div class="topics-container" id="topics-container">
+              <input type="text" class="topic-input-field" id="new-topic-input" />
+              <span class="topic-input-hint" id="topic-input-hint">Press enter to add topic</span>
+            </div>
+          </div>
+
+          <section class="form-group" id="topic-settings-group" aria-labelledby="topic-settings-heading" hidden>
+            <h3 class="section-title" id="topic-settings-heading">Topic settings</h3>
+            <div class="topic-settings-scroll">
+              <table class="topic-settings" aria-labelledby="topic-settings-heading">
+                <thead>
+                  <tr>
+                    <th scope="col">Topic</th>
+                    <th scope="col">Message sync</th>
+                    <th scope="col">Desktop notifications</th>
+                  </tr>
+                </thead>
+                <tbody id="topic-settings-rows"></tbody>
+              </table>
+            </div>
+            <p class="form-hint">
+              Sync server deletions checks saved messages for cached deletions and applies future deletions both ways when permissions
+              allow.
+            </p>
+            <p class="form-hint">Messages below the desktop notification level still appear in the inbox.</p>
+            <div class="topic-settings-footer">
+              <button type="button" class="action-btn" id="apply-topic-settings" disabled>Apply</button>
+              <span class="form-hint" id="topic-settings-status" role="status"></span>
+            </div>
+          </section>
+        </section>
+
+        <section class="settings-section" aria-labelledby="settings-notifications-heading">
+          <h2 class="settings-heading" id="settings-notifications-heading">Notifications</h2>
+          <div class="form-group">
+            <label class="form-label" for="badge-scope-select">Unread badge counts</label>
+            <select class="form-select" id="badge-scope-select">
+              <option value="all">All topics</option>
+              <option value="notifying">Only topics with desktop notifications on</option>
+            </select>
+            <p class="form-hint">The number on the toolbar icon. The inbox still counts every topic.</p>
+          </div>
+          <div class="form-group" id="keep-urgent-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="keep-urgent-checkbox" checked />
+              <label for="keep-urgent-checkbox">Keep high and urgent notifications on screen until dismissed</label>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section" aria-labelledby="settings-inbox-heading">
+          <h2 class="settings-heading" id="settings-inbox-heading">Inbox</h2>
+          <div class="settings-row">
+            <div class="form-group">
+              <label class="form-label" for="history-limit-select">Messages kept per topic</label>
+              <select class="form-select" id="history-limit-select" aria-describedby="history-limit-hint">
+                <option value="50">50</option>
+                <option value="100" selected>100</option>
+                <option value="250">250</option>
+                <option value="500">500</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="message-times-select">Message times</label>
+              <select class="form-select" id="message-times-select">
+                <option value="relative">Relative</option>
+                <option value="absolute">Date and time</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="density-select">Density</label>
+              <select class="form-select" id="density-select">
+                <option value="comfortable">Comfortable</option>
+                <option value="compact">Compact</option>
+              </select>
+            </div>
+          </div>
+          <p class="form-hint" id="history-limit-hint">
+            A lower limit removes each topic's oldest messages right away; a higher one doesn't bring them back. All topics together stay
+            within 8 MiB.
+          </p>
+        </section>
+
+        <section class="settings-section" aria-labelledby="settings-sending-heading">
+          <h2 class="settings-heading" id="settings-sending-heading">Sending</h2>
+          <div class="form-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="include-url-checkbox" />
+              <label for="include-url-checkbox">Fill in the current tab</label>
+            </div>
+            <p class="form-hint">
+              Send tab: the tab's title as the title, its URL as the message. Context menu: the page's URL as the title
+            </p>
+          </div>
+        </section>
+
+        <section class="settings-section" aria-labelledby="settings-appearance-heading">
+          <h2 class="settings-heading" id="settings-appearance-heading">Appearance and layout</h2>
+          <div class="form-group">
+            <div class="form-label" id="theme-label">Theme</div>
+            <div class="chips" id="theme-chips" role="group" aria-labelledby="theme-label">
+              <button class="chip" data-theme="light">☀️ Light</button>
+              <button class="chip" data-theme="dark">🌙 Dark</button>
+              <button class="chip active" data-theme="auto">🔄 Auto</button>
+            </div>
+          </div>
+
           <div class="checkbox-group">
-            <input type="checkbox" id="include-url-checkbox" />
-            <label for="include-url-checkbox">Fill in the current tab</label>
+            <input type="checkbox" id="freeze-dividers-checkbox" />
+            <label for="freeze-dividers-checkbox">Freeze dividers between sections All topics, Inbox, and Send notification</label>
           </div>
-          <p class="form-hint">Send tab: the tab's title as the title, its URL as the message. Context menu: the page's URL as the title</p>
-        </div>
 
-        <div class="form-group">
-          <div class="form-label">Appearance</div>
-          <div class="chips" id="theme-chips">
-            <button class="chip" data-theme="light">☀️ Light</button>
-            <button class="chip" data-theme="dark">🌙 Dark</button>
-            <button class="chip active" data-theme="auto">🔄 Auto</button>
+          <div class="checkbox-group">
+            <input type="checkbox" id="remember-send-panel-checkbox" />
+            <label for="remember-send-panel-checkbox">Remember collapsed/expanded state of section Send notification</label>
           </div>
-        </div>
+        </section>
 
-        <div class="checkbox-group">
-          <input type="checkbox" id="freeze-dividers-checkbox" />
-          <label for="freeze-dividers-checkbox">Freeze dividers between sections All topics, Inbox, and Send notification</label>
-        </div>
-
-        <div class="checkbox-group">
-          <input type="checkbox" id="remember-send-panel-checkbox" />
-          <label for="remember-send-panel-checkbox">Remember collapsed/expanded state of section Send notification</label>
-        </div>
+        <section class="settings-section" aria-labelledby="settings-shortcuts-heading">
+          <h2 class="settings-heading" id="settings-shortcuts-heading">Keyboard shortcuts</h2>
+          <dl class="shortcut-list" id="shortcut-list"></dl>
+          <button type="button" class="chip" id="shortcut-settings-btn">⌨️ Change shortcuts</button>
+          <p class="form-hint" id="shortcut-hint" role="status">
+            Shortcuts are set in the browser's extension shortcut settings. Ctrl + Enter (⌘ + Enter on a Mac) sends from the Send form.
+          </p>
+        </section>
 
         <div class="status" id="settings-status" role="status"></div>
       </div>

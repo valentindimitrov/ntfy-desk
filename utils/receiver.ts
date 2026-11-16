@@ -353,7 +353,8 @@ export function createReceiver(events: ReceiverEvents) {
       const progress = state?.deletionReplay;
       if (includeDeletions && !progress?.complete && (progress?.retryAt ?? 0) <= Date.now()) {
         try {
-          const oldest = Math.min(...savedMessages.map(({ time }) => time));
+          // Not Math.min(...rows): the row count follows a setting, and a spread has an argument limit
+          const oldest = savedMessages.reduce((min, { time }) => Math.min(min, time), Infinity);
           const since = Math.max(1, Math.floor(progress?.nextSince ?? oldest));
           const replay = Number.isFinite(since)
             ? await getNotifications(config, topic, since, { includeDeletions, savedMessages })

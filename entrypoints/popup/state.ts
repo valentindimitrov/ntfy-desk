@@ -2,6 +2,7 @@
 
 import { browser } from 'wxt/browser';
 import { getConfig, getStoredAuth, type Credentials, type NtfyMessage } from '@/utils/ntfy';
+import { DEFAULT_PREFERENCES, getPreferences, type Preferences } from '@/utils/preferences';
 import { getTopicRules, type TopicRules } from '@/utils/rules';
 import type { ReceiverStatus } from '@/utils/status';
 import type { StoredFileInfo } from '@/utils/stored-files';
@@ -24,6 +25,8 @@ export interface PopupState {
   topics: string[];
   theme: Theme;
   includeUrl: boolean;
+  /** Badge scope, notification persistence, history limit and inbox display (utils/preferences.ts) */
+  preferences: Preferences;
   sendAnotherEnabled: boolean;
   sendAsZipEnabled: boolean;
   lastTopic: string | undefined;
@@ -78,6 +81,7 @@ export const state: PopupState = {
   topics: [],
   theme: 'auto',
   includeUrl: false,
+  preferences: { ...DEFAULT_PREFERENCES },
   sendAnotherEnabled: false,
   sendAsZipEnabled: false,
   lastTopic: undefined,
@@ -120,7 +124,11 @@ export async function loadSettings(): Promise<void> {
   if (Array.isArray(items.lastTags)) {
     state.tags = items.lastTags.filter((tag): tag is string => typeof tag === 'string');
   }
-  [state.notifyRules, state.syncDeletionTopics] = await Promise.all([getTopicRules(), getSyncDeletionTopics()]);
+  [state.notifyRules, state.syncDeletionTopics, state.preferences] = await Promise.all([
+    getTopicRules(),
+    getSyncDeletionTopics(),
+    getPreferences(),
+  ]);
 }
 
 export async function loadReceiveFilter(): Promise<void> {

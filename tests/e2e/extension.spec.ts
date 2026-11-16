@@ -938,6 +938,148 @@ test.describe('sending', () => {
   });
 });
 
+test.describe('customization', () => {
+  test('the badge scope and the history limit set in Settings reach the background and other views at once', async ({
+    ntfy,
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
+    await configure({ topics: 'alerts,coolify', notifyRules: { coolify: 'off' } });
+    await expect.poll(() => ntfy.subscriptions).toEqual([['alerts', 'coolify']]);
+    await waitForInitialSync(serviceWorker, ['alerts', 'coolify']);
+    const badge = () => serviceWorker.evaluate(() => chrome.action.getBadgeText({}));
+    const stored = (topic: string) =>
+      serviceWorker.evaluate(
+        async (topic) =>
+          ((await chrome.storage.local.get('receivedNotifications')).receivedNotifications as { topic: string }[]).filter(
+            (message) => message.topic === topic,
+          ).length,
+        topic,
+      );
+
+    ntfy.publish('coolify', { title: 'Deployed' });
+    ntfy.publish('coolify', { title: 'Deployed again' });
+    for (let index = 0; index < 53; index++) ntfy.publish('alerts', { title: `Alert ${index}`, priority: 1 });
+    await expect.poll(badge).toBe('55');
+
+    const settings = await openPopup('?mode=page');
+    const inbox = await openPopup('?mode=page');
+    await expect(inbox.locator('.notification-item')).toHaveCount(55);
+    await settings.getByRole('button', { name: 'Settings' }).click();
+
+    // The toolbar badge leaves out the topic with notifications off; the inbox still counts it
+    await settings.getByLabel('Unread badge counts').selectOption('Only topics with desktop notifications on');
+    await expect.poll(badge).toBe('53');
+    await expect(inbox.locator('.topic-filter-btn', { hasText: 'coolify' }).locator('.topic-unread-count')).toHaveText('2');
+    // A topic's rule changing moves it in or out of the count
+    await serviceWorker.evaluate(() => chrome.storage.sync.set({ notifyRules: [['coolify', 'urgent']] }));
+    await expect.poll(badge).toBe('55');
+    await settings.getByLabel('Unread badge counts').selectOption('All topics');
+
+    // A lower limit trims the stored history right away, in the background's single writer
+    await settings.getByLabel('Messages kept per topic').selectOption('50');
+    await expect.poll(() => stored('alerts')).toBe(50);
+    expect(await stored('coolify')).toBe(2);
+    await expect.poll(badge).toBe('52');
+    await expect(inbox.locator('.notification-item')).toHaveCount(52);
+    await expect(inbox.locator('.notification-title', { hasText: /^Alert 2$/ })).toHaveCount(0);
+    await expect(inbox.locator('.notification-title', { hasText: /^Alert 3$/ })).toHaveCount(1);
+    // Raising it brings nothing back
+    await settings.getByLabel('Messages kept per topic').selectOption('500');
+    await inbox.evaluate(() => chrome.runtime.sendMessage({ action: 'sync' }));
+    expect(await stored('alerts')).toBe(50);
+
+    // Inbox display: both open views follow
+    const rowHeight = () =>
+      inbox
+        .locator('.notification-item')
+        .first()
+        .evaluate((row) => row.getBoundingClientRect().height);
+    const comfortable = await rowHeight();
+    await expect(inbox.locator('.notification-time').first()).toContainText(/ago|Just now/);
+    await settings.getByLabel('Density').selectOption('Compact');
+    await settings.getByLabel('Message times').selectOption('Date and time');
+    await expect(inbox.locator('body')).toHaveAttribute('data-density', 'compact');
+    await expect(inbox.locator('.notification-time').first()).toContainText(String(new Date().getFullYear()));
+    expect(await rowHeight()).toBeLessThan(comfortable);
+    await expect(
+      inbox.locator('.notification-item').first().locator('.notification-title, .notification-time, .read-btn, .delete-btn'),
+    ).toHaveCount(4);
+    expect(
+      await serviceWorker.evaluate(() => chrome.storage.sync.get(['badgeScope', 'historyPerTopic', 'messageTimes', 'inboxDensity'])),
+    ).toEqual({
+      badgeScope: 'all',
+      historyPerTopic: 500,
+      messageTimes: 'absolute',
+      inboxDensity: 'compact',
+    });
+  });
+
+  test('lists the keyboard shortcuts in Settings at popup width and opens the browser page that changes them', async ({
+    configure,
+    context,
+    openPopup,
+  }) => {
+    await configure({ topics: 'alerts' });
+    const popup = await openPopup();
+    await popup.setViewportSize({ width: 800, height: 600 });
+    await popup.getByRole('button', { name: 'Settings' }).click();
+    const shortcuts = popup.getByRole('region', { name: 'Keyboard shortcuts' });
+    await expect(shortcuts.locator('dt')).toHaveText(['Open ntfy Desk', 'Send this page to ntfy']);
+    // The suggested key is accepted by the browser; send-page has none until the user sets one
+    await expect(shortcuts.locator('dd').first().locator('kbd')).toHaveText(/\S/);
+    await expect(shortcuts.locator('dd').nth(1)).toHaveText('Not set');
+    for (const name of ['Server', 'Topics', 'Notifications', 'Inbox', 'Sending', 'Appearance and layout']) {
+      await expect(popup.getByRole('region', { name, exact: true })).toBeVisible();
+    }
+    expect(await popup.locator('#settings-view').evaluate((view) => view.scrollWidth <= view.clientWidth)).toBe(true);
+    await expect(popup.getByLabel('Keep high and urgent notifications on screen until dismissed')).toBeChecked();
+
+    const opened = context.waitForEvent('page');
+    await shortcuts.getByRole('button', { name: 'Change shortcuts' }).click();
+    expect((await opened).url()).toBe('chrome://extensions/shortcuts');
+  });
+
+  test('the send-page command publishes the page to the last send topic from the background', async ({
+    ntfy,
+    configure,
+    serviceWorker,
+  }) => {
+    await configure({ topics: 'inbox,alerts' });
+    await serviceWorker.evaluate(() => chrome.storage.sync.set({ lastTopic: 'alerts' }));
+    const run = (url: string) =>
+      serviceWorker.evaluate(
+        (tab) =>
+          (globalThis as unknown as { __ntfyRunCommand: (command: string, tab: unknown) => Promise<void> }).__ntfyRunCommand(
+            'send-page',
+            tab,
+          ),
+        { id: 1, url, title: 'A story' },
+      );
+    // The result badge is recorded: the sent message arrives on the subscription and the unread count replaces it
+    await serviceWorker.evaluate(() => {
+      const texts: string[] = [];
+      Object.assign(globalThis, { __badgeTexts: texts });
+      const setBadgeText = chrome.action.setBadgeText.bind(chrome.action);
+      chrome.action.setBadgeText = ((details: { text: string }) => {
+        texts.push(details.text);
+        return setBadgeText(details);
+      }) as typeof chrome.action.setBadgeText;
+    });
+    const results = async () =>
+      (await serviceWorker.evaluate(() => (globalThis as unknown as { __badgeTexts: string[] }).__badgeTexts)).filter((text) =>
+        ['✓', '✗', '?'].includes(text),
+      );
+    await run('chrome://extensions/');
+    expect(await results()).toEqual(['✗']);
+    expect(ntfy.published).toEqual([]);
+    await run('https://news.example/story');
+    expect(await results()).toEqual(['✗', '✓']);
+    expect(ntfy.published).toEqual([{ topic: 'alerts', body: 'https://news.example/story', headers: { title: 'A story' } }]);
+  });
+});
+
 test.describe('fallback server', () => {
   test('keeps the draft when a publish lands but loses its response without reposting to the fallback', async ({
     configure,

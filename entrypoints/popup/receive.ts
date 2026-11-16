@@ -21,13 +21,17 @@ function emptyMessage(text: string): HTMLElement {
   return div;
 }
 
+const DATE_AND_TIME: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+
+/** "5m ago" up to a day, then the local date and time; always the date and time (with the year) if the setting says so */
 function formatTime(unixTime: number, now = new Date()): string {
   const date = new Date(unixTime * 1000);
+  if (state.preferences.messageTimes === 'absolute') return date.toLocaleString(undefined, { year: 'numeric', ...DATE_AND_TIME });
   const minutes = Math.floor((now.getTime() - date.getTime()) / 60000);
   if (minutes < 1) return 'Just now';
   if (minutes < 60) return `${minutes}m ago`;
   if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleDateString(undefined, DATE_AND_TIME);
 }
 
 /** All topics, then each configured topic, with unread counts */

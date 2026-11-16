@@ -3,7 +3,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { MAX_HISTORY_PER_TOPIC, MAX_HISTORY_SIZE, getHistoryState, getTopicSyncStates, recordMessage, trimHistory } from '@/utils/history';
+import { MAX_HISTORY_SIZE, getHistoryState, getTopicSyncStates, recordMessage, trimHistory } from '@/utils/history';
+import { DEFAULT_HISTORY_PER_TOPIC } from '@/utils/preferences';
 import {
   AUTH_ORIGINS_KEY,
   MAX_MESSAGE_JSON,
@@ -239,7 +240,7 @@ describe('#4 a hostile server cannot fill storage', () => {
     });
     await fakeBrowser.storage.local.remove(['receivedNotifications']);
     await receiver.sync();
-    expect(notified).toHaveLength(MAX_HISTORY_PER_TOPIC);
+    expect(notified).toHaveLength(DEFAULT_HISTORY_PER_TOPIC);
     expect(notified).not.toContain('m1');
   });
 

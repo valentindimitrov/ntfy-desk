@@ -1,5 +1,6 @@
 // Settings view: server and fallback URL, token or username and password, topics, notification rules,
-// include-URL option and theme. Per-topic options are staged until Apply.
+// badge, notification, history and inbox display preferences, include-URL option, theme and the
+// keyboard shortcuts. Per-topic options are staged until Apply.
 
 import { browser } from 'wxt/browser';
 import {
@@ -27,7 +28,10 @@ import {
   storedTopicRules,
   type NotifyRule,
 } from '@/utils/rules';
+import { getShortcuts, openShortcutSettings } from '@/utils/commands';
+import { DEFAULT_PREFERENCES, PREFERENCE_KEYS, getPreferences, parsePreferences, type Preferences } from '@/utils/preferences';
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics } from '@/utils/sync-modes';
+import { loadNotifications } from './receive';
 import { updateTopicOptions } from './send';
 import { elements, isConfigured, saveReceiveFilter, saveSync, state, type Theme } from './state';
 import { clearStatus, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
@@ -45,6 +49,61 @@ function updateThemeChips(): void {
   elements.themeChips.querySelectorAll<HTMLElement>('.chip').forEach((chip) => {
     chip.classList.toggle('active', chip.dataset.theme === state.theme);
   });
+}
+
+/** Show the preferences in their controls, and apply the inbox density (CSS on the body) */
+export function applyPreferences(): void {
+  const { badgeScope, keepUrgentOnScreen, historyPerTopic, messageTimes, inboxDensity } = state.preferences;
+  document.body.dataset.density = inboxDensity;
+  elements.badgeScopeSelect.value = badgeScope;
+  elements.keepUrgentCheckbox.checked = keepUrgentOnScreen;
+  elements.historyLimitSelect.value = String(historyPerTopic);
+  elements.messageTimesSelect.value = messageTimes;
+  elements.densitySelect.value = inboxDensity;
+}
+
+/** A change from this view, another open view or browser sync */
+function updatePreferences(stored: Partial<Record<keyof Preferences, unknown>>): void {
+  const previous = state.preferences;
+  state.preferences = parsePreferences({ ...previous, ...stored });
+  applyPreferences();
+  if (state.preferences.messageTimes !== previous.messageTimes) void loadNotifications();
+}
+
+/** Save the one preference a control edits; an invalid value falls back to the default */
+function savePreference<K extends keyof Preferences>(key: K, value: unknown): void {
+  const previous = state.preferences[key];
+  updatePreferences({ [key]: value });
+  void saveSync({ [key]: state.preferences[key] }).catch(() => {
+    updatePreferences({ [key]: previous });
+    showSettingsStatus('Failed to save settings', 'error');
+  });
+}
+
+const SHORTCUT_HELP =
+  import.meta.env.BROWSER === 'firefox'
+    ? 'Open about:addons, select the gear menu, then Manage Extension Shortcuts.'
+    : 'Open chrome://extensions/shortcuts in a new tab.';
+
+/** The current bindings, as the browser reports them */
+async function renderShortcuts(): Promise<void> {
+  const shortcuts = await getShortcuts();
+  elements.shortcutList.replaceChildren(
+    ...shortcuts.flatMap(({ description, shortcut }) => {
+      const name = document.createElement('dt');
+      name.textContent = description;
+      const binding = document.createElement('dd');
+      const key = document.createElement(shortcut ? 'kbd' : 'span');
+      key.className = shortcut ? 'shortcut-key' : 'shortcut-unset';
+      key.textContent = shortcut || 'Not set';
+      binding.append(key);
+      return [name, binding];
+    }),
+  );
+}
+
+async function changeShortcuts(): Promise<void> {
+  if (!(await openShortcutSettings())) elements.shortcutHint.textContent = `Could not open the shortcut settings. ${SHORTCUT_HELP}`;
 }
 
 const verifiesDeletions = () => state.topics.some((topic) => state.syncDeletionTopics.has(topic));
@@ -433,6 +492,9 @@ export async function populateSettings(): Promise<void> {
   elements.topicSettingsStatus.textContent = '';
   fillServerFields();
   elements.includeUrlCheckbox.checked = state.includeUrl;
+  state.preferences = await getPreferences().catch(() => state.preferences);
+  applyPreferences();
+  void renderShortcuts();
   await refreshTopics();
   applyTheme();
   updateHeldBackUI();
@@ -441,13 +503,27 @@ export async function populateSettings(): Promise<void> {
 }
 
 export function setupSettings(): void {
-  const savePreference = (patch: Record<string, unknown>) => {
+  const saveSetting = (patch: Record<string, unknown>) => {
     void saveSync(patch).catch(() => showSettingsStatus('Failed to save settings', 'error'));
   };
   elements.saveServerSettings.addEventListener('click', () => void saveServerSettings());
   elements.includeUrlCheckbox.addEventListener('change', () => {
     state.includeUrl = elements.includeUrlCheckbox.checked;
-    savePreference({ includeUrl: state.includeUrl });
+    saveSetting({ includeUrl: state.includeUrl });
+  });
+  elements.badgeScopeSelect.addEventListener('change', () => savePreference('badgeScope', elements.badgeScopeSelect.value));
+  elements.keepUrgentCheckbox.addEventListener('change', () => savePreference('keepUrgentOnScreen', elements.keepUrgentCheckbox.checked));
+  elements.historyLimitSelect.addEventListener('change', () =>
+    savePreference('historyPerTopic', Number(elements.historyLimitSelect.value)),
+  );
+  elements.messageTimesSelect.addEventListener('change', () => savePreference('messageTimes', elements.messageTimesSelect.value));
+  elements.densitySelect.addEventListener('change', () => savePreference('inboxDensity', elements.densitySelect.value));
+  // requireInteraction is Chromium-only: Firefox has no such option
+  elements.keepUrgentGroup.hidden = import.meta.env.BROWSER === 'firefox';
+  elements.shortcutSettingsBtn.addEventListener('click', () => void changeShortcuts());
+  // Chromium has no event for a changed shortcut: read them again when the user comes back
+  window.addEventListener('focus', () => {
+    if (elements.settingsView.classList.contains('active')) void renderShortcuts();
   });
   elements.applyTopicSettings.addEventListener('click', () => void applyTopicSettings());
   elements.serverAccessBtn.addEventListener('click', requestServerAccess);
@@ -470,9 +546,17 @@ export function setupSettings(): void {
     if (theme !== 'light' && theme !== 'dark' && theme !== 'auto') return;
     state.theme = theme satisfies Theme;
     applyTheme();
-    savePreference({ theme });
+    saveSetting({ theme });
   });
   browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && PREFERENCE_KEYS.some((key) => changes[key])) {
+      // A removed key reads as its default
+      updatePreferences(
+        Object.fromEntries(
+          PREFERENCE_KEYS.filter((key) => changes[key]).map((key) => [key, changes[key]?.newValue ?? DEFAULT_PREFERENCES[key]]),
+        ),
+      );
+    }
     if (
       area === 'sync' &&
       elements.settingsView.classList.contains('active') &&

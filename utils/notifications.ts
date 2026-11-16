@@ -5,7 +5,8 @@ import { countUnread, getHistoryState } from './history';
 import { openExtensionTab } from './extension-tab';
 import { markdownToText } from './markdown';
 import { isHttpUrl, type NtfyMessage } from './ntfy';
-import { getTopicRules, shouldNotify } from './rules';
+import { getPreferences } from './preferences';
+import { getTopicRules, ruleFor, shouldNotify } from './rules';
 
 const PRIORITY_LABELS: Record<number, string> = {
   1: '⇊ Min',
@@ -72,7 +73,8 @@ export function notificationButtons(message: NtfyMessage): NotificationButton[] 
   return buttons.slice(0, 2);
 }
 
-export async function showDesktopNotification(message: NtfyMessage): Promise<void> {
+/** keepOnScreen: the "Keep high and urgent notifications on screen until dismissed" setting */
+export async function showDesktopNotification(message: NtfyMessage, keepOnScreen = true): Promise<void> {
   const label = message.priority ? PRIORITY_LABELS[message.priority] : undefined;
   const options: Browser.notifications.NotificationCreateOptions = {
     type: 'basic',
@@ -83,7 +85,7 @@ export async function showDesktopNotification(message: NtfyMessage): Promise<voi
   // Firefox rejects Chromium-only notification options.
   if (import.meta.env.BROWSER !== 'firefox') {
     options.contextMessage = `Topic: ${message.topic}`;
-    options.requireInteraction = (message.priority ?? 3) >= 4;
+    options.requireInteraction = keepOnScreen && (message.priority ?? 3) >= 4;
     const buttons = notificationButtons(message);
     if (buttons.length > 0) options.buttons = buttons.map(({ title }) => ({ title }));
   }
@@ -93,26 +95,27 @@ export async function showDesktopNotification(message: NtfyMessage): Promise<voi
 /** A desktop notification for a new message, if its topic's rule allows it */
 export function notifyNewMessage(message: NtfyMessage): Promise<void> {
   return updateSummary(async () => {
-    if (shouldNotify(message, await getTopicRules()) && !dismissed.has(message.id)) {
-      await showDesktopNotification(message);
+    const [rules, { keepUrgentOnScreen }] = await Promise.all([getTopicRules(), getPreferences()]);
+    if (shouldNotify(message, rules) && !dismissed.has(message.id)) {
+      await showDesktopNotification(message, keepUrgentOnScreen);
     }
   });
 }
 
-function summaryOptions(summary: CatchUpSummary): Browser.notifications.NotificationCreateOptions {
+function summaryOptions(summary: CatchUpSummary, keepOnScreen: boolean): Browser.notifications.NotificationCreateOptions {
   return {
     type: 'basic',
     iconUrl: browser.runtime.getURL('/icon/128.png'),
     title: `${summary.count} new notifications`,
     message: summary.topic ? `Open the Inbox for ${summary.topic}` : 'Open the Inbox',
-    ...(import.meta.env.BROWSER !== 'firefox' && { requireInteraction: summary.urgent }),
+    ...(import.meta.env.BROWSER !== 'firefox' && { requireInteraction: keepOnScreen && summary.urgent }),
   };
 }
 
 /** Summarize across a whole sync pass and carry forward an open summary across passes. */
 export function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
   return updateSummary(async () => {
-    const rules = await getTopicRules();
+    const [rules, { keepUrgentOnScreen }] = await Promise.all([getTopicRules(), getPreferences()]);
     const eligible = messages.filter((message) => shouldNotify(message, rules) && !dismissed.has(message.id));
     const first = eligible[0];
     if (!first) return;
@@ -128,7 +131,7 @@ export function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
         topic: previous.topic === current.topic ? current.topic : null,
         urgent: previous.urgent || current.urgent,
       };
-      const options = summaryOptions(combined);
+      const options = summaryOptions(combined, keepUrgentOnScreen);
       // Firefox replaces an existing notification on create and has no update method.
       const updated =
         typeof browser.notifications.update === 'function'
@@ -140,10 +143,10 @@ export function notifyCatchUp(messages: NtfyMessage[]): Promise<void> {
       }
     }
     if (current.count <= MAX_INDIVIDUAL_CATCH_UP) {
-      await Promise.all(eligible.map(showDesktopNotification));
+      await Promise.all(eligible.map((message) => showDesktopNotification(message, keepUrgentOnScreen)));
       return;
     }
-    await browser.notifications.create(CATCH_UP_ID, summaryOptions(current));
+    await browser.notifications.create(CATCH_UP_ID, summaryOptions(current, keepUrgentOnScreen));
     await browser.storage.session.set({ [CATCH_UP_KEY]: current });
   });
 }
@@ -208,8 +211,10 @@ export async function handleNotificationClick(notificationId: string): Promise<v
   }
 }
 
+/** The unread count on the toolbar icon: all topics, or only those with desktop notifications on */
 export async function updateUnreadBadge(): Promise<void> {
-  const unread = countUnread(await getHistoryState());
+  const [history, { badgeScope }, rules] = await Promise.all([getHistoryState(), getPreferences(), getTopicRules()]);
+  const unread = countUnread(history, badgeScope === 'notifying' ? (topic) => ruleFor(rules, topic) !== 'off' : undefined);
   await browser.action.setBadgeText({ text: unread > 0 ? unread.toString() : '' });
   if (unread > 0) {
     await browser.action.setBadgeBackgroundColor({ color: '#f44336' });
@@ -218,7 +223,7 @@ export async function updateUnreadBadge(): Promise<void> {
 
 let sendResultTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** A temporary result on the toolbar after a context-menu send. */
+/** A temporary result on the toolbar after a context-menu or keyboard-shortcut send. */
 export function showSendResult(result: boolean | 'uncertain'): void {
   clearTimeout(sendResultTimer);
   const uncertain = result === 'uncertain';

@@ -3,7 +3,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { MAX_HISTORY_PER_TOPIC, getHistoryState, getTopicSyncStates, recordMessage } from '@/utils/history';
+import { getHistoryState, getTopicSyncStates, recordMessage } from '@/utils/history';
+import { DEFAULT_HISTORY_PER_TOPIC } from '@/utils/preferences';
 import { handlePopupRequest } from '@/utils/messages';
 import { isNoResponse, PublishUncertainError, sendAttachment, sendNotification, type NtfyMessage } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
@@ -72,8 +73,8 @@ describe('#5 many messages in the same second', () => {
     await receiver.sync(); // first, silent sync
     const burst = Array.from({ length: 250 }, () => server.publish('alerts', 10001));
     for (let i = 0; i < 4; i++) await receiver.sync();
-    expect(notified).toHaveLength(MAX_HISTORY_PER_TOPIC);
-    expect(new Set(notified)).toEqual(new Set(burst.slice(-MAX_HISTORY_PER_TOPIC).map((m) => m.id)));
+    expect(notified).toHaveLength(DEFAULT_HISTORY_PER_TOPIC);
+    expect(new Set(notified)).toEqual(new Set(burst.slice(-DEFAULT_HISTORY_PER_TOPIC).map((m) => m.id)));
   });
 });
 
@@ -111,14 +112,14 @@ describe('#7 read access revoked for one topic', () => {
 
 describe('#8 the history limit keeps the newest messages by time', () => {
   it("doesn't let a late older message push out a newer one", async () => {
-    for (let i = 0; i < MAX_HISTORY_PER_TOPIC; i++) {
+    for (let i = 0; i < DEFAULT_HISTORY_PER_TOPIC; i++) {
       await recordMessage({ id: `new${i}`, event: 'message', topic: 'alerts', time: 1000 + i }, source);
     }
     await recordMessage({ id: 'late', event: 'message', topic: 'alerts', time: 1 }, source);
     const ids = (await getHistoryState()).receivedNotifications.map((m) => m.id);
-    expect(ids).toHaveLength(MAX_HISTORY_PER_TOPIC);
+    expect(ids).toHaveLength(DEFAULT_HISTORY_PER_TOPIC);
     expect(ids).not.toContain('late');
-    expect(ids[0]).toBe(`new${MAX_HISTORY_PER_TOPIC - 1}`);
+    expect(ids[0]).toBe(`new${DEFAULT_HISTORY_PER_TOPIC - 1}`);
   });
 });
 

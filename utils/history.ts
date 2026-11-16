@@ -4,10 +4,9 @@
 
 import { browser } from 'wxt/browser';
 import { parseMessage, sequenceOf, type NtfyMessage } from './ntfy';
+import { DEFAULT_HISTORY_PER_TOPIC, getPreferences } from './preferences';
 import { getSyncDeletionTopics } from './sync-modes';
 
-/** Received messages kept per topic, so a busy topic doesn't push the others out */
-export const MAX_HISTORY_PER_TOPIC = 100;
 /** Size of all kept messages together, at most (JSON characters); the oldest go first */
 export const MAX_HISTORY_SIZE = 8 * 1024 * 1024;
 /** Safety cap of a topic's seen ids, if its polls keep failing and live messages keep coming */
@@ -16,7 +15,8 @@ const MAX_SEEN_PER_TOPIC = 5000;
 const MAX_SERVER_DELETIONS_PER_TOPIC = 1000;
 /**
  * Deleted ids kept for replay suppression, newest last. Leave room for a single delete of the
- * entire 8 MiB history, even if it consists of the smallest possible stored messages.
+ * entire 8 MiB history, even if it consists of the smallest possible stored messages (about 70
+ * characters each, so under 120,000 rows whatever the per-topic limit is).
  */
 export const MAX_DELETED_IDS = 200_000;
 
@@ -43,6 +43,11 @@ export interface TopicSyncState {
   synced: boolean;
   /** Last time a bounded replay skipped events, for the inbox warning. */
   truncatedAt?: number;
+  /**
+   * Time of the newest message the history limit dropped. Older messages are not stored again: their
+   * ids may no longer be in `seen`, and a raised limit would otherwise let a replay bring them back.
+   */
+  retainedFrom?: number;
 }
 
 /** Sync states by topic. A Map, so any topic name is a plain key (even "__proto__" or "constructor") */
@@ -85,6 +90,7 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
           seen: Array.isArray(state.seen) ? state.seen : [],
           synced: state.synced === true,
           truncatedAt: state.truncatedAt,
+          retainedFrom: typeof state.retainedFrom === 'number' ? state.retainedFrom : undefined,
           serverDeletions: Array.isArray(state.serverDeletions) ? state.serverDeletions : [],
           deletionReplay: state.deletionReplay,
         });
@@ -117,11 +123,11 @@ export async function getHistoryState(): Promise<HistoryState> {
 }
 
 /**
- * The newest MAX_HISTORY_PER_TOPIC messages of each topic by server time, newest first, up to
- * MAX_HISTORY_SIZE in all. Ordering by time (not by arrival) keeps a late older message from pushing
- * out a newer one.
+ * The newest `perTopic` messages of each topic by server time (the "Messages kept per topic"
+ * setting), newest first, up to MAX_HISTORY_SIZE in all. Ordering by time (not by arrival) keeps a
+ * late older message from pushing out a newer one.
  */
-export function trimHistory<T extends NtfyMessage>(messages: T[]): T[] {
+export function trimHistory<T extends NtfyMessage>(messages: T[], perTopic: number = DEFAULT_HISTORY_PER_TOPIC): T[] {
   const counts = new Map<string, number>();
   let size = 0;
   return [...messages]
@@ -129,7 +135,7 @@ export function trimHistory<T extends NtfyMessage>(messages: T[]): T[] {
     .filter((message) => {
       const count = (counts.get(message.topic) ?? 0) + 1;
       counts.set(message.topic, count);
-      if (count > MAX_HISTORY_PER_TOPIC) return false;
+      if (count > perTopic) return false;
       size += JSON.stringify(message).length;
       return size <= MAX_HISTORY_SIZE;
     });
@@ -151,11 +157,29 @@ export function pruneReadState({
   };
 }
 
-/** Messages not deleted and not read */
-export function countUnread({ receivedNotifications, readMessageIds, deletedMessageIds }: HistoryState): number {
+/** Record what a trim dropped in the sync state of each topic (see `retainedFrom`) */
+function raiseRetentionFloors(states: TopicSyncStates, before: Iterable<StoredMessage>, kept: StoredMessage[]): boolean {
+  const keptIds = new Set(kept.map(({ id }) => id));
+  let raised = false;
+  for (const message of before) {
+    const state = states.get(message.topic);
+    if (keptIds.has(message.id) || !state || !state.origins.includes(message.serverOrigin)) continue;
+    if (message.time > (state.retainedFrom ?? -Infinity)) {
+      state.retainedFrom = message.time;
+      raised = true;
+    }
+  }
+  return raised;
+}
+
+/** Messages not deleted and not read, of the topics that count (all of them by default) */
+export function countUnread(
+  { receivedNotifications, readMessageIds, deletedMessageIds }: HistoryState,
+  counts: (topic: string) => boolean = () => true,
+): number {
   const read = new Set(readMessageIds);
   const deleted = new Set(deletedMessageIds);
-  return receivedNotifications.filter((n) => !deleted.has(n.id) && !read.has(n.id)).length;
+  return receivedNotifications.filter((n) => !deleted.has(n.id) && !read.has(n.id) && counts(n.topic)).length;
 }
 
 function newState(topic: string, origins: string[]): TopicSyncState {
@@ -218,7 +242,12 @@ function recordEvents(
   },
 ): Promise<RecordResult> {
   return serialized(async () => {
-    const [states, history, syncDeletionTopics] = await Promise.all([getTopicSyncStates(), getHistoryState(), getSyncDeletionTopics()]);
+    const [states, history, syncDeletionTopics, { historyPerTopic }] = await Promise.all([
+      getTopicSyncStates(),
+      getHistoryState(),
+      getSyncDeletionTopics(),
+      getPreferences(),
+    ]);
     const serverOrigin = source.origin;
     const deletionOrigins = source.origins.includes(source.origin) ? source.origins : [];
     const syncDeletions = deletionOrigins.length > 0 && syncDeletionTopics.has(topic);
@@ -311,6 +340,7 @@ function recordEvents(
       } else {
         if (deletedByServer || messages.has(event.id) || localDeletes.has(event.id) || positionOnly.has(event.id)) continue;
         if (poll && lastVersion.get(sequence) !== index) continue;
+        if (state.retainedFrom !== undefined && event.time < state.retainedFrom) continue;
         const versions = [...(bySequence.get(sequence) ?? [])]
           .map((id) => messages.get(id))
           .filter((row): row is StoredMessage => row !== undefined && sameServer(row.serverOrigin));
@@ -343,7 +373,8 @@ function recordEvents(
     // Persist history and the watermark together, so a failed write never loses a notification.
     let storedIds: Set<string> | undefined;
     if (changed) {
-      const receivedNotifications = trimHistory([...messages.values()].reverse());
+      const receivedNotifications = trimHistory([...messages.values()].reverse(), historyPerTopic);
+      raiseRetentionFloors(states, messages.values(), receivedNotifications);
       if (notify && added.length > 0) storedIds = new Set(receivedNotifications.map(({ id }) => id));
       await browser.storage.local.set({
         ...storedStates(states),
@@ -407,6 +438,27 @@ export function pruneTopicSyncStates(topics: string[]): Promise<void> {
       stale.forEach((topic) => states.delete(topic));
       await browser.storage.local.set(storedStates(states));
     }
+  });
+}
+
+/**
+ * Apply the "Messages kept per topic" setting to the stored history at once (a lower limit would
+ * otherwise wait for the next message). Returns the ids of the removed messages; a higher limit
+ * removes nothing and brings nothing back.
+ */
+export function applyHistoryLimit(): Promise<string[]> {
+  return serialized(async () => {
+    const [history, { historyPerTopic }, states] = await Promise.all([getHistoryState(), getPreferences(), getTopicSyncStates()]);
+    const receivedNotifications = trimHistory(history.receivedNotifications, historyPerTopic);
+    if (receivedNotifications.length === history.receivedNotifications.length) return [];
+    const raised = raiseRetentionFloors(states, history.receivedNotifications, receivedNotifications);
+    await browser.storage.local.set({
+      ...(raised && storedStates(states)),
+      receivedNotifications,
+      ...pruneReadState({ ...history, receivedNotifications }),
+    });
+    const kept = new Set(receivedNotifications.map(({ id }) => id));
+    return history.receivedNotifications.filter(({ id }) => !kept.has(id)).map(({ id }) => id);
   });
 }
 

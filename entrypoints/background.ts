@@ -1,8 +1,11 @@
-// Background service worker: context menu, receiving, desktop notifications and the unread badge.
+// Background service worker: context menu, keyboard commands, receiving, desktop notifications and
+// the unread badge.
 // Listeners are registered synchronously at startup, as MV3 requires.
 
 import { browser } from 'wxt/browser';
+import { handleCommand } from '@/utils/commands';
 import { handleContextMenuClick, updateContextMenu } from '@/utils/context-menu';
+import { applyHistoryLimit } from '@/utils/history';
 import {
   clearNotifications,
   handleNotificationButton,
@@ -14,6 +17,7 @@ import {
 import { clearComposerOnStartup, handlePopupRequest } from '@/utils/messages';
 import { AUTH_ORIGINS_KEY, CREDENTIALS_KEY, getConfig, serverPermissionPattern } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
+import { NOTIFY_RULES_KEY } from '@/utils/rules';
 import { addPickedFiles } from '@/utils/stored-files';
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics, parseSyncDeletionTopics } from '@/utils/sync-modes';
 
@@ -53,6 +57,14 @@ export default defineBackground(() => {
       const enabled = [...parseSyncDeletionTopics(deletionModes.newValue)].filter((topic) => !before.has(topic));
       if (enabled.length > 0) void receiver.replayDeletions(enabled);
     }
+    // The badge can leave out topics whose desktop notifications are off
+    if (area === 'sync' && (changes.badgeScope || changes[NOTIFY_RULES_KEY])) void updateUnreadBadge();
+    // A lower "Messages kept per topic" trims the stored history at once, through the history's queue
+    if (area === 'sync' && changes.historyPerTopic) {
+      void applyHistoryLimit()
+        .then(clearNotifications)
+        .catch(() => console.warn('Could not apply the history limit'));
+    }
     if (area === 'local') {
       if (changes.accessToken || changes[CREDENTIALS_KEY] || changes[AUTH_ORIGINS_KEY]) {
         void receiver.connect();
@@ -81,10 +93,15 @@ export default defineBackground(() => {
   });
 
   browser.contextMenus.onClicked.addListener((info, tab) => void handleContextMenuClick(info, tab));
+  browser.commands.onCommand.addListener((command, tab) => void handleCommand(command, tab));
   browser.notifications.onButtonClicked.addListener((id, index) => void handleNotificationButton(id, index));
   browser.notifications.onClicked.addListener((id) => void handleNotificationClick(id));
   if (import.meta.env.MODE === 'e2e') {
-    Object.assign(globalThis, { __ntfyClickNotification: handleNotificationClick, __ntfyAddPickedFiles: addPickedFiles });
+    Object.assign(globalThis, {
+      __ntfyClickNotification: handleNotificationClick,
+      __ntfyAddPickedFiles: addPickedFiles,
+      __ntfyRunCommand: handleCommand,
+    });
   }
 
   // From the popup: a sync (when it opens, and on the Receive tab), and read and delete actions

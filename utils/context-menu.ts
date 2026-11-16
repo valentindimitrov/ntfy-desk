@@ -1,8 +1,18 @@
-// Right-click menu: send the page, selected text, an image or a link to a topic.
+// Right-click menu: send the page, selected text, an image or a link to a topic. The send-page
+// keyboard command (utils/commands.ts) sends the page the same way.
 
 import { browser, type Browser } from 'wxt/browser';
 import { showSendResult } from './notifications';
-import { getConfig, isHttpUrl, isNtfyPathPart, PublishUncertainError, sendImageFromUrl, sendNotification, type NtfyConfig } from './ntfy';
+import {
+  getConfig,
+  isHttpUrl,
+  isNtfyPathPart,
+  PublishUncertainError,
+  sendImageFromUrl,
+  sendNotification,
+  type NtfyConfig,
+  type NtfyServer,
+} from './ntfy';
 import { pickServer } from './servers';
 
 const PARENT_MENU_ID = 'ntfy-parent';
@@ -137,27 +147,58 @@ export async function handleContextMenuClick(info: Browser.contextMenus.OnClickD
     return;
   }
 
-  try {
-    const server = await pickServer(config);
-    if (kind === SEND_SELECTION_ID) {
-      await sendNotification(server, topic, { message: info.selectionText, title: pageUrlTitle(config, tab) });
-    } else if (kind === SEND_IMAGE_ID && isHttpUrl(info.srcUrl)) {
-      const srcUrl = info.srcUrl;
-      await sendImageFromUrl(server, topic, srcUrl, '', pageUrlTitle(config, tab));
-    } else if (kind === SEND_LINK_ID && info.linkUrl) {
+  let send: Send;
+  if (kind === SEND_SELECTION_ID) {
+    send = (server) => sendNotification(server, topic, { message: info.selectionText, title: pageUrlTitle(config, tab) });
+  } else if (kind === SEND_IMAGE_ID && isHttpUrl(info.srcUrl)) {
+    const srcUrl = info.srcUrl;
+    send = (server) => sendImageFromUrl(server, topic, srcUrl, '', pageUrlTitle(config, tab));
+  } else if (kind === SEND_LINK_ID && info.linkUrl) {
+    const linkUrl = info.linkUrl;
+    send = async (server) => {
       // The link text is the title, so the page URL goes in the message
-      const title = await getLinkText(tab, info.linkUrl);
+      const title = await getLinkText(tab, linkUrl);
       const pageUrl = pageUrlTitle(config, tab);
-      const message = pageUrl ? `${info.linkUrl}\n\nSent from: ${pageUrl}` : info.linkUrl;
-      await sendNotification(server, topic, { message, title });
-    } else if (kind === SEND_TAB_ID) {
-      await sendNotification(server, topic, { message: tab?.url, title: tab?.title });
-    } else {
-      return;
-    }
+      const message = pageUrl ? `${linkUrl}\n\nSent from: ${pageUrl}` : linkUrl;
+      return sendNotification(server, topic, { message, title });
+    };
+  } else if (kind === SEND_TAB_ID) {
+    send = pageSender(topic, tab);
+  } else {
+    return;
+  }
+  await publishWithResult(config, send);
+}
+
+type Send = (server: NtfyServer) => Promise<unknown>;
+
+/** The page's URL as the message and its title as the title */
+const pageSender =
+  (topic: string, tab?: Browser.tabs.Tab): Send =>
+  (server) =>
+    sendNotification(server, topic, { message: tab?.url, title: tab?.title });
+
+/** Publish to the server picked for this send and show the result on the toolbar icon */
+async function publishWithResult(config: NtfyConfig, send: Send): Promise<void> {
+  try {
+    await send(await pickServer(config));
     showSendResult(true);
   } catch (error) {
     console.error('Failed to send notification:', error);
     showSendResult(error instanceof PublishUncertainError ? 'uncertain' : false);
   }
+}
+
+/**
+ * The send-page keyboard command: the "Page" item for the composer's independent topic (`lastTopic`
+ * while it is still configured, else the first topic). Only http(s) pages are sent.
+ */
+export async function sendPage(tab?: Browser.tabs.Tab): Promise<void> {
+  const [config, { lastTopic }] = await Promise.all([getConfig(), browser.storage.sync.get('lastTopic')]);
+  const topic = typeof lastTopic === 'string' && config.topics.includes(lastTopic) ? lastTopic : config.topics[0];
+  if (!config.apiUrl || !topic || !isHttpUrl(tab?.url)) {
+    showSendResult(false);
+    return;
+  }
+  await publishWithResult(config, pageSender(topic, tab));
 }

@@ -886,6 +886,62 @@ body:has(#settings-view.active) #back-btn {
   cursor: pointer;
 }
 
+/* Groups of settings, each with a heading */
+.settings-section {
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-section:last-of-type {
+  border-bottom: none;
+}
+
+.settings-heading {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Short selects side by side; one per line when the view is narrow */
+.settings-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0 16px;
+}
+
+.shortcut-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.shortcut-list dd {
+  margin: 0;
+  text-align: end;
+}
+
+.shortcut-key {
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-input);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.shortcut-unset {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
 /* ========================================
    Tooltip
    ======================================== */
@@ -1163,6 +1219,42 @@ body:has(#settings-view.active) #back-btn {
 
 .notification-item.read .read-btn {
   color: var(--primary-light);
+}
+
+/* Compact density (a setting): tighter rows, nothing removed */
+body[data-density='compact'] .notifications-list {
+  gap: 4px;
+}
+
+body[data-density='compact'] .notification-item {
+  padding: 5px 8px 5px 12px;
+  gap: 1px;
+}
+
+body[data-density='compact'] .notification-title {
+  font-size: 14px;
+}
+
+body[data-density='compact'] .notification-message {
+  font-size: 13px;
+}
+
+body[data-density='compact'] .notification-tags {
+  margin-top: 0;
+}
+
+body[data-density='compact'] .notification-footer {
+  margin-top: 0;
+}
+
+body[data-density='compact'] .notification-action-btn {
+  width: 22px;
+  height: 22px;
+}
+
+body[data-density='compact'] .notification-image {
+  max-height: 120px;
+  margin-top: 3px;
 }
 
 /* ========================================
