@@ -227,9 +227,10 @@ jobs:
               exit 1
             fi
             # An existing draft keeps its title and notes: only the commit, the prerelease flag and the files change
+            # The tag is sent again: an update of a draft without it resets the tag to an "untagged-…" placeholder
             release_id="$(jq -r '.[0].id' "$RUNNER_TEMP/existing.json")"
             gh api --method PATCH "$api/$release_id" \
-              -f target_commitish="$GITHUB_SHA" -F draft=true -F prerelease="$PRERELEASE" --silent
+              -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -F draft=true -F prerelease="$PRERELEASE" --silent
             gh api --paginate "$api/$release_id/assets?per_page=100" --jq '.[].id' | while read -r asset_id; do
               gh api --method DELETE "$api/assets/$asset_id" --silent
             done
