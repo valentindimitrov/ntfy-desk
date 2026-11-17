@@ -931,8 +931,14 @@ body:has(#settings-view.active) #back-btn {
 /* Settings categories as tabs; the links below stay visible on every tab */
 .settings-tabs {
   display: flex;
-  margin-bottom: 14px;
-  border-bottom: 1px solid var(--border-color);
+  /* Stays at the top while a long tab (Topics) scrolls; as wide as the view, so nothing shows beside it */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: -12px -16px 14px;
+  padding: 4px 16px 0;
+  background-color: var(--bg-main);
+  box-shadow: inset 0 -1px 0 var(--border-color);
 }
 
 .settings-tabs button {
@@ -991,9 +997,14 @@ body:has(#settings-view.active) #back-btn {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color);
+  /* Stays at the bottom of the view, like the tabs at its top */
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: auto -16px -12px;
+  padding: 12px 16px;
+  background-color: var(--bg-main);
+  box-shadow: inset 0 1px 0 var(--border-color);
 }
 
 .settings-links a {
@@ -1510,18 +1521,14 @@ body:not(.page-mode) #settings-view.active {
   height: calc(600px - var(--desk-header-height));
 }
 
-body:not(.page-mode) #settings-view > .main-content {
+/* The links sit at the bottom of the view, below the status line */
+#settings-view > .main-content {
   display: flex;
   flex-direction: column;
   min-height: 100%;
 }
 
-/* The links sit at the bottom of the popup, below the status line */
-body:not(.page-mode) .settings-links {
-  margin-top: auto;
-}
-
-body:not(.page-mode) #settings-status {
+#settings-status {
   margin-bottom: 12px;
 }
 
@@ -1838,22 +1845,25 @@ body:not(.page-mode) .send-section :is(.form-input, .form-textarea) {
 /* Send form: click URL, Markdown and delayed delivery, closed until needed. The closed line sits in
    the gap above the Send button; in the toolbar popup the gaps between the fields give up 2px each,
    so the form is exactly as tall as it was without the line (it fits the popup's 600px). */
+/* The toolbar popup has a fixed height: tighter gaps and a slightly shorter message field pay for the
+   room around Priority and More options */
 body:not(.page-mode) .send-section > .main-content > .form-group {
-  margin-bottom: 11px;
+  margin-bottom: 9px;
+}
+
+body:not(.page-mode) .send-section #message-input {
+  height: 58px;
+  min-height: 54px;
 }
 
 /* The priority buttons have no underline to separate them from the next label: a wider gap does it */
 #send-section .main-content > .form-group:has(#priority-chips) {
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 /* Clear of the Tags underline above */
 #send-section .main-content > .form-group:has(+ .more-options) {
   margin-bottom: 10px;
-}
-
-.more-options:not([open]) {
-  margin-bottom: 4px;
 }
 
 .more-options + .send-footer {
