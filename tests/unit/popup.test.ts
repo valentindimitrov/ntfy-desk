@@ -1603,7 +1603,7 @@ describe('settings', () => {
 
   it('lists the keyboard shortcuts and opens the browser page that changes them', async () => {
     const getAll = mockResolved(fakeBrowser.commands, 'getAll', [
-      { name: '_execute_action', description: '', shortcut: 'Alt+Shift+N' },
+      { name: 'open-popup', description: '', shortcut: 'Alt+Shift+N' },
       { name: 'send-page', description: 'Send this page to ntfy', shortcut: '' },
     ]);
     const create = mockResolved(fakeBrowser.tabs, 'create', {});

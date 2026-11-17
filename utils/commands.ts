@@ -1,11 +1,23 @@
 // Keyboard shortcuts declared in the manifest (`commands` in wxt.config.ts). The user rebinds them in
-// the browser's own shortcut settings; `_execute_action` (open the popup) is handled by the browser.
+// the browser's own shortcut settings. Opening the popup is a command of its own rather than
+// `_execute_action`, which Vivaldi doesn't act on: the background opens the popup, or the tab.
 
 import { browser, type Browser } from 'wxt/browser';
 import { sendPage } from './context-menu';
+import { openExtensionTab } from './extension-tab';
 import { showSendResult } from './notifications';
 
 export const SEND_PAGE_COMMAND = 'send-page';
+export const OPEN_POPUP_COMMAND = 'open-popup';
+
+/** The toolbar popup; the extension's tab where the browser can't open the popup from here */
+async function openPopup(): Promise<void> {
+  try {
+    await browser.action.openPopup();
+  } catch {
+    await openExtensionTab();
+  }
+}
 
 /** The shortcut grants activeTab, so the active tab's URL and title are readable without `tabs` */
 async function activeTab(): Promise<Browser.tabs.Tab | undefined> {
@@ -14,6 +26,10 @@ async function activeTab(): Promise<Browser.tabs.Tab | undefined> {
 }
 
 export async function handleCommand(command: string, tab?: Browser.tabs.Tab): Promise<void> {
+  if (command === OPEN_POPUP_COMMAND) {
+    await openPopup().catch(() => console.error('Could not open ntfy Desk'));
+    return;
+  }
   if (command !== SEND_PAGE_COMMAND) return;
   try {
     await sendPage(tab?.url ? tab : await activeTab());
@@ -30,17 +46,24 @@ export interface ShortcutInfo {
   shortcut: string;
 }
 
-const DESCRIPTIONS: Record<string, string> = { _execute_action: 'Open ntfy Desk' };
+/** The browser's own "activate the extension" command: listed only if the user gave it a key */
+const BROWSER_ACTION_COMMAND = '_execute_action';
+const DESCRIPTIONS: Record<string, string> = {
+  [OPEN_POPUP_COMMAND]: 'Open ntfy Desk',
+  [BROWSER_ACTION_COMMAND]: 'Activate the extension (browser)',
+};
 
 /** The current bindings, as the browser reports them; [] if it can't */
 export async function getShortcuts(): Promise<ShortcutInfo[]> {
   try {
     const commands = await browser.commands.getAll();
-    return commands.map(({ name = '', description, shortcut }) => ({
-      name,
-      description: description || DESCRIPTIONS[name] || name,
-      shortcut: shortcut ?? '',
-    }));
+    return commands
+      .filter(({ name, shortcut }) => name !== BROWSER_ACTION_COMMAND || Boolean(shortcut))
+      .map(({ name = '', description, shortcut }) => ({
+        name,
+        description: description || DESCRIPTIONS[name] || name,
+        shortcut: shortcut ?? '',
+      }));
   } catch {
     return [];
   }

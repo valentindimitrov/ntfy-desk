@@ -103,21 +103,44 @@ describe('send-page command', () => {
   });
 
   it('ignores other commands', async () => {
-    await handleCommand('_execute_action', tab('https://news.example/'));
     await handleCommand('something-else', tab('https://news.example/'));
     expect(published).toEqual([]);
     expect(fakeBrowser.action.setBadgeText).not.toHaveBeenCalled();
   });
 });
 
+describe('open-popup command', () => {
+  it('opens the toolbar popup, without publishing anything', async () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    Object.assign(fakeBrowser.action, { openPopup: open });
+    await handleCommand('open-popup', tab('https://news.example/'));
+    expect(open).toHaveBeenCalledOnce();
+    expect(published).toEqual([]);
+  });
+
+  it("opens the extension's tab where the browser can't open the popup", async () => {
+    Object.assign(fakeBrowser.action, { openPopup: vi.fn().mockRejectedValue(new Error('no active window')) });
+    vi.spyOn(fakeBrowser.runtime, 'getURL').mockImplementation(
+      ((path: string) => `chrome-extension://id${path}`) as typeof fakeBrowser.runtime.getURL,
+    );
+    mockResolved(fakeBrowser.runtime, 'getContexts', []);
+    const create = mockResolved(fakeBrowser.tabs, 'create', {});
+    await handleCommand('open-popup');
+    expect(create).toHaveBeenCalledOnce();
+    expect(JSON.stringify(create.mock.calls)).toContain('popup.html?mode=page');
+  });
+});
+
 describe('shortcut list and settings', () => {
   it('lists the bindings with a name for the popup command and an empty key when unset', async () => {
     mockResolved(fakeBrowser.commands, 'getAll', [
-      { name: '_execute_action', description: '', shortcut: 'Alt+Shift+N' },
+      { name: 'open-popup', description: '', shortcut: 'Alt+Shift+N' },
       { name: 'send-page', description: 'Send this page to ntfy', shortcut: '' },
+      // Chromium also reports its own command for the toolbar button; without a key it isn't listed
+      { name: '_execute_action', description: '', shortcut: '' },
     ]);
     expect(await getShortcuts()).toEqual([
-      { name: '_execute_action', description: 'Open ntfy Desk', shortcut: 'Alt+Shift+N' },
+      { name: 'open-popup', description: 'Open ntfy Desk', shortcut: 'Alt+Shift+N' },
       { name: 'send-page', description: 'Send this page to ntfy', shortcut: '' },
     ]);
   });

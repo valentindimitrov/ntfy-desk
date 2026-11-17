@@ -31,7 +31,8 @@ export default defineConfig({
     // (Ctrl or Alt required, no Ctrl+Alt) and Firefox and isn't a shortcut of either browser; send-page
     // has no default key, so nothing is published by an accidental key press.
     commands: {
-      _execute_action: { suggested_key: { default: 'Alt+Shift+N' } },
+      // Not _execute_action: Vivaldi doesn't open the popup for it; the background opens it instead
+      'open-popup': { description: 'Open ntfy Desk', suggested_key: { default: 'Alt+Shift+N' } },
       'send-page': { description: 'Send this page to ntfy' },
     },
     ...(browser === 'firefox' && {
