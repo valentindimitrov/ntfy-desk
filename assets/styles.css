@@ -1095,9 +1095,11 @@ body:has(#settings-view.active) #back-btn {
 
 .shortcut-list {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The key sits next to its command, not at the far edge of a wide view */
+  grid-template-columns: minmax(0, max-content) auto;
+  justify-content: start;
   align-items: center;
-  gap: 6px 12px;
+  gap: 6px 24px;
   margin: 0 0 10px 0;
   font-size: 14px;
   color: var(--text-primary);
@@ -1105,7 +1107,6 @@ body:has(#settings-view.active) #back-btn {
 
 .shortcut-list dd {
   margin: 0;
-  text-align: end;
 }
 
 .shortcut-key {
