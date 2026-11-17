@@ -389,6 +389,21 @@ body:has(#settings-view.active) #back-btn {
   background-color: var(--bg-input);
 }
 
+/* Filled selects in the Settings: boxed like the topic table's, so the text has room on every side */
+.settings-panel .form-select {
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settings-panel .form-select:hover,
+.settings-panel .form-select:focus {
+  border-color: var(--border-focus);
+}
+
 .form-select:disabled {
   background-color: transparent;
   color: var(--text-primary);
