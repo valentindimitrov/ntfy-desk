@@ -8,6 +8,12 @@ export default defineConfig({
   // No <link rel="modulepreload"> for shared chunks: Chrome doesn't use them on extension pages ("cross-world
   // extension resource mismatch" on the extensions page), and extension files load from disk anyway
   vite: () => ({ build: { modulePreload: false } }),
+  zip: {
+    // Test output is git-ignored but not hidden, so it would end up in the sources ZIP of a run that
+    // tested first (the Prepare release workflow does)
+    // Test output, and the website with its tooling: reviewers of the sources build the extension only
+    excludeSources: ['playwright-report/**', 'test-results/**', 'website/**', 'scripts/website-*.ts', 'tests/unit/website.test.ts'],
+  },
   hooks: {
     'build:publicAssets': (wxt, files) => {
       for (const name of ['LICENSE', 'NOTICE.md']) {

@@ -1,0 +1,35 @@
+# Categories of the generated release notes (Prepare release creates a draft with them; an existing
+# draft keeps the notes written by hand). Pull requests are sorted by label.
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - question
+      - skip-release-notes
+      - wontfix
+  categories:
+    - title: New features and improvements
+      labels:
+        - enhancement
+    - title: Security
+      labels:
+        - security
+    - title: Fixes
+      labels:
+        - bug
+    - title: Accessibility
+      labels:
+        - accessibility
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Dependencies and maintenance
+      labels:
+        - dependencies
+        - maintenance
+        - github_actions
+        - javascript
+    - title: Other changes
+      labels:
+        - '*'

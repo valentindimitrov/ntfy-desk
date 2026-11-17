@@ -1,0 +1,58 @@
+NTFY DESK: CHROME WEB STORE, PRIVACY TAB
+Reviewed against the extension source, PRIVACY.md and wxt.config.ts on 2026-11-17.
+Each block below is the text for one field. Review a block again when the code it describes changes.
+
+SINGLE PURPOSE DESCRIPTION
+ntfy Desk is a client for the ntfy notification service: it sends notifications to the user's ntfy topics and receives notifications from those topics, showing them as desktop notifications and in an inbox.
+
+PERMISSION JUSTIFICATION: activeTab
+When the user opens the popup with "Fill in the current tab" enabled, chooses a right-click menu item, or presses the "Send this page to ntfy" shortcut, the extension reads the title and URL of the active tab to put them in the notification the user is sending. activeTab gives this access only for that tab and only after such a user action, so the extension does not need permanent access to tabs or sites.
+
+PERMISSION JUSTIFICATION: storage
+Stores the user's settings (server address, topics, preferences) in storage.sync, and on the device in storage.local the access token or password, the approved server origins, received messages with their read state, and the draft of the message being written.
+
+PERMISSION JUSTIFICATION: unlimitedStorage
+The inbox keeps received messages on the device: up to 500 per topic, up to 8 MiB in total, plus the identifiers of deleted messages so they do not reappear, which together can exceed the 10 MB quota of storage.local. File attachments waiting to be sent are queued in IndexedDB, up to 50 MiB. The data stays in the browser profile.
+
+PERMISSION JUSTIFICATION: contextMenus
+Adds the right-click menu items that send the current page, the selected text, an image or a link to one of the user's ntfy topics.
+
+PERMISSION JUSTIFICATION: scripting
+Used in one place: when the user chooses "send link" in the right-click menu, the extension runs a small function, included in the package, in that tab to read the visible text of the clicked link, so the notification carries the link's text with its URL. It runs only after that click, under activeTab, and injects no remote code.
+
+PERMISSION JUSTIFICATION: notifications
+Shows a desktop notification when a message arrives on a subscribed topic, according to the rule the user set for that topic, and dismisses it when the message is read or deleted.
+
+PERMISSION JUSTIFICATION: alarms
+A one-minute alarm restarts the background service worker to reconnect to the ntfy server and fetch messages that arrived while the connection was down or the worker was stopped.
+
+PERMISSION JUSTIFICATION: tabs (optional)
+Requested only when the user chooses "Use tab" while ntfy Desk is open in its own browser tab. There the active tab is ntfy Desk itself, so the extension needs the tabs permission to read the title and URL of the page the user was on before, to fill in the notification. Nothing asks for it otherwise.
+
+HOST PERMISSION JUSTIFICATION: <all_urls> (optional)
+No site access is granted at installation. The pattern is declared as optional because the two sites the extension needs are chosen by the user and cannot be known in advance; it asks for one origin at a time, after a click:
+1. The origin of the user's own ntfy server (and its fallback address), when the user configures credentials or deletion sync. The Authorization header requires host access for cross-origin requests to a self-hosted server, and deletion sync needs response headers that CORS otherwise hides.
+2. The origin of an image the user sends from the right-click menu, to download that image and attach it to the notification.
+The extension never requests access to all sites.
+
+REMOTE CODE
+Select: No, I am not using remote code.
+If a justification is asked for: all JavaScript and styles are in the extension package. The extension has no content security policy of its own, so Manifest V3's default applies. Content received from the ntfy server is data: messages are validated and rendered as text nodes, never evaluated.
+
+DATA USAGE
+The extension has no developer-operated server, analytics or advertising: the developer receives no user data. Data leaves the browser only to the ntfy server the user configured, which is the purpose of the extension. Tick the types below so the declaration matches what is transmitted to that server, and matches the Firefox package's data_collection_permissions (authenticationInfo, personalCommunications, browsingActivity, websiteContent):
+- Authentication information: the access token, or username and password, sent to the user's ntfy server in the Authorization header.
+- Personal communications: the notifications the user sends and receives, with their attachments.
+- Web history: the title and URL of a page, only when the user sends that page or uses "Fill in the current tab".
+- Website content: selected text, link text or an image, only when the user sends it from the right-click menu.
+Leave unticked: personally identifiable information, health information, financial and payment information, location, user activity.
+The dashboard's own wording decides: read each type's description before ticking, and keep the choice in line with PRIVACY.md.
+
+CERTIFICATIONS
+Tick the three statements after reading them. They hold for this extension: user data is not sold or transferred to third parties (it goes to the user's own ntfy server only), is not used for purposes unrelated to the single purpose, and is not used for creditworthiness or lending.
+
+PRIVACY POLICY URL
+A public address showing the text of PRIVACY.md: the website's privacy page once the website is online, or https://github.com/valentindimitrov/ntfy-desk/blob/main/PRIVACY.md once the repository is public. Neither is reachable yet; check the address in a private window before submitting.
+
+REFERENCE
+https://developer.chrome.com/docs/webstore/cws-dashboard-privacy
