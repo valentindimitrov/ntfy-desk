@@ -48,6 +48,8 @@ export interface TopicSyncState {
    * ids may no longer be in `seen`, and a raised limit would otherwise let a replay bring them back.
    */
   retainedFrom?: number;
+  /** Ids of the dropped messages of that same second: only those are refused there, not new ones */
+  retainedFromIds?: string[];
 }
 
 /** Sync states by topic. A Map, so any topic name is a plain key (even "__proto__" or "constructor") */
@@ -91,6 +93,7 @@ export async function getTopicSyncStates(): Promise<TopicSyncStates> {
           synced: state.synced === true,
           truncatedAt: state.truncatedAt,
           retainedFrom: typeof state.retainedFrom === 'number' ? state.retainedFrom : undefined,
+          retainedFromIds: Array.isArray(state.retainedFromIds) ? state.retainedFromIds.filter((id) => typeof id === 'string') : undefined,
           serverDeletions: Array.isArray(state.serverDeletions) ? state.serverDeletions : [],
           deletionReplay: state.deletionReplay,
         });
@@ -157,6 +160,9 @@ export function pruneReadState({
   };
 }
 
+/** Dropped ids remembered for the newest dropped second (a busy second can't grow the state without limit) */
+const MAX_RETAINED_FROM_IDS = 2000;
+
 /** Record what a trim dropped in the sync state of each topic (see `retainedFrom`) */
 function raiseRetentionFloors(states: TopicSyncStates, before: Iterable<StoredMessage>, kept: StoredMessage[]): boolean {
   const keptIds = new Set(kept.map(({ id }) => id));
@@ -164,8 +170,13 @@ function raiseRetentionFloors(states: TopicSyncStates, before: Iterable<StoredMe
   for (const message of before) {
     const state = states.get(message.topic);
     if (keptIds.has(message.id) || !state || !state.origins.includes(message.serverOrigin)) continue;
-    if (message.time > (state.retainedFrom ?? -Infinity)) {
+    const floor = state.retainedFrom ?? -Infinity;
+    if (message.time > floor) {
       state.retainedFrom = message.time;
+      state.retainedFromIds = [message.id];
+      raised = true;
+    } else if (message.time === floor && !state.retainedFromIds?.includes(message.id)) {
+      state.retainedFromIds = [...(state.retainedFromIds ?? []), message.id].slice(-MAX_RETAINED_FROM_IDS);
       raised = true;
     }
   }
@@ -340,7 +351,10 @@ function recordEvents(
       } else {
         if (deletedByServer || messages.has(event.id) || localDeletes.has(event.id) || positionOnly.has(event.id)) continue;
         if (poll && lastVersion.get(sequence) !== index) continue;
-        if (state.retainedFrom !== undefined && event.time < state.retainedFrom) continue;
+        if (state.retainedFrom !== undefined) {
+          if (event.time < state.retainedFrom) continue;
+          if (event.time === state.retainedFrom && state.retainedFromIds?.includes(event.id)) continue;
+        }
         const versions = [...(bySequence.get(sequence) ?? [])]
           .map((id) => messages.get(id))
           .filter((row): row is StoredMessage => row !== undefined && sameServer(row.serverOrigin));

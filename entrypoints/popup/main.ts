@@ -21,6 +21,7 @@ import {
   applyPreferences,
   applyTheme,
   hasUnsavedServerEdits,
+  isSavingServerSettings,
   populateSettings,
   serverNeedsAttention,
   setupSettings,
@@ -52,6 +53,8 @@ function updateUI(): void {
 
 async function showSettingsView(): Promise<void> {
   await populateSettings();
+  // The permission may have been revoked since this view last looked: know before choosing the tab
+  await updateServerAccessUI();
   // Something to fix under Server (no server yet, access not granted, credentials held back): start there
   if (serverNeedsAttention()) showSettingsTab('server');
   elements.mainView.classList.remove('active');
@@ -60,7 +63,7 @@ async function showSettingsView(): Promise<void> {
 }
 
 function showMainView(): void {
-  if (elements.saveServerSettings.disabled) return;
+  if (isSavingServerSettings()) return;
   if (hasUnsavedServerEdits() && !confirm('Discard unsaved server settings?')) return;
   elements.settingsView.classList.remove('active');
   elements.mainView.classList.add('active');
@@ -176,4 +179,9 @@ function showStartupError(error: unknown): void {
   document.body.prepend(banner);
 }
 
-init().catch(showStartupError);
+// "ready" tells tests (and anything else waiting) that every listener is attached
+init()
+  .then(() => {
+    document.body.dataset.ready = 'true';
+  })
+  .catch(showStartupError);

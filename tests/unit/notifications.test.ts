@@ -274,6 +274,34 @@ describe('dismissal order', () => {
   });
 });
 
+describe('dismissal queue', () => {
+  it('dismisses only after a notification being created has been shown', async () => {
+    const order: string[] = [];
+    const { promise: shown, resolve: show } = Promise.withResolvers<string>();
+    vi.spyOn(fakeBrowser.notifications, 'create').mockImplementation(((id: string) => {
+      order.push(`create ${id}`);
+      return shown.then(() => {
+        order.push(`created ${id}`);
+        return id;
+      });
+    }) as never);
+    vi.spyOn(fakeBrowser.notifications, 'clear').mockImplementation(((id: string) => {
+      order.push(`clear ${id}`);
+      return Promise.resolve(true);
+    }) as never);
+
+    const creating = notifyNewMessage(message('slow'));
+    await vi.waitFor(() => expect(order).toEqual(['create slow']));
+    // Marked read while the browser is still creating the notification
+    const cleared = clearNotifications(['slow']);
+    await Promise.resolve();
+    expect(order).toEqual(['create slow']);
+    show('slow');
+    await Promise.all([creating, cleared]);
+    expect(order).toEqual(['create slow', 'created slow', 'clear slow']);
+  });
+});
+
 describe('unread badge', () => {
   it('counts messages neither read nor deleted', async () => {
     const setText = vi.spyOn(fakeBrowser.action, 'setBadgeText').mockResolvedValue();

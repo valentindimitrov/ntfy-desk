@@ -33,15 +33,25 @@ const message = (id: string, topic: string, minutesAgo: number, extra: Partial<N
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 20));
 
+/** vi.waitFor with a timeout that also holds on a slow CI machine (its default is one second) */
+const waitFor: typeof vi.waitFor = (callback, options) =>
+  vi.waitFor(callback, { timeout: 10_000, ...(typeof options === 'object' ? options : {}) });
+
 async function openPopup(search = ''): Promise<void> {
   history.replaceState(null, '', `/popup.html${search}`);
+  delete document.body.dataset.ready;
   await import('@/entrypoints/popup/main');
+  // Until the popup has started (or failed to): a fixed delay is too short on a slow machine
+  await waitFor(() => expect(document.body.dataset.ready === 'true' || $('.startup-error') !== null).toBe(true), {
+    timeout: 15_000,
+    interval: 5,
+  });
   await flush();
 }
 
 async function openSettings(): Promise<void> {
   $('#settings-btn').click();
-  await vi.waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true));
+  await waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true), { timeout: 10_000 });
 }
 
 beforeEach(async () => {
@@ -168,7 +178,7 @@ describe('Inbox', () => {
     await fakeBrowser.storage.local.set({
       receivedNotifications: [message('new', 'alerts', 1), ...(receivedNotifications as NtfyMessage[])],
     });
-    await vi.waitFor(() => expect($('.notification-item[data-id="new"]')).toBeTruthy());
+    await waitFor(() => expect($('.notification-item[data-id="new"]')).toBeTruthy());
     expect(button.isConnected).toBe(false);
     expect(document.activeElement).toBe($('.notification-item[data-id="a1"] .delete-btn'));
   });
@@ -266,7 +276,7 @@ describe('Inbox', () => {
     await fakeBrowser.storage.local.set({
       receivedNotifications: [message('c2', 'coolify', 1), ...(receivedNotifications as NtfyMessage[])],
     });
-    await vi.waitFor(() => expect([...document.querySelectorAll('.notification-title')].map((t) => t.textContent)).toEqual(['c2', 'c1']));
+    await waitFor(() => expect([...document.querySelectorAll('.notification-title')].map((t) => t.textContent)).toEqual(['c2', 'c1']));
   });
 
   it('shows a visible error when the popup cannot start', async () => {
@@ -366,7 +376,7 @@ describe('Send form', () => {
     const { listStoredFiles, removeStoredFiles } = await import('@/utils/stored-files');
     const removed = (await listStoredFiles()).find(({ name }) => name === 'removed.txt')!.id;
     const pending = send();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await removeStoredFiles([removed]);
     resolve();
     await pending;
@@ -423,7 +433,7 @@ describe('Send form', () => {
     expect(sent).toEqual(['sent.txt', 'retry.txt', 'retry.txt']);
     expect(await queuedNames()).toEqual([]);
     expect(await fakeBrowser.storage.local.get('draftState')).toEqual({});
-    await vi.waitFor(() => expect(closed).toBe(true));
+    await waitFor(() => expect(closed).toBe(true));
   });
 
   it('selects the fallback before dispatching the saved attachment when the primary is unreachable', async () => {
@@ -472,7 +482,7 @@ describe('Send form', () => {
     input.value = 'Keep this draft';
     await fakeBrowser.storage.sync.set({ [key]: value });
     $('#send-btn').click();
-    await vi.waitFor(() => expect($('#status').textContent).toContain('The server or topic changed'));
+    await waitFor(() => expect($('#status').textContent).toContain('The server or topic changed'));
     expect(requests).toEqual([]);
     expect((await fakeBrowser.storage.local.get('draftState')).draftState).toMatchObject({ message: 'Keep this draft' });
   });
@@ -485,12 +495,12 @@ describe('Send form', () => {
     expect($<HTMLSelectElement>('#topic-select').value).toBe('inbox');
 
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.url).toBe('https://ntfy.example/inbox');
     expect(requests[0]!.body).toBe('https://news.example/story');
     expect(requests[0]!.headers.get('X-Title')).toBe('The story');
     expect(requests[0]!.headers.get('Authorization')).toBe('Bearer tk_x');
-    await vi.waitFor(() => expect(closed).toBe(true));
+    await waitFor(() => expect(closed).toBe(true));
   });
 
   it("doesn't save an automatically filled title or URL in the draft", async () => {
@@ -499,7 +509,7 @@ describe('Send form', () => {
     const title = $<HTMLInputElement>('#title-input');
     title.value = 'my title';
     title.dispatchEvent(new Event('input'));
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       const { draftState } = await fakeBrowser.storage.local.get('draftState');
       expect(draftState).toMatchObject({ title: 'my title', message: '' });
     });
@@ -536,11 +546,11 @@ describe('Send form', () => {
     expect($<HTMLInputElement>('#zip-checkbox').checked).toBe(true);
 
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.headers.get('Content-Type')).toBe('application/zip');
     expect(requests[0]!.headers.get('X-Filename')).toMatch(/^ntfy-files-\d{8}-\d{6}\.zip$/);
     // Let the popup's close timer run inside this test
-    await vi.waitFor(() => expect(closed).toBe(true));
+    await waitFor(() => expect(closed).toBe(true));
     expect(await queuedNames()).toEqual([]);
   });
 
@@ -559,7 +569,7 @@ describe('Send form', () => {
     expect(requests).toEqual([]);
     input.focus();
     press(input);
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.body).toBe('shortcut');
   });
 
@@ -568,9 +578,9 @@ describe('Send form', () => {
     $<HTMLTextAreaElement>('#message-input').value = 'once';
     $('#send-btn').click();
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     // Let the popup's close timer run inside this test
-    await vi.waitFor(() => expect(closed).toBe(true));
+    await waitFor(() => expect(closed).toBe(true));
     expect(requests).toHaveLength(1);
   });
 
@@ -581,7 +591,7 @@ describe('Send form', () => {
     const { send } = await import('@/entrypoints/popup/send');
     await Promise.all([send(), send()]);
     expect(requests).toHaveLength(1);
-    await vi.waitFor(() => expect(closed).toBe(true));
+    await waitFor(() => expect(closed).toBe(true));
   });
 
   it('uses the active tab of the last focused window when tabs report no last-used time (review #14)', async () => {
@@ -596,7 +606,7 @@ describe('Send form', () => {
       { id: 9, windowId: 2, active: false, url: 'chrome-extension://id/popup.html' },
     ]);
     $('#tab-url-btn').click();
-    await vi.waitFor(() => expect($<HTMLTextAreaElement>('#message-input').value).toBe('https://the-page.example/article'));
+    await waitFor(() => expect($<HTMLTextAreaElement>('#message-input').value).toBe('https://the-page.example/article'));
     expect($<HTMLInputElement>('#title-input').value).toBe('The article');
   });
 
@@ -606,7 +616,7 @@ describe('Send form', () => {
     expect($('#popout-btn').style.display).toBe('none');
     $<HTMLTextAreaElement>('#message-input').value = 'x';
     $('#send-btn').click();
-    await vi.waitFor(() => expect($('#status').textContent).toBe('Notification sent!'));
+    await waitFor(() => expect($('#status').textContent).toBe('Notification sent!'));
     expect(requests).toHaveLength(1);
     await new Promise((resolve) => setTimeout(resolve, 150)); // past the popup's 100 ms close delay
     expect(closed).toBe(false);
@@ -648,10 +658,10 @@ describe('Send form: per-topic send defaults', () => {
     expect(reset().hidden).toBe(true);
     $<HTMLTextAreaElement>('#message-input').value = 'x';
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.headers.get('X-Priority')).toBe('2');
     expect(requests[0]!.headers.get('X-Tags')).toBe('last');
-    await vi.waitFor(() => expect(closed).toBe(true));
+    await waitFor(() => expect(closed).toBe(true));
   });
 
   it("shows a topic's defaults when the popup opens on it, and sends with them", async () => {
@@ -660,7 +670,7 @@ describe('Send form: per-topic send defaults', () => {
     expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
     $<HTMLTextAreaElement>('#message-input').value = 'x';
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.url).toBe('https://ntfy.example/alerts');
     expect(requests[0]!.headers.get('X-Priority')).toBe('5');
     expect(requests[0]!.headers.get('X-Tags')).toBe('warning,server');
@@ -700,14 +710,14 @@ describe('Send form: per-topic send defaults', () => {
     expect([priority(), tags()]).toEqual(['4', ['last', 'mine']]);
     expect(reset().hidden).toBe(false);
     expect(reset().textContent).toBe('Use topic defaults');
-    await vi.waitFor(async () => expect(await draft()).toMatchObject({ customPriorityTags: true, priority: 4, tags: ['last', 'mine'] }));
+    await waitFor(async () => expect(await draft()).toMatchObject({ customPriorityTags: true, priority: 4, tags: ['last', 'mine'] }));
 
     reset().click();
     expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
     expect(reset().hidden).toBe(true);
     pickTopic('inbox');
     expect([priority(), tags()]).toEqual(['4', ['last', 'mine']]); // used last
-    await vi.waitFor(async () => expect(await draft()).toMatchObject({ customPriorityTags: false }));
+    await waitFor(async () => expect(await draft()).toMatchObject({ customPriorityTags: false }));
   });
 
   it('remembers a change by hand as used last, except on a topic with defaults', async () => {
@@ -742,7 +752,7 @@ describe('Send form: per-topic send defaults', () => {
     addTag('draft-tag');
     $<HTMLInputElement>('#title-input').value = 'Unsent';
     $('#title-input').dispatchEvent(new Event('input'));
-    await vi.waitFor(async () =>
+    await waitFor(async () =>
       expect(await draft()).toMatchObject({
         title: 'Unsent',
         topic: 'alerts',
@@ -766,7 +776,7 @@ describe('Send form: per-topic send defaults', () => {
     pickTopic('alerts');
     $<HTMLInputElement>('#title-input').value = 'Unsent';
     $('#title-input').dispatchEvent(new Event('input'));
-    await vi.waitFor(async () => expect(await draft()).toMatchObject({ title: 'Unsent', topic: 'alerts', customPriorityTags: false }));
+    await waitFor(async () => expect(await draft()).toMatchObject({ title: 'Unsent', topic: 'alerts', customPriorityTags: false }));
     await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'alerts', priority: 4, tags: ['changed'] }] });
 
     await reopen();
@@ -786,7 +796,7 @@ describe('Send form: per-topic send defaults', () => {
     pickPriority(1);
     $<HTMLTextAreaElement>('#message-input').value = 'x';
     $('#send-btn').click();
-    await vi.waitFor(() => expect($('#status').textContent).toBe('Notification sent!'));
+    await waitFor(() => expect($('#status').textContent).toBe('Notification sent!'));
     expect(requests[0]!.headers.get('X-Priority')).toBe('1');
     expect([priority(), tags()]).toEqual(['5', ['warning', 'server']]);
     expect(reset().hidden).toBe(true);
@@ -796,12 +806,12 @@ describe('Send form: per-topic send defaults', () => {
   it('follows defaults and last-used values changed in another view or through sync, unless set by hand', async () => {
     await openPopup('?mode=page');
     await fakeBrowser.storage.sync.set({ priority: 1, lastTags: ['elsewhere'] });
-    await vi.waitFor(() => expect([priority(), tags()]).toEqual(['1', ['elsewhere']]));
+    await waitFor(() => expect([priority(), tags()]).toEqual(['1', ['elsewhere']]));
     await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'inbox', priority: 4, tags: [] }] });
-    await vi.waitFor(() => expect([priority(), tags()]).toEqual(['4', []]));
+    await waitFor(() => expect([priority(), tags()]).toEqual(['4', []]));
     // An invalid value from another device reads as no defaults
     await fakeBrowser.storage.sync.set({ topicSendDefaults: [{ topic: 'inbox', priority: 11, tags: 'x' }] });
-    await vi.waitFor(() => expect([priority(), tags()]).toEqual(['1', ['elsewhere']]));
+    await waitFor(() => expect([priority(), tags()]).toEqual(['1', ['elsewhere']]));
 
     pickPriority(3);
     await flush();
@@ -859,7 +869,7 @@ describe('Send form: more options', () => {
     expect(delayInput().hidden).toBe(true);
     $<HTMLTextAreaElement>('#message-input').value = 'plain';
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(optionHeaders(requests[0]!.headers)).toEqual([null, null, null]);
   });
 
@@ -871,12 +881,12 @@ describe('Send form: more options', () => {
     expect($('#delay-hint').textContent).toBe('The server sets the limits: 10 seconds to 3 days by default.');
     $<HTMLTextAreaElement>('#message-input').value = '**later**';
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.url).toBe('https://ntfy.example/inbox');
     expect(requests[0]!.body).toBe('**later**');
     expect(optionHeaders(requests[0]!.headers)).toEqual(['https://example.com/ticket/7', 'yes', '30m']);
 
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect($('#status').textContent).toMatch(/^Notification scheduled for .+\. It appears in the Inbox when delivered\.$/),
     );
     await new Promise((resolve) => setTimeout(resolve, 150)); // past the popup's 100 ms close delay
@@ -891,7 +901,7 @@ describe('Send form: more options', () => {
     await openPopup('?mode=page');
     fill({ delay: '1h' });
     $('#send-btn').click();
-    await vi.waitFor(() => expect($('#status').textContent).toBe('Notification scheduled. It appears in the Inbox when delivered.'));
+    await waitFor(() => expect($('#status').textContent).toBe('Notification scheduled. It appears in the Inbox when delivered.'));
   });
 
   it('sends a typed delay, and asks for one when the field is empty', async () => {
@@ -900,7 +910,7 @@ describe('Send form: more options', () => {
     expect(delayInput().hidden).toBe(false);
     expect($('#delay-hint').textContent).toContain('"tomorrow 9am" in your time zone');
     $('#send-btn').click();
-    await vi.waitFor(() => expect($('#status').textContent).toBe('Enter a delay such as 45m, or choose Now'));
+    await waitFor(() => expect($('#status').textContent).toBe('Enter a delay such as 45m, or choose Now'));
     expect($('#delay-error').textContent).toBe('Enter a delay such as 45m, or choose Now');
     expect(delayInput().getAttribute('aria-invalid')).toBe('true');
     expect($<HTMLDetailsElement>('#more-options').open).toBe(true);
@@ -910,7 +920,7 @@ describe('Send form: more options', () => {
     expect($('#delay-error').hidden).toBe(true);
     expect(delayInput().hasAttribute('aria-invalid')).toBe(false);
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.headers.get('X-Delay')).toBe('tomorrow 9am');
     expect(requests[0]!.headers.get('X-Timezone')).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
   });
@@ -924,7 +934,7 @@ describe('Send form: more options', () => {
     fill({ click: url });
     $<HTMLTextAreaElement>('#message-input').value = 'Keep me';
     $('#send-btn').click();
-    await vi.waitFor(() => expect($('#status').textContent).toBe(problem));
+    await waitFor(() => expect($('#status').textContent).toBe(problem));
     expect($('#click-error').textContent).toBe(problem);
     expect($('#click-error').hidden).toBe(false);
     expect(click().getAttribute('aria-invalid')).toBe('true');
@@ -935,7 +945,7 @@ describe('Send form: more options', () => {
     fill({ click: 'https://example.com/page' });
     expect($('#click-error').hidden).toBe(true);
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.headers.get('X-Click')).toBe('https://example.com/page');
   });
 
@@ -945,7 +955,7 @@ describe('Send form: more options', () => {
     fill({ click: 'https://example.com/', markdown: true, delay: '10m' });
     expect($('#delay-hint').textContent).toContain('It refuses a delay longer than it keeps attachments (3 hours by default).');
     $('#send-btn').click();
-    await vi.waitFor(() => expect($('#status').textContent).toBe('2 notifications scheduled. They appear in the Inbox when delivered.'));
+    await waitFor(() => expect($('#status').textContent).toBe('2 notifications scheduled. They appear in the Inbox when delivered.'));
     expect(requests.map(({ headers }) => [headers.get('X-Filename'), ...optionHeaders(headers)])).toEqual([
       ['a.txt', 'https://example.com/', 'yes', '10m'],
       ['b.txt', 'https://example.com/', 'yes', '10m'],
@@ -960,7 +970,7 @@ describe('Send form: more options', () => {
     await openPopup('?mode=page');
     fill({ click: 'https://example.com/', markdown: true, delay: '1h' });
     $('#send-btn').click();
-    await vi.waitFor(() => expect($('#status').textContent).toMatch(/^ZIP scheduled for .+\. It appears in the Inbox when delivered\.$/));
+    await waitFor(() => expect($('#status').textContent).toMatch(/^ZIP scheduled for .+\. It appears in the Inbox when delivered\.$/));
     expect(requests).toHaveLength(1);
     expect(requests[0]!.headers.get('Content-Type')).toBe('application/zip');
     expect(optionHeaders(requests[0]!.headers)).toEqual(['https://example.com/', 'yes', '1h']);
@@ -977,7 +987,7 @@ describe('Send form: more options', () => {
     fill({ delay: '__custom', custom: '9 days' });
     $<HTMLTextAreaElement>('#message-input').value = 'Keep me';
     $('#send-btn').click();
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect($('#status').textContent).toBe('Error: HTTP 400: invalid delay parameter: too large, please refer to the docs'),
     );
     expect($<HTMLTextAreaElement>('#message-input').value).toBe('Keep me');
@@ -995,7 +1005,7 @@ describe('Send form: more options', () => {
     await openPopup('?mode=page');
     fill({ delay: '30m' });
     $('#send-btn').click();
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect($('#status').textContent).toBe(
         'Delivery is uncertain: the server may have scheduled the message. It only appears in the Inbox when it is delivered, so sending again can deliver it twice.',
       ),
@@ -1007,7 +1017,7 @@ describe('Send form: more options', () => {
   it('saves the options in the draft and restores them', async () => {
     await openPopup('?mode=page');
     fill({ click: 'https://example.com/a', markdown: true, delay: '3h' });
-    await vi.waitFor(async () => expect(await draft()).toMatchObject({ click: 'https://example.com/a', markdown: true, delay: '3h' }));
+    await waitFor(async () => expect(await draft()).toMatchObject({ click: 'https://example.com/a', markdown: true, delay: '3h' }));
 
     vi.resetModules();
     document.body.innerHTML = body;
@@ -1021,7 +1031,7 @@ describe('Send form: more options', () => {
     expect($('#more-options-active').textContent).toBe('(URL, Markdown, delay)');
 
     fill({ delay: '__custom', custom: 'tomorrow 9am' });
-    await vi.waitFor(async () => expect(await draft()).toMatchObject({ delay: 'tomorrow 9am' }));
+    await waitFor(async () => expect(await draft()).toMatchObject({ delay: 'tomorrow 9am' }));
     vi.resetModules();
     document.body.innerHTML = body;
     await openPopup('?mode=page');
@@ -1117,7 +1127,7 @@ describe('settings', () => {
     await fakeBrowser.storage.sync.set({ topics: 'alerts,inbox,new-topic' });
     await fakeBrowser.storage.local.set({ accessToken: 'tk_synthetic_rotated' });
     $('.chip[data-theme="dark"]').click();
-    await vi.waitFor(async () =>
+    await waitFor(async () =>
       expect(await fakeBrowser.storage.sync.get(['theme', 'topics'])).toEqual({
         theme: 'dark',
         topics: 'alerts,inbox,new-topic',
@@ -1138,7 +1148,7 @@ describe('settings', () => {
     expect(await fakeBrowser.storage.local.get('authOrigins')).toEqual({ authOrigins: ['https://ntfy.example'] });
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://changed.example' });
     $('#save-server-settings').click();
-    await vi.waitFor(() => expect($('#settings-status').textContent).toContain('changed in another view'));
+    await waitFor(() => expect($('#settings-status').textContent).toContain('changed in another view'));
     expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://changed.example' });
     expect(await fakeBrowser.storage.local.get('authOrigins')).toEqual({ authOrigins: ['https://ntfy.example'] });
   });
@@ -1178,7 +1188,7 @@ describe('settings', () => {
     url.value = 'https://alice:s%40cret@ntfy.lan';
     url.dispatchEvent(new Event('input'));
     $('#save-server-settings').click();
-    await vi.waitFor(async () => expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.lan' }), {
+    await waitFor(async () => expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.lan' }), {
       timeout: 3000,
     });
 
@@ -1203,7 +1213,7 @@ describe('settings', () => {
     input.value = value;
     input.dispatchEvent(new Event('input'));
     $('#save-server-settings').click();
-    await vi.waitFor(() => expect($('#settings-status').textContent).toContain('Enter a complete'), { timeout: 3000 });
+    await waitFor(() => expect($('#settings-status').textContent).toContain('Enter a complete'), { timeout: 3000 });
     expect(await fakeBrowser.storage.sync.get(null)).toEqual(before);
   });
 
@@ -1233,7 +1243,7 @@ describe('settings', () => {
     input.value = 'https://ntfy.lan?auth=synthetic#synthetic';
     input.dispatchEvent(new Event('input'));
     $('#save-server-settings').click();
-    await vi.waitFor(async () => expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.lan' }), {
+    await waitFor(async () => expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://ntfy.lan' }), {
       timeout: 3000,
     });
     expect(input.value).toBe('https://ntfy.lan');
@@ -1275,7 +1285,7 @@ describe('settings', () => {
     await openPopup();
     $<HTMLTextAreaElement>('#message-input').value = 'hi';
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests.some((r) => r.url === 'https://evil.example/inbox')).toBe(true));
+    await waitFor(() => expect(requests.some((r) => r.url === 'https://evil.example/inbox')).toBe(true));
     expect(requests.find((r) => r.url === 'https://evil.example/inbox')?.headers.has('Authorization')).toBe(false);
   });
 
@@ -1303,7 +1313,7 @@ describe('settings', () => {
     token.value = 'tk_new';
     token.dispatchEvent(new Event('input'));
     $('#save-server-settings').click();
-    await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' }), {
+    await waitFor(async () => expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' }), {
       timeout: 3000,
     });
     expect(await fakeBrowser.storage.sync.get('accessToken')).toEqual({});
@@ -1407,7 +1417,7 @@ describe('settings', () => {
     expect(await stored()).toEqual([{ topic: 'coolify', priority: 4, tags: ['deploy'] }]);
 
     $('#apply-topic-settings').click();
-    await vi.waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
+    await waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
     expect(await stored()).toEqual([{ topic: 'alerts', priority: 5, tags: ['warning', 'server'] }]);
     expect(tagFields()[0]!.value).toBe('warning, server');
     expect($<HTMLButtonElement>('#apply-topic-settings').disabled).toBe(true);
@@ -1416,7 +1426,7 @@ describe('settings', () => {
 
     // Remove "alerts" (the first topic badge)
     $('.topic-remove').click();
-    await vi.waitFor(async () => expect(await stored()).toEqual([]));
+    await waitFor(async () => expect(await stored()).toEqual([]));
   });
 
   it('undoes a staged send default that is set back to the saved one, and leaves the others alone on Apply', async () => {
@@ -1438,7 +1448,7 @@ describe('settings', () => {
     rule.value = 'off';
     rule.dispatchEvent(new Event('change'));
     $('#apply-topic-settings').click();
-    await vi.waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
+    await waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
     expect(set.mock.calls.flatMap(([items]) => Object.keys(items))).not.toContain('topicSendDefaults');
   });
 
@@ -1450,7 +1460,7 @@ describe('settings', () => {
     priority.value = '4';
     priority.dispatchEvent(new Event('change'));
     $('#apply-topic-settings').click();
-    await vi.waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
+    await waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
     expect($('#priority-chips .chip.active').dataset.priority).toBe('4');
   });
 
@@ -1524,7 +1534,7 @@ describe('settings', () => {
     await openSettings();
     vi.spyOn(fakeBrowser.storage.sync, 'set').mockRejectedValueOnce(new Error('quota'));
     choose('#density-select', 'compact');
-    await vi.waitFor(() => expect($('#settings-status').textContent).toBe('Failed to save settings'));
+    await waitFor(() => expect($('#settings-status').textContent).toBe('Failed to save settings'));
     expect(select('#density-select').value).toBe('comfortable');
     expect(document.body.dataset.density).toBe('comfortable');
   });
@@ -1545,7 +1555,7 @@ describe('settings', () => {
       hour: '2-digit',
       minute: '2-digit',
     });
-    await vi.waitFor(() => expect($('.notification-time').textContent).toBe(`alerts · ${absolute}`));
+    await waitFor(() => expect($('.notification-time').textContent).toBe(`alerts · ${absolute}`));
     expect(absolute).toContain(String(new Date(recent.time * 1000).getFullYear()));
   });
 
@@ -1553,16 +1563,16 @@ describe('settings', () => {
     await fakeBrowser.storage.local.set({ receivedNotifications: [message('recent', 'alerts', 5)] });
     await openPopup('?mode=page');
     await fakeBrowser.storage.sync.set({ inboxDensity: 'compact', messageTimes: 'absolute', historyPerTopic: 250 });
-    await vi.waitFor(() => expect(document.body.dataset.density).toBe('compact'));
-    await vi.waitFor(() => expect($('.notification-time').textContent).not.toContain('ago'));
+    await waitFor(() => expect(document.body.dataset.density).toBe('compact'));
+    await waitFor(() => expect($('.notification-time').textContent).not.toContain('ago'));
     expect(select('#history-limit-select').value).toBe('250');
     expect(select('#density-select').value).toBe('compact');
 
     // An invalid value, and a removed key, read as the defaults
     await fakeBrowser.storage.sync.set({ inboxDensity: 'tiny' });
     await fakeBrowser.storage.sync.remove(['messageTimes', 'historyPerTopic']);
-    await vi.waitFor(() => expect(document.body.dataset.density).toBe('comfortable'));
-    await vi.waitFor(() => expect($('.notification-time').textContent).toBe('alerts · 5m ago'));
+    await waitFor(() => expect(document.body.dataset.density).toBe('comfortable'));
+    await waitFor(() => expect($('.notification-time').textContent).toBe('alerts · 5m ago'));
     expect(select('#history-limit-select').value).toBe('100');
     expect(await fakeBrowser.storage.sync.get(PREFERENCES)).toEqual({ inboxDensity: 'tiny' }); // reading never writes
   });
@@ -1615,7 +1625,7 @@ describe('settings', () => {
     // Back from the browser's page with a new binding
     getAll.mockResolvedValue([{ name: 'send-page', description: 'Send this page to ntfy', shortcut: 'Ctrl+Shift+U' }]);
     window.dispatchEvent(new Event('focus'));
-    await vi.waitFor(() => expect(rows()).toEqual([['Send this page to ntfy', 'Ctrl+Shift+U']]));
+    await waitFor(() => expect(rows()).toEqual([['Send this page to ntfy', 'Ctrl+Shift+U']]));
   });
 
   it('says where the shortcut settings are when the browser cannot open them', async () => {
@@ -1624,7 +1634,7 @@ describe('settings', () => {
     await openSettings();
     expect($('#shortcut-list').children).toHaveLength(0); // the fake browser reports no bindings
     $('#shortcut-settings-btn').click();
-    await vi.waitFor(() => expect($('#shortcut-hint').textContent).toContain('chrome://extensions/shortcuts'));
+    await waitFor(() => expect($('#shortcut-hint').textContent).toContain('chrome://extensions/shortcuts'));
   });
 
   it('marks topics with notifications off in the Receive tab', async () => {
@@ -1759,7 +1769,7 @@ describe('settings: tabs and links', () => {
 
     // Staged in one tab, applied after a visit to another; the server fields are saved from their own tab
     $('#apply-topic-settings').click();
-    await vi.waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
+    await waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
     expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({ notifyRules: [['alerts', 'off']] });
     expect($<HTMLInputElement>('#url-input').value).toBe('https://typed.example');
   });
@@ -1801,7 +1811,7 @@ describe('settings: tabs and links', () => {
     expect(tab('server').classList.contains('attention')).toBe(true);
     tab('server').click();
     $('#held-back-btn').click();
-    await vi.waitFor(() => expect(tab('server').classList.contains('attention')).toBe(false));
+    await waitFor(() => expect(tab('server').classList.contains('attention')).toBe(false));
     expect(tab('server').hasAttribute('aria-describedby')).toBe(false);
     expect(tab('server').textContent.trim()).toBe('Server');
   });
@@ -1832,7 +1842,7 @@ describe('settings: tabs and links', () => {
     const input = $<HTMLInputElement>('#new-topic-input');
     input.value = 'alerts';
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    await vi.waitFor(() => expect(TABS.filter((key) => tab(key).classList.contains('attention'))).toEqual(['server']));
+    await waitFor(() => expect(TABS.filter((key) => tab(key).classList.contains('attention'))).toEqual(['server']));
     expectShown('topics');
   });
 
@@ -1840,15 +1850,15 @@ describe('settings: tabs and links', () => {
     await openPopup('?mode=page');
     location.hash = 'settings=backup&focus=1';
     window.dispatchEvent(new Event('hashchange'));
-    await vi.waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true));
-    await vi.waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
+    await waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true));
+    await waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
     expectShown('more');
     expect($('#settings-backup').closest('.settings-panel')).toBe(panel('more'));
 
     tab('topics').click();
     location.hash = 'settings=backup&focus=2';
     window.dispatchEvent(new Event('hashchange'));
-    await vi.waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
+    await waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
     expectShown('more');
     location.hash = '';
   });
@@ -1929,7 +1939,7 @@ describe('settings: backup', () => {
     await openPopup('?mode=page');
     await openSettings();
     $('#export-settings-btn').click();
-    await vi.waitFor(() => expect(clicked).toHaveLength(1));
+    await waitFor(() => expect(clicked).toHaveLength(1));
 
     expect(clicked[0]).toEqual({ href: 'blob:settings', download: expect.stringMatching(/^ntfy-desk-settings-\d{4}-\d\d-\d\d\.json$/) });
     const text = await blobs[0]!.text();
@@ -1955,13 +1965,13 @@ describe('settings: backup', () => {
     await openPopup();
     await openSettings();
     $('#export-settings-btn').click();
-    await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
     expect(create).not.toHaveBeenCalled();
     expect(closed).toBe(false);
 
     // A file dialog would close the popup: the Backup group of the tab takes over
     $('#import-settings-btn').click();
-    await vi.waitFor(() => expect(closed).toBe(true));
+    await waitFor(() => expect(closed).toBe(true));
     expect(inputClick).not.toHaveBeenCalled();
     const [{ url }] = callsOf<[{ url: string }]>(create)[0]!;
     expect(url).toMatch(/\/popup\.html\?mode=page#settings=backup&focus=/);
@@ -1977,7 +1987,7 @@ describe('settings: backup', () => {
       await openPopup();
       await openSettings();
       $('#export-settings-btn').click();
-      await vi.waitFor(() => expect(closed).toBe(true));
+      await waitFor(() => expect(closed).toBe(true));
       expect(click).not.toHaveBeenCalled();
       expect(callsOf<[{ url: string }]>(create)[0]![0].url).toMatch(/\/popup\.html\?mode=page#settings=backup&focus=/);
 
@@ -1985,7 +1995,7 @@ describe('settings: backup', () => {
       closed = false;
       create.mockRejectedValue(new Error('blocked'));
       $('#export-settings-btn').click();
-      await vi.waitFor(() => expect($('#settings-status').textContent).toContain('Could not open ntfy Desk in a tab'));
+      await waitFor(() => expect($('#settings-status').textContent).toContain('Could not open ntfy Desk in a tab'));
       expect(closed).toBe(false);
     } finally {
       vi.unstubAllEnvs();
@@ -1999,8 +2009,8 @@ describe('settings: backup', () => {
     expect($('#settings-view').classList.contains('active')).toBe(false);
     location.hash = 'settings=backup&focus=1';
     window.dispatchEvent(new Event('hashchange'));
-    await vi.waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true));
-    await vi.waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
+    await waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true));
+    await waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
 
     // A link arriving again leaves a form in progress alone
     $<HTMLInputElement>('#url-input').value = 'https://typed.example';
@@ -2055,7 +2065,7 @@ describe('settings: backup', () => {
     $<HTMLInputElement>('#url-input').value = 'https://typed.example';
     await pick(backupFile(IMPORTED));
     $('#import-confirm-btn').click();
-    await vi.waitFor(() => expect($('#settings-status').textContent).toBe('Settings imported'));
+    await waitFor(() => expect($('#settings-status').textContent).toBe('Settings imported'));
     // The confirmation that had the focus is gone: it returns to the Import button
     expect(document.activeElement).toBe($('#import-settings-btn'));
 
@@ -2085,9 +2095,16 @@ describe('settings: backup', () => {
     expect(document.body.dataset.theme).toBe('dark');
     expect(document.body.dataset.density).toBe('compact');
 
-    // No stale form state: saving the server settings now keeps the imported servers
+    // No stale form state: the form holds the imported servers, so there is nothing to save
+    expect($<HTMLButtonElement>('#save-server-settings').disabled).toBe(true);
+    // An edit makes the button available, and saving keeps the rest of the imported servers
+    const token = $<HTMLInputElement>('#token-input');
+    token.value = 'tk_after_import';
+    token.dispatchEvent(new Event('input', { bubbles: true }));
+    expect($<HTMLButtonElement>('#save-server-settings').disabled).toBe(false);
     $('#save-server-settings').click();
-    await vi.waitFor(() => expect($('#settings-status').textContent).toBe('Server settings saved'));
+    await waitFor(() => expect($('#settings-status').textContent).toBe('Server settings saved'));
+    expect($<HTMLButtonElement>('#save-server-settings').disabled).toBe(true);
     expect(await fakeBrowser.storage.sync.get(['apiUrl', 'fallbackUrl'])).toEqual({
       apiUrl: 'https://imported.example',
       fallbackUrl: 'https://imported-fallback.example',
@@ -2112,7 +2129,7 @@ describe('settings: backup', () => {
     await pick(backupFile({ apiUrl: 'https://evil.example', topics: ['inbox'] }));
     expect(confirmLines()).toContain("Your token and password aren't sent to https://evil.example until you confirm that under Server.");
     $('#import-confirm-btn').click();
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect($('#settings-status').textContent).toBe(
         'Settings imported. Confirm the server under Server before your token and password are used.',
       ),
@@ -2135,7 +2152,7 @@ describe('settings: backup', () => {
     await flush();
     $<HTMLTextAreaElement>('#message-input').value = 'hi';
     $('#send-btn').click();
-    await vi.waitFor(() => expect(requests.some((r) => r.url === 'https://evil.example/inbox')).toBe(true));
+    await waitFor(() => expect(requests.some((r) => r.url === 'https://evil.example/inbox')).toBe(true));
     expect(requests.filter((r) => r.url.startsWith('https://evil.example')).some((r) => r.headers.has('Authorization'))).toBe(false);
 
     // The existing confirmation approves it
@@ -2201,7 +2218,7 @@ describe('settings: backup', () => {
     await pick(backupFile(IMPORTED));
     await fakeBrowser.storage.sync.set({ topics: 'alerts,coolify,inbox,added' });
     $('#import-confirm-btn').click();
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect($('#settings-status').textContent).toBe('The settings changed while the import was waiting. Choose the file again.'),
     );
     expect($('#import-confirm').hidden).toBe(true);
@@ -2224,7 +2241,7 @@ describe('settings: backup', () => {
     expect($<HTMLButtonElement>('#import-confirm-btn').disabled).toBe(true);
     release();
     await held;
-    await vi.waitFor(() => expect($('#settings-status').textContent).toContain('Settings imported'));
+    await waitFor(() => expect($('#settings-status').textContent).toContain('Settings imported'));
     expect(await fakeBrowser.storage.sync.get('apiUrl')).toEqual({ apiUrl: 'https://imported.example' });
   });
 });

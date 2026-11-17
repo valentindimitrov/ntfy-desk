@@ -271,6 +271,16 @@ export function hasUnsavedServerEdits(): boolean {
   );
 }
 
+let savingServerSettings = false;
+
+/** A save is running: leaving the settings waits for it */
+export const isSavingServerSettings = (): boolean => savingServerSettings;
+
+/** Like Apply: the button is available only when there is something to save */
+function updateSaveServerButton(): void {
+  elements.saveServerSettings.disabled = savingServerSettings || !hasUnsavedServerEdits();
+}
+
 async function saveServerSettings(): Promise<void> {
   clearStatus(elements.settingsStatus);
   const draft = readServerEdits();
@@ -279,7 +289,8 @@ async function saveServerSettings(): Promise<void> {
     return;
   }
   const { apiUrl, fallbackUrl, accessToken, credentials } = draft;
-  elements.saveServerSettings.disabled = true;
+  savingServerSettings = true;
+  updateSaveServerButton();
   try {
     await editSettings(async () => {
       const saved = await getConfig();
@@ -313,7 +324,8 @@ async function saveServerSettings(): Promise<void> {
   } catch {
     showSettingsStatus('Failed to save settings', 'error');
   } finally {
-    elements.saveServerSettings.disabled = false;
+    savingServerSettings = false;
+    updateSaveServerButton();
   }
 }
 
@@ -604,6 +616,7 @@ function fillServerFields(): void {
   elements.tokenInput.value = state.accessToken;
   elements.usernameInput.value = state.credentials?.username ?? '';
   elements.passwordInput.value = state.credentials?.password ?? '';
+  updateSaveServerButton();
 }
 
 // ==================
@@ -733,6 +746,9 @@ async function confirmImport(): Promise<void> {
     );
   } catch (error) {
     closeImportConfirm();
+    // The confirmation that had the focus is gone
+    showSettingsTab('more');
+    elements.importSettingsBtn.focus();
     showSettingsStatus(error instanceof BackupError ? error.message : 'Could not import the settings. Nothing was changed.', 'error');
   } finally {
     elements.importConfirmBtn.disabled = false;
@@ -843,6 +859,7 @@ export function setupSettings(): void {
   elements.heldBackBtn.addEventListener('click', () => void approveServers());
   for (const input of [elements.urlInput, elements.fallbackUrlInput, elements.tokenInput, elements.usernameInput, elements.passwordInput]) {
     input.addEventListener('input', updateInsecureWarning);
+    input.addEventListener('input', updateSaveServerButton);
   }
 
   elements.newTopicInput.addEventListener('keydown', handleTopicKeydown);

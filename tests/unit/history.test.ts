@@ -111,6 +111,25 @@ describe('messages kept per topic (setting)', () => {
     expect(ids).not.toContain('a-29');
   });
 
+  it('does not store trimmed messages of the newest dropped second again, but accepts a new one from that second', async () => {
+    await fakeBrowser.storage.sync.set({ historyPerTopic: 50 });
+    // 80 messages in one second: 30 are dropped, all at the time of the ones kept
+    await recordPoll(
+      'a',
+      Array.from({ length: 80 }, (_, i) => message(`same-${i}`, 'a', 2000)),
+      defaultSource,
+    );
+    const keptBefore = (await stored('a')).map((m) => m.id);
+    const { topicSync } = await fakeBrowser.storage.local.get('topicSync');
+    await fakeBrowser.storage.local.set({ topicSync: (topicSync as { seen: unknown[] }[]).map((state) => ({ ...state, seen: [] })) });
+    await fakeBrowser.storage.sync.set({ historyPerTopic: 500 });
+
+    const replay = [...Array.from({ length: 80 }, (_, i) => message(`same-${i}`, 'a', 2000)), message('fresh', 'a', 2000)];
+    const { added } = await recordPoll('a', replay, defaultSource);
+    expect(added.map(({ id }) => id)).toEqual(['fresh']);
+    expect((await stored('a')).map((m) => m.id).sort()).toEqual([...keptBefore, 'fresh'].sort());
+  });
+
   it('does not store trimmed messages again once their ids are forgotten and the limit is raised', async () => {
     await fakeBrowser.storage.sync.set({ historyPerTopic: 50 });
     await poll('a', 80, 1000);

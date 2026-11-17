@@ -424,6 +424,16 @@ body:has(#settings-view.active) #back-btn {
   border-color: var(--border-focus);
 }
 
+/* Forced colours drop background images: give the browser's own arrow back */
+@media (forced-colors: active) {
+  .form-select,
+  .topic-setting-select {
+    padding-right: var(--select-inset);
+    background-image: none;
+    appearance: auto;
+  }
+}
+
 .form-select:focus-visible,
 .topic-setting-select:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -835,6 +845,7 @@ body:has(#settings-view.active) #back-btn {
   outline-offset: 2px;
 }
 
+/* Disabled: nothing to save or apply yet (Apply, Save server settings), or an action in progress */
 .action-btn:disabled {
   border-color: var(--border-color);
   background-color: var(--bg-input);
@@ -995,7 +1006,7 @@ body:has(#settings-view.active) #back-btn {
 
 .settings-links {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   /* Stays at the bottom of the view, like the tabs at its top */
   position: sticky;
@@ -1007,7 +1018,8 @@ body:has(#settings-view.active) #back-btn {
   box-shadow: inset 0 1px 0 var(--border-color);
 }
 
-.settings-links a {
+.settings-links a,
+.settings-link-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1030,6 +1042,14 @@ body:has(#settings-view.active) #back-btn {
 .settings-links a:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+
+/* Not a link yet: same shape, dimmed, and inert */
+.settings-link-placeholder {
+  border-style: dashed;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  cursor: default;
 }
 
 .settings-links svg {
@@ -1524,6 +1544,8 @@ body:not(.page-mode) #settings-view.active {
 /* No elastic bounce at the ends of the scroll: the pinned tab and link bars would move with it */
 #settings-view {
   overscroll-behavior: none;
+  /* Room for the pinned bars: a control that gets the focus is scrolled clear of them */
+  scroll-padding-block: 52px 72px;
 }
 
 /* The links sit at the bottom of the view, below the status line */
@@ -1859,6 +1881,11 @@ body:not(.page-mode) .send-section > .main-content > .form-group {
 body:not(.page-mode) .send-section #message-input {
   height: 58px;
   min-height: 54px;
+}
+
+/* The label needs more air above round buttons than above an underlined field */
+#priority-chips {
+  margin-top: 4px;
 }
 
 /* The priority buttons have no underline to separate them from the next label: a wider gap does it */
