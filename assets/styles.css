@@ -1521,6 +1521,11 @@ body:not(.page-mode) #settings-view.active {
   height: calc(600px - var(--desk-header-height));
 }
 
+/* No elastic bounce at the ends of the scroll: the pinned tab and link bars would move with it */
+#settings-view {
+  overscroll-behavior: none;
+}
+
 /* The links sit at the bottom of the view, below the status line */
 #settings-view > .main-content {
   display: flex;
