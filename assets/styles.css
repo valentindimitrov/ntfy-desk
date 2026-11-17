@@ -389,19 +389,45 @@ body:has(#settings-view.active) #back-btn {
   background-color: var(--bg-input);
 }
 
-/* Filled selects in the Settings: boxed like the topic table's, so the text has room on every side */
-.settings-panel .form-select {
+/*
+ * One look for every dropdown (Send form, Settings, topic table): boxed, with the browser's arrow
+ * replaced by one drawn in the text colour, as far from the right edge as the text is from the left.
+ */
+.form-select,
+.topic-setting-select {
+  --select-inset: 8px;
+  width: 100%;
   margin: 2px 0 0;
-  padding: 6px 8px;
+  padding: 6px calc(var(--select-inset) * 2 + 10px) 6px var(--select-inset);
   border: 1px solid var(--border-color);
   border-radius: 6px;
+  background-color: var(--bg-input);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right calc(var(--select-inset) + 5px) center,
+    right var(--select-inset) center;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--text-primary);
+  font: inherit;
   font-size: 13px;
   line-height: 1.4;
+  appearance: none;
+  outline: none;
+  text-overflow: ellipsis;
 }
 
-.settings-panel .form-select:hover,
-.settings-panel .form-select:focus {
+.form-select:hover,
+.form-select:focus,
+.topic-setting-select:hover,
+.topic-setting-select:focus {
   border-color: var(--border-focus);
+}
+
+.form-select:focus-visible,
+.topic-setting-select:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
 }
 
 .form-select:disabled {
@@ -1578,7 +1604,7 @@ body:not(.page-mode) .send-footer {
 }
 
 /* Fit the wider section gaps within the toolbar popup's height. */
-body:not(.page-mode) .send-section :is(.form-input, .form-select, .form-textarea) {
+body:not(.page-mode) .send-section :is(.form-input, .form-textarea) {
   padding-bottom: 6px;
 }
 
@@ -2009,7 +2035,6 @@ body:not(.page-mode) .send-section > .main-content > .form-group {
   overflow-wrap: anywhere;
 }
 
-.topic-setting-select,
 .topic-setting-input {
   width: 100%;
   padding: 4px 6px;
@@ -2024,6 +2049,11 @@ body:not(.page-mode) .send-section > .main-content > .form-group {
 /* Send priority: room for "Last used" */
 .topic-settings td:nth-child(4) .topic-setting-select {
   min-width: 104px;
+}
+
+/* Message sync: room for "Keep received messages" */
+.topic-settings td:nth-child(2) .topic-setting-select {
+  min-width: 190px;
 }
 
 /* Send tags: not in use while the send priority is "Last used" */
