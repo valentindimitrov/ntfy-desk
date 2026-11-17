@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Install ntfy Desk, connect your ntfy server, add topics, then send and receive notifications from your browser. With the keyboard shortcuts."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href="https://ntfy-desk.minddevops.eu/getting-started" />
+    <meta name="theme-color" content="#f3f5f4" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1b2124" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="../public/icon/32.png" />
+    <link rel="stylesheet" href="./website.css" />
+    <title>Getting started with ntfy Desk</title>
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="ntfy Desk" />
+    <meta property="og:url" content="https://ntfy-desk.minddevops.eu/getting-started" />
+    <meta property="og:title" content="Getting started with ntfy Desk" />
+    <meta
+      property="og:description"
+      content="Install ntfy Desk, connect your ntfy server, add topics, then send and receive notifications from your browser. With the keyboard shortcuts."
+    />
+    <meta property="og:image" content="https://ntfy-desk.minddevops.eu/social-card.png" />
+    <meta property="og:image:width" content="2400" />
+    <meta property="og:image:height" content="1254" />
+    <meta property="og:image:alt" content="ntfy Desk: send and receive ntfy notifications in your browser" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <a class="skip-link" href="#guide">Skip to the guide</a>
+    <!-- site:header -->
+    <main class="guide-page wrap" id="guide">
+      <div class="guide-intro">
+        <h1>Get started with ntfy Desk</h1>
+        <p>Install the extension, point it at your ntfy server, and choose the topics to follow.</p>
+      </div>
+      <nav class="guide-index" aria-label="Guide sections">
+        <a href="#install">Install</a>
+        <a href="#server">Connect a server</a>
+        <a href="#topics">Add topics</a>
+        <a href="#send-and-receive">Send and receive</a>
+        <a href="#shortcuts">Shortcuts</a>
+      </nav>
+
+      <section id="install" aria-labelledby="install-title">
+        <h2 id="install-title">1. Install the extension</h2>
+        <p>ntfy Desk runs in Chrome, Edge, Vivaldi and other Chromium browsers, and in Firefox 142 or later.</p>
+        <!-- site:install -->
+        <p>To load a release build by hand:</p>
+        <ul>
+          <li>
+            <strong>Chromium browsers.</strong> Download and extract the <code>-chrome.zip</code> file. Open the browser's extensions page,
+            turn on <strong>Developer mode</strong>, then choose <strong>Load unpacked</strong> and select the folder that contains
+            <code>manifest.json</code>.
+          </li>
+          <li>
+            <strong>Firefox.</strong> A permanent installation needs a signed add-on, which is not available yet. The Firefox ZIP is for
+            temporary testing: open <code>about:debugging#/runtime/this-firefox</code>, select <strong>Load Temporary Add-on</strong> and
+            choose the ZIP. It lasts until Firefox restarts.
+          </li>
+        </ul>
+      </section>
+
+      <section id="server" aria-labelledby="server-title">
+        <h2 id="server-title">2. Connect a server</h2>
+        <p>
+          Open ntfy Desk from the toolbar and select the gear icon. The settings open on the <strong>Server</strong> tab while there is no
+          server yet.
+        </p>
+        <ol class="guide-steps">
+          <li>
+            <strong>Server URL.</strong> Enter <code>https://ntfy.sh</code> or the address of your own server. If you don't know ntfy yet,
+            start with the <a href="https://docs.ntfy.sh/">ntfy documentation</a>.
+          </li>
+          <li>
+            <strong>Fallback URL</strong> (optional). Another address of the same server, such as its public address when the main one is on
+            your home network.
+          </li>
+          <li>
+            <strong>Access Token</strong>, or <strong>Username and password</strong>, if your server or topics need them. They are stored on
+            this device only and used only with server addresses you approved on it.
+          </li>
+          <li>Choose <strong>Save server settings</strong>. The addresses and the credentials are saved together.</li>
+          <li>
+            If <strong>Allow access to this server</strong> appears, select it. The browser then asks you to confirm. ntfy Desk needs that
+            access to send requests with your credentials.
+          </li>
+        </ol>
+        <figure class="shot">
+          <img
+            data-shot="settings-server"
+            alt="The Server tab of the settings with the fields Server URL, filled with https://ntfy.example.com, Fallback URL, Access Token, and Username and password, above the button Save server settings."
+          />
+        </figure>
+        <p>
+          Use an HTTPS server and a topic with access control for anything sensitive: anyone who can read a public topic receives what you
+          send to it. The settings warn you when an <code>http://</code> address would send your credentials unencrypted.
+        </p>
+      </section>
+
+      <section id="topics" aria-labelledby="topics-title">
+        <h2 id="topics-title">3. Add topics</h2>
+        <p>
+          On the <strong>Topics</strong> tab, type a topic name and press Enter. A name has up to 64 letters, digits, dashes or underscores.
+          ntfy Desk receives from the topics your credentials can read; a topic you can only write to appears as send only.
+        </p>
+        <p>The table under the names sets three things for each topic. Choose <strong>Apply</strong> to save them.</p>
+        <dl class="guide-table">
+          <div>
+            <dt>Message sync</dt>
+            <dd>
+              <strong>Keep received messages</strong> is the default: what you delete is deleted in this browser only.
+              <strong>Sync server deletions</strong> also follows deletions made on the server, and asks the server to delete what you
+              delete here.
+            </dd>
+          </div>
+          <div>
+            <dt>Desktop notifications</dt>
+            <dd>All, a minimum priority, or off. Messages below the level still appear in the inbox.</dd>
+          </div>
+          <div>
+            <dt>Send priority and tags</dt>
+            <dd>
+              <strong>Last used</strong> by default. Choose a priority to give the topic its own starting priority and tags in the Send
+              form.
+            </dd>
+          </div>
+        </dl>
+        <figure class="shot">
+          <img
+            data-shot="settings-topics"
+            alt="The Topics tab of the settings: five topic names as chips, and a table with one row per topic and the columns Message sync, Desktop notifications, Send priority and Send tags, above an Apply button."
+          />
+        </figure>
+      </section>
+
+      <section id="send-and-receive" aria-labelledby="send-and-receive-title">
+        <h2 id="send-and-receive-title">4. Send and receive</h2>
+        <p>
+          Go back to the main view. The inbox is on the left and the Send form on the right, in the toolbar popup and in the extension's own
+          tab (<strong>Open in a tab</strong> in the header).
+        </p>
+        <ol class="guide-steps">
+          <li>Start with a harmless test: pick a topic under <strong>Send to</strong>, type a message and choose <strong>Send</strong>.</li>
+          <li>The message arrives in the inbox and, depending on the topic's rule, as a desktop notification.</li>
+          <li>
+            Select a topic on the left to see only its messages. The Send form follows it; choose <strong>All topics</strong> to pick
+            another destination.
+          </li>
+          <li>Add a priority, tags or files, or open <strong>More options</strong> for a click URL, Markdown and delayed delivery.</li>
+          <li>
+            On any web page, right-click to send the page, selected text, an image or a link. The toolbar icon shows ✓, ✗, or ? when the
+            delivery is uncertain.
+          </li>
+        </ol>
+        <p>
+          Live messages come over a connection that stays open; missed ones are also fetched once a minute. If your server is behind a
+          reverse proxy, turn off response buffering for ntfy (nginx: <code>proxy_buffering off;</code>), or live messages only arrive with
+          the next fetch.
+        </p>
+      </section>
+
+      <section id="shortcuts" aria-labelledby="shortcuts-title">
+        <h2 id="shortcuts-title">5. Shortcuts</h2>
+        <dl class="guide-table">
+          <div>
+            <dt><kbd>Ctrl</kbd> + <kbd>Enter</kbd></dt>
+            <dd>Send, while the focus is in the Send form. <kbd>Cmd</kbd> + <kbd>Enter</kbd> on a Mac.</dd>
+          </div>
+          <div>
+            <dt>Open ntfy Desk</dt>
+            <dd><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> is suggested, where the browser has it free.</dd>
+          </div>
+          <div>
+            <dt>Send this page to ntfy</dt>
+            <dd>
+              Publishes the current page's URL and title to the topic last chosen in the Send form, or to the first topic. It has no key
+              until you choose one.
+            </dd>
+          </div>
+        </dl>
+        <p>
+          The last two are set in the browser's own shortcut settings. <strong>Change shortcuts</strong> on the <strong>More</strong> tab of
+          the settings opens them.
+        </p>
+      </section>
+
+      <section id="more" aria-labelledby="more-title">
+        <h2 id="more-title">More</h2>
+        <p>
+          The <a href="https://github.com/valentindimitrov/ntfy-desk#readme">README on GitHub</a> describes every setting. What ntfy Desk
+          stores and sends is in the <a href="./privacy-policy">privacy policy</a>. For questions and problems, use the
+          <a href="https://github.com/valentindimitrov/ntfy-desk/issues">issue tracker</a>.
+        </p>
+      </section>
+    </main>
+    <!-- site:footer -->
+  </body>
+</html>

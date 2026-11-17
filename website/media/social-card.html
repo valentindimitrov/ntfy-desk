@@ -1,0 +1,97 @@
+<!doctype html>
+<!-- Source of social-card.png, the link preview image (og:image). To render it, see website/README.md. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ntfy Desk social card</title>
+    <style>
+      @font-face {
+        font-family: 'Roboto';
+        font-weight: 400;
+        src: url('../../public/fonts/roboto-400.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Roboto';
+        font-weight: 600;
+        src: url('../../public/fonts/roboto-600.woff2') format('woff2');
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 627px;
+        overflow: hidden;
+        position: relative;
+        background:
+          radial-gradient(ellipse at 95% 0%, #2f7d6c 0%, transparent 55%), radial-gradient(ellipse at 0% 100%, #1f4f46 0%, transparent 58%),
+          #141c1c;
+        color: #fff;
+        font-family: 'Roboto', Arial, sans-serif;
+      }
+      .layout {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 0 90px;
+      }
+      .name {
+        display: flex;
+        align-items: center;
+        gap: 32px;
+      }
+      .name img {
+        width: 128px;
+        height: 128px;
+        filter: drop-shadow(0 12px 28px #0006);
+      }
+      h1 {
+        font-size: 116px;
+        font-weight: 600;
+        letter-spacing: -3px;
+        margin: 0;
+      }
+      .tag {
+        font-size: 44px;
+        color: #d5e6e1;
+        line-height: 1.3;
+        margin: 34px 0 0;
+      }
+      .chips {
+        display: flex;
+        gap: 18px;
+        margin-top: 44px;
+      }
+      .chips span {
+        font-size: 30px;
+        border: 1px solid #5f8c82;
+        background: #ffffff10;
+        border-radius: 999px;
+        padding: 14px 30px;
+        color: #eaf5f2;
+      }
+      .ring {
+        position: absolute;
+        right: -130px;
+        top: -170px;
+        width: 460px;
+        height: 460px;
+        border: 1px solid #66c0ac40;
+        border-radius: 50%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ring"></div>
+    <div class="layout">
+      <div class="name">
+        <img src="../../public/icon/128.png" alt="" />
+        <h1>ntfy Desk</h1>
+      </div>
+      <p class="tag">Send and receive ntfy notifications<br />in your browser.</p>
+      <div class="chips"><span>Inbox per topic</span><span>Desktop notifications</span><span>Send form</span></div>
+    </div>
+  </body>
+</html>

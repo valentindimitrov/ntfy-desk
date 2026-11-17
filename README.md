@@ -73,6 +73,7 @@ pnpm browse         # build, then open the extension in playwright-cli
 pnpm build          # .output/chrome-mv3, load it unpacked
 pnpm zip            # .output/ntfy-desk-<version>-chrome.zip (pnpm zip:firefox)
 pnpm lint:firefox   # build and run Mozilla's add-on checks
+pnpm website:build  # the website, into .output/website
 ```
 
 For end-to-end tests, install the browser once with `pnpm exec playwright install chromium`. On a clean Linux runner, use `pnpm exec playwright install --with-deps chromium`. The interactive `pnpm browse` command uses the separate `playwright-cli` tool and its own browser install (`playwright-cli install-browser chromium`).
@@ -93,6 +94,7 @@ Code layout:
 - `tests/unit/` contains the Vitest suite and a fake ntfy server that follows ntfy v2.29's `since=` semantics.
 - `tests/e2e/` contains the Playwright suite and its HTTP test ntfy server.
 - `scripts/browse.ts` opens the extension in an interactive browser via `pnpm browse`.
+- `website/` contains the public website and its [README](website/README.md).
 
 ## Credits
 

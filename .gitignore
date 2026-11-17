@@ -30,3 +30,6 @@ test-results
 playwright-report
 .playwright/
 .playwright-cli/
+
+# Wrangler (website/README.md)
+.wrangler/

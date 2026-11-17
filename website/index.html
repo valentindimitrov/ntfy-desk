@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="ntfy Desk is a browser extension for ntfy: send notifications to your topics and receive them as desktop notifications, with an inbox per topic. For Chromium browsers and Firefox."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href="https://ntfy-desk.minddevops.eu/" />
+    <meta name="theme-color" content="#f3f5f4" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1b2124" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="../public/icon/32.png" />
+    <link rel="stylesheet" href="./website.css" />
+    <title>ntfy Desk: send and receive ntfy notifications in your browser</title>
+    <!-- Link previews: crawlers need absolute URLs -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ntfy Desk" />
+    <meta property="og:url" content="https://ntfy-desk.minddevops.eu/" />
+    <meta property="og:title" content="ntfy Desk: send and receive ntfy notifications in your browser" />
+    <meta
+      property="og:description"
+      content="ntfy Desk is a browser extension for ntfy: send notifications to your topics and receive them as desktop notifications, with an inbox per topic. For Chromium browsers and Firefox."
+    />
+    <meta property="og:image" content="https://ntfy-desk.minddevops.eu/social-card.png" />
+    <meta property="og:image:width" content="2400" />
+    <meta property="og:image:height" content="1254" />
+    <meta property="og:image:alt" content="ntfy Desk: send and receive ntfy notifications in your browser" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <a class="skip-link" href="#features">Skip to the features</a>
+    <!-- site:header -->
+    <main>
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <div class="hero-row">
+          <h1 id="hero-title">
+            Your ntfy topics,
+            <span>one click away</span>
+          </h1>
+          <div class="hero-copy">
+            <p>
+              ntfy Desk is a browser extension for <a href="https://ntfy.sh">ntfy</a>: send notifications to your topics, and receive them
+              as desktop notifications with a message list per topic.
+            </p>
+            <p class="muted">Works with ntfy.sh and self-hosted servers, in Chromium browsers and Firefox 142 or later.</p>
+            <div class="hero-actions">
+              <a class="primary-button" href="./getting-started">Get started <span aria-hidden="true">→</span></a>
+              <a class="secondary-button" href="https://github.com/valentindimitrov/ntfy-desk">GitHub</a>
+            </div>
+          </div>
+        </div>
+        <figure class="shot hero-shot">
+          <img
+            data-shot="overview"
+            alt="ntfy Desk in a browser tab. On the left, five topics with unread counts. In the middle, the inbox with a doorbell message, a high-priority disk usage warning with a chart image, and a backup report formatted with Markdown. On the right, the Send form with a title, a message, high priority and the tag warning."
+          />
+        </figure>
+      </section>
+
+      <div id="features">
+        <section class="feature wrap" id="inbox" aria-labelledby="inbox-title">
+          <div class="feature-copy">
+            <span class="eyebrow">THE INBOX</span>
+            <h2 id="inbox-title">Every message, sorted by topic</h2>
+            <p class="muted">
+              Live messages arrive over ntfy's JSON stream. When the browser starts, ntfy Desk catches up on the messages still in the
+              server's cache.
+            </p>
+            <ul class="points">
+              <li>Topic filters with unread counts, and the unread count on the toolbar icon.</li>
+              <li>Search across the messages you have received.</li>
+              <li>Markdown is rendered, links open in a new tab, and images hosted on your server are previewed.</li>
+              <li>Mark a message read or delete it, and its desktop notification is dismissed too.</li>
+              <li>A message published again with the same sequence ID replaces its earlier version.</li>
+              <li>
+                Deletion sync per topic, if you turn it on: a deletion on the server removes the message here, and deleting it here asks the
+                server to delete it too.
+              </li>
+            </ul>
+          </div>
+          <figure class="shot">
+            <img
+              data-shot="inbox"
+              alt="The inbox with the Send form collapsed to a rail. A row of topics shows unread counts and a muted bell next to the topic backups. The messages include a chart image preview, a Markdown list with bold text and a link, and an urgent build failure marked in red."
+            />
+          </figure>
+        </section>
+
+        <section class="feature feature-flip wrap" id="notifications" aria-labelledby="notifications-title">
+          <div class="feature-copy">
+            <span class="eyebrow">DESKTOP NOTIFICATIONS</span>
+            <h2 id="notifications-title">Interrupted only when it matters</h2>
+            <p class="muted">
+              Each topic has its own rule: show every notification, set a minimum priority, or turn desktop notifications off. The inbox
+              still lists the messages.
+            </p>
+            <ul class="points">
+              <li>High and urgent notifications ask to stay on screen until dismissed; Chromium browsers let you turn that off.</li>
+              <li>A catch-up with more than five notifications shows one summary instead of a burst.</li>
+              <li>A click opens the message's link, or highlights the message in the extension tab.</li>
+              <li>In Chromium browsers, a notification can show up to two buttons for view actions and attachments.</li>
+            </ul>
+          </div>
+          <figure class="shot">
+            <img
+              data-shot="settings-topics"
+              alt="The Topics tab of the settings. A table lists five topics with a column each for message sync, desktop notifications, send priority and send tags. Desktop notifications are Off for backups and High and urgent for deploys; the others show All."
+            />
+            <figcaption>
+              The operating system draws desktop notifications, so this shows the settings that decide which ones appear.
+            </figcaption>
+          </figure>
+        </section>
+
+        <section class="feature feature-narrow wrap" id="send" aria-labelledby="send-title">
+          <div class="feature-copy">
+            <span class="eyebrow">THE SEND FORM</span>
+            <h2 id="send-title">Say it with a title, a priority and a file</h2>
+            <p class="muted">
+              The Send form sits next to the inbox, in the toolbar popup and in the wide extension tab, and follows the topic you are
+              reading.
+            </p>
+            <ul class="points">
+              <li>Title, message, priority and tags.</li>
+              <li>Attachments: up to 100 files, 20 MiB each and 50 MiB together, sent one by one or as one ZIP.</li>
+              <li>A click URL, opened when the notification is clicked.</li>
+              <li>Markdown formatting.</li>
+              <li>
+                Delayed delivery: pick a duration, or type anything ntfy accepts, such as <code>45m</code> or <code>tomorrow 9am</code>.
+              </li>
+              <li>Send defaults per topic: a topic can start with its own priority and tags.</li>
+              <li><kbd>Ctrl</kbd> + <kbd>Enter</kbd> sends (<kbd>Cmd</kbd> + <kbd>Enter</kbd> on a Mac).</li>
+            </ul>
+          </div>
+          <figure class="shot">
+            <img
+              data-shot="send"
+              alt="The Send form: the topic home-lab, a title, a Markdown message, two attached files with the option Send files as one ZIP switched on, high priority, the tag warning, and under More options a click URL, Format the message as Markdown ticked, and delivery in 30 minutes."
+            />
+          </figure>
+        </section>
+
+        <section class="feature feature-flip wrap" id="from-the-page" aria-labelledby="from-the-page-title">
+          <div class="feature-copy">
+            <span class="eyebrow">FROM THE PAGE</span>
+            <h2 id="from-the-page-title">Send what you are looking at</h2>
+            <p class="muted">Right-click to send the page, selected text, an image or a link to ntfy.</p>
+            <ul class="points">
+              <li>
+                The shortcut <strong>Send this page to ntfy</strong> publishes the current page's URL and title to the topic last chosen in
+                the Send form. It has no key until you choose one.
+              </li>
+              <li>The toolbar icon answers with ✓, ✗ or ?, so you know whether the message went out.</li>
+              <li><strong>Fill in the current tab</strong> puts the page's title and URL into the Send form instead.</li>
+            </ul>
+          </div>
+          <figure class="shot">
+            <img
+              data-shot="sent-page"
+              alt="The inbox filtered to the topic reading-list, with one new message: the title of a web page, Quiet notifications for a noisy home lab, and its address as a link."
+            />
+            <figcaption>
+              A page screenshot can't include the browser's right-click menu or toolbar. This is the inbox after
+              <strong>Send this page to ntfy</strong> ran on a sample page.
+            </figcaption>
+          </figure>
+        </section>
+
+        <section class="feature wrap" id="settings" aria-labelledby="settings-title">
+          <div class="feature-copy">
+            <span class="eyebrow">SETTINGS AND BACKUP</span>
+            <h2 id="settings-title">Set it up once, take it with you</h2>
+            <p class="muted">
+              Five tabs hold everything: Server, Topics, Messages, Appearance and More. A dot marks a tab that needs your attention.
+            </p>
+            <ul class="points">
+              <li>Export the settings to a JSON file and import them in another browser or profile, without browser sync.</li>
+              <li>The file has no token, no password and no messages.</li>
+              <li>A fallback URL for the same server, used when the main address doesn't answer.</li>
+              <li>Keep 50, 100, 250 or 500 messages per topic, in comfortable or compact rows.</li>
+              <li>Light and dark themes, and panes you can resize or freeze.</li>
+            </ul>
+          </div>
+          <figure class="shot">
+            <img
+              data-shot="settings-more"
+              alt="The More tab of the settings. Keyboard shortcuts lists Open ntfy Desk with its key and Send this page to ntfy as not set, with a Change shortcuts button. Backup has the buttons Export settings and Import settings, and a note that the file never holds the token, the password or messages."
+            />
+          </figure>
+        </section>
+      </div>
+
+      <section class="privacy-section wrap" id="privacy" aria-labelledby="privacy-title">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">PRIVATE BY DESIGN</span>
+            <h2 id="privacy-title">Between your browser and your server</h2>
+          </div>
+          <a href="./privacy-policy">Read the privacy policy</a>
+        </div>
+        <div class="cards">
+          <article>
+            <h3>Credentials stay on the device</h3>
+            <p>
+              Your token or password is stored in this browser only and goes only to server addresses you approved there, in the
+              Authorization header, never in a URL.
+            </p>
+          </article>
+          <article>
+            <h3>No telemetry</h3>
+            <p>
+              No analytics, no advertising and no service run by the developer. ntfy Desk talks to the ntfy server you configure. This
+              website loads nothing from other sites either.
+            </p>
+          </article>
+          <article>
+            <h3>The server is not trusted</h3>
+            <p>
+              Messages are checked before they are stored and shown as text, never as HTML. Links open only if they are http or https, and
+              image previews load only from your server's attachment route.
+            </p>
+          </article>
+          <article>
+            <h3>Open source</h3>
+            <p>
+              ntfy Desk is free software under the GNU General Public License v3.0. Read the code, build it yourself, or report an issue on
+              <a href="https://github.com/valentindimitrov/ntfy-desk">GitHub</a>.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="install-section wrap" id="install" aria-labelledby="install-title">
+        <div class="install-panel">
+          <div>
+            <span class="eyebrow">INSTALL</span>
+            <h2 id="install-title">Get ntfy Desk</h2>
+            <p class="muted">Install it, connect your ntfy server, add your topics. The guide takes you through each step.</p>
+            <a class="primary-button" href="./getting-started">Get started <span aria-hidden="true">→</span></a>
+          </div>
+          <div>
+            <!-- site:install -->
+          </div>
+        </div>
+      </section>
+    </main>
+    <!-- site:footer -->
+  </body>
+</html>

@@ -2,12 +2,15 @@
 
 Browser extension (WXT 0.21, TypeScript, MV3 for Chrome and Firefox) to send and receive ntfy notifications. User-facing docs: `README.md`. How it works and why (receiving, storage, security model, why not WebSockets): `ARCHITECTURE.md`; update it when the design changes.
 
+The public website (`https://ntfy-desk.minddevops.eu`) is in `website/`: read `website/AGENTS.md` before changing it, and update its pages when a feature they describe changes.
+
 ## Commands
 
 - `pnpm check`: format check, lint with type checking, and Vitest. Run it before every commit; `pnpm fmt` fixes formatting.
 - Lint and format come from Vite+ (`vp lint`, `vp fmt`; settings in `vite.config.ts`, used only by Vite+). Oxlint runs with type-aware rules and the full type check (`typeCheck`), strict with `noUncheckedIndexedAccess`; warnings fail. `pnpm compile` runs `tsc --noEmit` on its own. Markdown isn't formatted.
 - `pnpm build` / `pnpm build:firefox`: `.output/chrome-mv3`, `.output/firefox-mv3`.
 - `pnpm zip` / `pnpm zip:firefox`: the release zips.
+- `pnpm website:build`: the website, into `.output/website` (`website/README.md`). `pnpm check` builds it too, in `tests/unit/website.test.ts`.
 - WXT takes the extension version from `package.json`. Verify both generated manifests when changing it.
 - `pnpm lint:firefox`: builds for Firefox, then runs Mozilla's add-on checks (`web-ext lint`); CI runs them too.
 - CI (`.github/workflows/ci.yml`): read-only token by default, write access only in the release job; actions pinned to commit SHAs with the version in a comment, updated by Dependabot (`.github/dependabot.yml`). Keep new actions pinned the same way.
@@ -68,7 +71,7 @@ Open items; remove a row when it lands (the design goes to `ARCHITECTURE.md` if 
 |---|---|---|
 | 7 | Extend Firefox runtime coverage | A headless Firefox smoke test confirmed catch-up summary replacement. The automated Playwright suite runs in Chromium. For broader manual Firefox testing, load the local build as described in the README. |
 | 8 | Validate the tagged release step | CI verifies and uploads the Chromium, Firefox and source ZIPs on branch runs. The release job publishes them when a tag matches the package version. Keep version bumps separate from tagging and publishing. |
-| 9 | Tip button in the Settings links | Open until there is a tip page or link for ntfy Desk. It goes next to GitHub, Website and Contact (`nav.settings-links` in `entrypoints/popup/index.html`). The Website link (`https://ntfy-desk.minddevops.eu`) and the Contact link (the repository's GitHub issues page) only work once the site exists and the repository is public. |
+| 9 | Tip button in the Settings links | Open until there is a tip page or link for ntfy Desk. It goes next to GitHub, Website and Contact (`nav.settings-links` in `entrypoints/popup/index.html`). The Website link (`https://ntfy-desk.minddevops.eu`) works once the owner has deployed the site in `website/` (`website/README.md`, "Going live"); the Contact link (the repository's GitHub issues page) works once the repository is public. |
 
 ## Skills
 

@@ -1,0 +1,30 @@
+{
+  "overview": {
+    "width": 1280,
+    "height": 800
+  },
+  "inbox": {
+    "width": 860,
+    "height": 940
+  },
+  "send": {
+    "width": 410,
+    "height": 962
+  },
+  "settings-server": {
+    "width": 920,
+    "height": 580
+  },
+  "settings-topics": {
+    "width": 920,
+    "height": 680
+  },
+  "settings-more": {
+    "width": 920,
+    "height": 500
+  },
+  "sent-page": {
+    "width": 860,
+    "height": 290
+  }
+}

@@ -95,8 +95,10 @@ export function serverPermissionPattern(url: string): string | null {
  * Held while approvals are first recorded and while an import replaces the servers (utils/backup.ts),
  * so neither sees the other half done. Don't call getConfig while holding it.
  */
-export function withAuthOriginsLock<T>(task: () => Promise<T>): Promise<T> {
-  return navigator.locks.request('ntfy-auth-origins', task);
+export async function withAuthOriginsLock<T>(task: () => Promise<T>): Promise<T> {
+  // The lock's own typing differs between TypeScript's DOM library versions: taken as unknown
+  const result: unknown = await navigator.locks.request('ntfy-auth-origins', task);
+  return result as T;
 }
 
 /** Approve the token and password for these server origins */

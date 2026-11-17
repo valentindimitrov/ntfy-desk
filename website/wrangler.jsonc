@@ -1,0 +1,15 @@
+// Cloudflare Worker that serves the static website build (static assets only, no Worker code).
+// Deployed by the website job in .github/workflows/ci.yml; see website/README.md.
+{
+  "name": "ntfy-desk-website",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "../.output/website",
+    // /getting-started serves getting-started.html; an unknown address gets 404.html
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+  },
+  "routes": [{ "pattern": "ntfy-desk.minddevops.eu", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+}
