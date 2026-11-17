@@ -108,6 +108,8 @@ export const test = base.extend<Fixtures>({
     await use(async (search = '') => {
       const page = await context.newPage();
       await page.goto(`chrome-extension://${extensionId}/popup.html${search}`);
+      // The popup marks itself ready once its listeners are attached: a key pressed earlier is lost
+      await page.locator('body[data-ready="true"]').waitFor();
       return page;
     });
   },
