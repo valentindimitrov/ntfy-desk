@@ -96,6 +96,8 @@ jobs:
         with:
           name: unsigned-release-packages
           path: .output/ntfy-desk-${{ inputs.version }}-*.zip
+          # .output is a hidden folder: without this the action finds no files
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 3
 
