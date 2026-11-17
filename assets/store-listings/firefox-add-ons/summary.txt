@@ -1,0 +1,1 @@
+Send notifications to your ntfy topics and receive them in Firefox: desktop notifications, an inbox per topic, attachments, priority and tags. For ntfy.sh and self-hosted ntfy servers. Unofficial; not affiliated with the ntfy project.
