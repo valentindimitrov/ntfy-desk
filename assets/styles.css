@@ -1838,12 +1838,22 @@ body:not(.page-mode) .send-section :is(.form-input, .form-textarea) {
 /* Send form: click URL, Markdown and delayed delivery, closed until needed. The closed line sits in
    the gap above the Send button; in the toolbar popup the gaps between the fields give up 2px each,
    so the form is exactly as tall as it was without the line (it fits the popup's 600px). */
-#send-section .form-group:has(+ .more-options) {
-  margin-bottom: 3px;
-}
-
 body:not(.page-mode) .send-section > .main-content > .form-group {
   margin-bottom: 11px;
+}
+
+/* The priority buttons have no underline to separate them from the next label: a wider gap does it */
+#send-section .main-content > .form-group:has(#priority-chips) {
+  margin-bottom: 18px;
+}
+
+/* Clear of the Tags underline above */
+#send-section .main-content > .form-group:has(+ .more-options) {
+  margin-bottom: 10px;
+}
+
+.more-options:not([open]) {
+  margin-bottom: 4px;
 }
 
 .more-options + .send-footer {
