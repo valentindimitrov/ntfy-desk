@@ -73,6 +73,7 @@ pnpm browse         # build, then open the extension in playwright-cli
 pnpm build          # .output/chrome-mv3, load it unpacked
 pnpm zip            # .output/ntfy-desk-<version>-chrome.zip (pnpm zip:firefox)
 pnpm lint:firefox   # build and run Mozilla's add-on checks
+pnpm verify:packages  # check the ZIPs in .output before a release
 ```
 
 For end-to-end tests, install the browser once with `pnpm exec playwright install chromium`. On a clean Linux runner, use `pnpm exec playwright install --with-deps chromium`. The interactive `pnpm browse` command uses the separate `playwright-cli` tool and its own browser install (`playwright-cli install-browser chromium`).
@@ -82,7 +83,7 @@ For end-to-end tests, install the browser once with `pnpm exec playwright instal
 - **Chromium**. Run `pnpm build` and load `.output/chrome-mv3` from the browser's extensions page.
 - **Firefox**. Run `pnpm build:firefox`. Open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on**, and choose `.output/firefox-mv3/manifest.json`. You can also select the Firefox ZIP. The temporary installation lasts until Firefox restarts.
 
-`pnpm zip` produces the Chromium ZIP. `pnpm zip:firefox` produces the Firefox ZIP and a matching sources ZIP for review and distribution. The release workflow publishes these three files together. For Mozilla submission, provide the sources ZIP and the Firefox build instructions above. [Mozilla source code submission](https://extensionworkshop.com/documentation/publish/source-code-submission/)
+`pnpm zip` produces the Chromium ZIP. `pnpm zip:firefox` produces the Firefox ZIP and a matching sources ZIP for review and distribution. `pnpm verify:packages` checks the three files against the checkout. A release attaches them to a draft GitHub release through the manually started **Prepare release** workflow; publishing it and the store submissions are done by hand ([docs/releasing.md](docs/releasing.md), store text in [`assets/store-listings/`](assets/store-listings/README.md)). For Mozilla submission, provide the sources ZIP and the Firefox build instructions above. [Mozilla source code submission](https://extensionworkshop.com/documentation/publish/source-code-submission/)
 
 Code layout:
 
@@ -93,6 +94,7 @@ Code layout:
 - `tests/unit/` contains the Vitest suite and a fake ntfy server that follows ntfy v2.29's `since=` semantics.
 - `tests/e2e/` contains the Playwright suite and its HTTP test ntfy server.
 - `scripts/browse.ts` opens the extension in an interactive browser via `pnpm browse`.
+- `scripts/validate-packages.ts`, `scripts/sign-chrome.ts` and `scripts/crx3.ts` check and sign the release packages ([docs/releasing.md](docs/releasing.md)).
 
 ## Credits
 
