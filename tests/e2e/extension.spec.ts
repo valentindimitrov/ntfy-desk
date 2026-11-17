@@ -15,6 +15,16 @@ async function dragDivider(page: Page, name: string, dx: number): Promise<void> 
   await page.mouse.up();
 }
 
+type SettingsTabName = 'Server' | 'Topics' | 'Messages' | 'Appearance' | 'More';
+
+/** Select a category of the Settings by its tab, as a user does; Settings must be open */
+async function selectSettingsTab(page: Page, name: SettingsTabName): Promise<void> {
+  const tab = page.getByRole('tab', { name, exact: true });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tabpanel', { name, exact: true })).toBeVisible();
+}
+
 async function waitForInitialSync(worker: Worker, topics: string[]): Promise<void> {
   await expect
     .poll(() =>
@@ -139,6 +149,7 @@ test.describe('receiving', () => {
     const sendStyle = await popup.locator('#send-btn').evaluate(actionStyle);
     expect(await popup.locator('#file-btn').evaluate(actionStyle)).toEqual(sendStyle);
     await popup.locator('#settings-btn').click();
+    await selectSettingsTab(popup, 'Topics');
     const table = popup.getByRole('table', { name: 'Topic settings' });
     await expect(table.getByRole('columnheader')).toHaveText([
       'Topic',
@@ -165,6 +176,7 @@ test.describe('receiving', () => {
 
     const popup = await openPopup('?tab=receive');
     await popup.locator('#settings-btn').click();
+    await selectSettingsTab(popup, 'Topics');
     const alertsMode = popup.getByLabel('Message sync for alerts');
     const backupsMode = popup.getByLabel('Message sync for backups');
     await expect(alertsMode).toHaveValue('keep');
@@ -400,6 +412,7 @@ test.describe('sending', () => {
     await expect(page.getByRole('button', { name: 'Remove tag first' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Remove tag second' })).toBeVisible();
     await settings.click();
+    await selectSettingsTab(page, 'Topics');
     await page.getByRole('button', { name: 'Remove topic alerts' }).press('Enter');
     await expect(page.getByRole('button', { name: 'Remove topic alerts' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Remove topic backups' })).toBeVisible();
@@ -533,9 +546,11 @@ test.describe('sending', () => {
       const buttonSlot = await gear.boundingBox();
       await gear.press('Enter');
       await expect(page.getByLabel('Server URL', { exact: true })).toBeVisible();
-      expect(await page.locator('#settings-view').evaluate((view) => view.scrollHeight > view.clientHeight)).toBe(true);
       await expect(gear).toBeHidden();
       await expect(back).toBeFocused();
+      // The tab with the 16 topics is longer than the view: the header stays while it scrolls
+      await selectSettingsTab(page, 'Topics');
+      expect(await page.locator('#settings-view').evaluate((view) => view.scrollHeight > view.clientHeight)).toBe(true);
       await expect(header.getByText('ntfy Desk', { exact: true })).toBeVisible();
       await expect(connection).toHaveText(connectedText);
       expect(await headerPositions()).toEqual(positions);
@@ -706,6 +721,7 @@ test.describe('sending', () => {
 
     await summary.press('Enter');
     await popup.locator('#settings-btn').click();
+    await selectSettingsTab(popup, 'Appearance');
     await expect(remember).not.toBeChecked();
     await remember.check();
     await expect(remember).toBeEnabled();
@@ -724,6 +740,7 @@ test.describe('sending', () => {
 
     await summary.press('Enter');
     await popup.locator('#settings-btn').click();
+    await selectSettingsTab(popup, 'Appearance');
     await expect(remember).toBeChecked();
     await remember.uncheck();
     await expect(remember).toBeEnabled();
@@ -750,6 +767,7 @@ test.describe('sending', () => {
     await dragDivider(popup, 'Resize topics', 24);
     await expect(topicsDivider).toHaveAttribute('aria-valuenow', '144');
     await popup.locator('#settings-btn').click();
+    await selectSettingsTab(popup, 'Appearance');
     await expect(freeze).not.toBeChecked();
     await freeze.check();
     for (const divider of await tabDividers.all()) {
@@ -769,6 +787,7 @@ test.describe('sending', () => {
     await expect(topicsDivider).toHaveAttribute('aria-disabled', 'true');
     await expect(topicsDivider).toHaveAttribute('aria-valuenow', '144');
     await popup.locator('#settings-btn').click();
+    await selectSettingsTab(popup, 'Appearance');
     await expect(freeze).toBeChecked();
     await freeze.uncheck();
     for (const divider of await tabDividers.all()) {
@@ -934,6 +953,8 @@ test.describe('sending', () => {
     await popup.locator('#url-input').fill(ntfy.url);
     await popup.locator('#token-input').fill(ntfy.token);
     await popup.getByRole('button', { name: 'Save server settings' }).click();
+    await expect(popup.locator('#settings-status')).toHaveText('Server settings saved');
+    await selectSettingsTab(popup, 'Topics');
     await popup.locator('#new-topic-input').fill('alerts');
     await popup.locator('#new-topic-input').press('Enter');
 
@@ -976,6 +997,7 @@ test.describe('customization', () => {
     const inbox = await openPopup('?mode=page');
     await expect(inbox.locator('.notification-item')).toHaveCount(55);
     await settings.getByRole('button', { name: 'Settings' }).click();
+    await selectSettingsTab(settings, 'Messages');
 
     // The toolbar badge leaves out the topic with notifications off; the inbox still counts it
     await settings.getByLabel('Unread badge counts').selectOption('Only topics with desktop notifications on');
@@ -1034,20 +1056,97 @@ test.describe('customization', () => {
     const popup = await openPopup();
     await popup.setViewportSize({ width: 800, height: 600 });
     await popup.getByRole('button', { name: 'Settings' }).click();
+    // Every group is on one of the tabs, and no tab is wider than the popup
+    const groups: [SettingsTabName, string[]][] = [
+      ['Server', ['Server']],
+      ['Topics', ['Topics']],
+      ['Messages', ['Notifications', 'Inbox', 'Sending']],
+      ['Appearance', ['Appearance and layout']],
+      ['More', ['Keyboard shortcuts', 'Backup']],
+    ];
+    for (const [tab, names] of groups) {
+      await selectSettingsTab(popup, tab);
+      await expect(popup.getByRole('region')).toHaveCount(names.length + (tab === 'Topics' ? 1 : 0));
+      for (const name of names) await expect(popup.getByRole('region', { name, exact: true })).toBeVisible();
+      expect(await popup.locator('#settings-view').evaluate((view) => view.scrollWidth <= view.clientWidth)).toBe(true);
+      if (tab === 'Messages') {
+        await expect(popup.getByLabel('Keep high and urgent notifications on screen until dismissed')).toBeChecked();
+      }
+    }
     const shortcuts = popup.getByRole('region', { name: 'Keyboard shortcuts' });
     await expect(shortcuts.locator('dt')).toHaveText(['Open ntfy Desk', 'Send this page to ntfy']);
     // The suggested key is accepted by the browser; send-page has none until the user sets one
     await expect(shortcuts.locator('dd').first().locator('kbd')).toHaveText(/\S/);
     await expect(shortcuts.locator('dd').nth(1)).toHaveText('Not set');
-    for (const name of ['Server', 'Topics', 'Notifications', 'Inbox', 'Sending', 'Appearance and layout']) {
-      await expect(popup.getByRole('region', { name, exact: true })).toBeVisible();
-    }
-    expect(await popup.locator('#settings-view').evaluate((view) => view.scrollWidth <= view.clientWidth)).toBe(true);
-    await expect(popup.getByLabel('Keep high and urgent notifications on screen until dismissed')).toBeChecked();
 
     const opened = context.waitForEvent('page');
     await shortcuts.getByRole('button', { name: 'Change shortcuts' }).click();
     expect((await opened).url()).toBe('chrome://extensions/shortcuts');
+  });
+
+  test('walks the Settings tabs with the keyboard, without overflow and with the links on every tab', async ({ configure, openPopup }) => {
+    await configure({ topics: 'alerts' });
+    const names: SettingsTabName[] = ['Server', 'Topics', 'Messages', 'Appearance', 'More'];
+    // The toolbar popup's size, then a narrow browser tab
+    for (const { search, width, height } of [
+      { search: '', width: 800, height: 600 },
+      { search: '?mode=page', width: 400, height: 700 },
+    ]) {
+      const page = await openPopup(search);
+      await page.setViewportSize({ width, height });
+      const tab = (name: SettingsTabName) => page.getByRole('tab', { name, exact: true });
+      const links = page.getByRole('navigation', { name: 'About ntfy Desk' }).getByRole('link');
+      const shown = async (name: SettingsTabName) => {
+        await expect(tab(name)).toBeFocused();
+        for (const other of names) {
+          await expect(tab(other)).toHaveAttribute('aria-selected', String(other === name));
+          await expect(tab(other)).toHaveAttribute('tabindex', other === name ? '0' : '-1');
+        }
+        await expect(page.getByRole('tabpanel')).toHaveCount(1);
+        await expect(page.getByRole('tabpanel', { name, exact: true })).toBeVisible();
+        expect(await page.locator('#settings-view').evaluate((view) => view.scrollWidth <= view.clientWidth)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        // No label is cut short
+        for (const label of await page.getByRole('tab').all()) {
+          expect(await label.evaluate((button) => button.scrollWidth <= button.clientWidth)).toBe(true);
+        }
+        await expect(links).toHaveText(['GitHub', 'Website', 'Contact']);
+        for (const link of await links.all()) await expect(link).toBeVisible();
+        // The toolbar popup takes the height of its page: it must not change from tab to tab
+        if (!search) expect(await page.locator('body').evaluate((body) => body.getBoundingClientRect().height)).toBe(600);
+      };
+
+      await page.getByRole('button', { name: 'Settings', exact: true }).press('Enter');
+      await expect(page.getByRole('button', { name: 'Back' })).toBeFocused();
+      // Back, then the selected tab only, then the tab's first field
+      await page.keyboard.press('Tab');
+      await shown('Server');
+      await page.keyboard.press('Tab');
+      await expect(page.getByLabel('Server URL', { exact: true })).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await shown('Server');
+
+      for (const name of names.slice(1)) {
+        await page.keyboard.press('ArrowRight');
+        await shown(name);
+      }
+      await page.keyboard.press('ArrowRight');
+      await shown('Server');
+      await page.keyboard.press('ArrowLeft');
+      await shown('More');
+      await page.keyboard.press('ArrowLeft');
+      await shown('Appearance');
+      await page.keyboard.press('Home');
+      await shown('Server');
+      await page.keyboard.press('End');
+      await shown('More');
+      await page.keyboard.press('Tab');
+      await expect(page.getByRole('button', { name: 'Change shortcuts' })).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Shift+Tab');
+      await expect(page.getByRole('button', { name: 'Back' })).toBeFocused();
+      await page.close();
+    }
   });
 
   test('send defaults set per topic in Settings fill the Send form and reach the server', async ({ ntfy, configure, openPopup }) => {
@@ -1055,6 +1154,7 @@ test.describe('customization', () => {
     const popup = await openPopup('?mode=page');
     await popup.setViewportSize({ width: 800, height: 600 });
     await popup.getByRole('button', { name: 'Settings' }).click();
+    await selectSettingsTab(popup, 'Topics');
     const tagsField = popup.getByLabel('Send tags for alerts');
     await expect(tagsField).toBeDisabled();
     await popup.getByLabel('Send priority for alerts').selectOption({ label: 'Urgent' });
@@ -1239,6 +1339,7 @@ test.describe('backup', () => {
     await expect.poll(() => ntfy.subscriptions).toEqual([['alerts', 'backups']]);
     const page = await openPopup('?mode=page');
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await selectSettingsTab(page, 'More');
 
     const exportFile = async () => {
       const download = page.waitForEvent('download');
@@ -1266,7 +1367,10 @@ test.describe('backup', () => {
 
     // Reset: no settings left, the receiver disconnects, the open form follows
     await serviceWorker.evaluate(() => chrome.storage.sync.clear());
+    await selectSettingsTab(page, 'Topics');
+    await expect(page.getByRole('button', { name: /^Remove topic / })).toHaveCount(0);
     await expect(page.locator('.topic-badge')).toHaveCount(0);
+    await selectSettingsTab(page, 'More');
     await expect(page.locator('body')).toHaveAttribute('data-theme', 'auto');
     const subscriptionsBefore = ntfy.subscriptions.length;
 
@@ -1281,15 +1385,22 @@ test.describe('backup', () => {
     await confirmation.getByRole('button', { name: 'Replace settings' }).click();
     await expect(page.locator('#settings-status')).toHaveText('Settings imported');
     await expect(confirmation).toBeHidden();
+    // Nothing to confirm under Server: the view stays on the tab with Backup, focus on its button
+    await expect(page.getByRole('tab', { name: 'More', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: 'Import settings' })).toBeFocused();
 
     // The form shows the imported values, the same view applies them, and the background reconnects
-    await expect(page.locator('#url-input')).toHaveValue(ntfy.url);
-    await expect(page.locator('.topic-badge')).toHaveText(['alerts×', 'backups×']);
-    await expect(page.locator('#history-limit-select')).toHaveValue('250');
-    await expect(page.locator('#include-url-checkbox')).toBeChecked();
     await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark');
-    await expect(page.getByRole('combobox', { name: 'Send priority for alerts' })).toHaveValue('4');
+    await selectSettingsTab(page, 'Server');
+    await expect(page.getByLabel('Server URL', { exact: true })).toHaveValue(ntfy.url);
+    await expect(page.getByRole('button', { name: 'Save server settings' })).toBeVisible();
     await expect(page.locator('#held-back-box')).toBeHidden();
+    await selectSettingsTab(page, 'Topics');
+    await expect(page.locator('.topic-badge')).toHaveText(['alerts×', 'backups×']);
+    await expect(page.getByRole('combobox', { name: 'Send priority for alerts' })).toHaveValue('4');
+    await selectSettingsTab(page, 'Messages');
+    await expect(page.getByLabel('Messages kept per topic')).toHaveValue('250');
+    await expect(page.getByRole('checkbox', { name: 'Fill in the current tab' })).toBeChecked();
     await expect.poll(() => ntfy.subscriptions.length).toBeGreaterThan(subscriptionsBefore);
     expect(ntfy.subscriptions.at(-1)).toEqual(['alerts', 'backups']);
     expect(await serviceWorker.evaluate(() => chrome.storage.local.get(['authOrigins', 'accessToken']))).toEqual({
@@ -1298,10 +1409,12 @@ test.describe('backup', () => {
     });
 
     // A second export is the first one again
+    await selectSettingsTab(page, 'More');
     const again = JSON.parse(readFileSync(await exportFile(), 'utf8')) as typeof exported;
     expect(again.settings).toEqual(exported.settings);
 
     // "Save server settings" starts from the imported values
+    await selectSettingsTab(page, 'Server');
     await page.getByRole('button', { name: 'Save server settings' }).click();
     await expect(page.locator('#settings-status')).toHaveText('Server settings saved');
     expect(await serviceWorker.evaluate(() => chrome.storage.sync.get('apiUrl'))).toEqual({ apiUrl: ntfy.url });
@@ -1336,6 +1449,7 @@ test.describe('backup', () => {
 
       const page = await openPopup('?mode=page');
       await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      await selectSettingsTab(page, 'More');
       await page.locator('#import-settings-input').setInputFiles(file);
       const confirmation = page.getByRole('group', { name: /^Replace the settings with those from settings\.json/ });
       await expect(confirmation).toContainText(`Server URL: ${other.url} (now ${ntfy.url})`);
@@ -1351,8 +1465,15 @@ test.describe('backup', () => {
         theme: 'auto',
       });
       expect(await serviceWorker.evaluate(() => chrome.storage.local.get('authOrigins'))).toEqual({ authOrigins: [ntfy.url] });
+      // The import leaves something to confirm under Server: that tab opens, with the focus on the
+      // button, the tab is marked, and the status line stays in view
       const approve = page.getByRole('button', { name: 'Use them with this server' });
+      const serverTab = page.getByRole('tab', { name: 'Server', exact: true });
+      await expect(serverTab).toHaveAttribute('aria-selected', 'true');
+      await expect(serverTab).toHaveAccessibleDescription('Needs attention');
       await expect(approve).toBeVisible();
+      await expect(approve).toBeFocused();
+      await expect(page.locator('#settings-status')).toBeVisible();
       await expect(page.locator('#url-input')).toHaveValue(other.url);
       // The background reconnected to the imported server, without the token: refused
       await expect
@@ -1365,6 +1486,10 @@ test.describe('backup', () => {
       expect(other.subscriptions).toEqual([]);
 
       await approve.click();
+      await expect(approve).toBeHidden();
+      // Access to the imported server is still to be granted (a browser prompt): the tab stays marked
+      await expect(page.getByRole('button', { name: 'Allow access to this server' })).toBeVisible();
+      await expect(serverTab).toHaveAccessibleDescription('Needs attention');
       await expect.poll(() => other.subscriptions).toContainEqual(['alerts']);
     } finally {
       await other.close();
@@ -1403,6 +1528,8 @@ test.describe('backup', () => {
       )
       .toBe('ntfy Desk');
     expect(await inPopup('#settings-btn')).toBe(true);
+    // Backup is on the More tab
+    await expect.poll(() => inPopup('#settings-tab-more')).toBe(true);
     await expect.poll(() => inPopup('#export-settings-btn')).toBe(true);
     await expect.poll(() => readdirSync(downloads).filter((name) => !name.endsWith('.crdownload'))).toHaveLength(1);
     const [name] = readdirSync(downloads);

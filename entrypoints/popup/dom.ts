@@ -92,6 +92,7 @@ export function getElements() {
     shortcutSettingsBtn: byId<HTMLButtonElement>('shortcut-settings-btn'),
     shortcutHint: byId('shortcut-hint'),
     backupSection: byId('settings-backup'),
+    settingsTabs: byId('settings-tabs'),
     exportSettingsBtn: byId<HTMLButtonElement>('export-settings-btn'),
     importSettingsBtn: byId<HTMLButtonElement>('import-settings-btn'),
     importSettingsInput: byId<HTMLInputElement>('import-settings-input'),

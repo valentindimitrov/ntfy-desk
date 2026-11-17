@@ -2,6 +2,7 @@
 // badge, notification, history and inbox display preferences, include-URL option, theme and the
 // keyboard shortcuts. Per-topic options (message sync, desktop notifications, send defaults) are
 // staged until Apply. Backup exports the synced settings to a file and imports one after a confirmation.
+// The groups are spread over five tabs (showSettingsTab); the status line and the links show with every tab.
 
 import { browser } from 'wxt/browser';
 import {
@@ -58,7 +59,7 @@ import {
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics } from '@/utils/sync-modes';
 import { loadNotifications } from './receive';
 import { updateTopicOptions } from './send';
-import { elements, isConfigured, isPageMode, saveReceiveFilter, saveSync, state, type Theme } from './state';
+import { elements, isPageMode, saveReceiveFilter, saveSync, state, type Theme } from './state';
 import { clearStatus, moveItem, setupDragAndDrop, showSettingsStatus } from './ui';
 
 async function editSettings<T>(task: () => Promise<T>): Promise<T> {
@@ -131,6 +132,29 @@ async function changeShortcuts(): Promise<void> {
   if (!(await openShortcutSettings())) elements.shortcutHint.textContent = `Could not open the shortcut settings. ${SHORTCUT_HELP}`;
 }
 
+export type SettingsTab = 'server' | 'topics' | 'messages' | 'appearance' | 'more';
+
+const settingsTabButtons = () => [...elements.settingsTabs.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+
+/** No server yet, server access not granted, or the token and password held back: all fixed under Server */
+export const serverNeedsAttention = () => !state.apiUrl || state.serverAccessMissing || state.heldBackFrom.length > 0;
+
+/**
+ * Point at what the user has to fix: the gear in the main view and, in Settings (where the gear is
+ * hidden), the tab that holds the fix.
+ */
+export function updateAttention(): void {
+  const attention: Partial<Record<SettingsTab, boolean>> = { server: serverNeedsAttention(), topics: state.topics.length === 0 };
+  elements.settingsBtn.classList.toggle('highlight', Object.values(attention).some(Boolean));
+  for (const button of settingsTabButtons()) {
+    const marked = attention[button.dataset.tab as SettingsTab] === true;
+    button.classList.toggle('attention', marked);
+    // The dot is drawn in CSS: the description says the same to a screen reader
+    if (marked) button.setAttribute('aria-describedby', 'settings-tab-attention');
+    else button.removeAttribute('aria-describedby');
+  }
+}
+
 const verifiesDeletions = () => state.topics.some((topic) => state.syncDeletionTopics.has(topic));
 
 /** Access can be needed for credentials or for the server's replay metadata. */
@@ -165,7 +189,7 @@ export async function updateServerAccessUI(
   elements.serverAccessHint.textContent = verifiesDeletions()
     ? 'Allows ntfy Desk to verify cached deletions'
     : 'Needed to send and receive with authentication';
-  elements.settingsBtn.classList.toggle('highlight', !isConfigured() || missing || state.heldBackFrom.length > 0);
+  updateAttention();
 }
 
 const typedAuth = () => Boolean(elements.tokenInput.value || elements.usernameInput.value || elements.passwordInput.value);
@@ -184,7 +208,7 @@ function updateHeldBackUI(): void {
     held.length > 0
       ? `The server address changed outside these settings (e.g. through browser sync) to ${held.join(', ')}. Your token and password aren't sent there until you confirm.`
       : '';
-  elements.settingsBtn.classList.toggle('highlight', !isConfigured() || state.serverAccessMissing || held.length > 0);
+  updateAttention();
 }
 
 /** The user confirms the current servers for the token and password */
@@ -312,6 +336,7 @@ async function refreshTopics(): Promise<void> {
   state.topicSendDefaults = defaults;
   renderTopics();
   updateTopicOptions();
+  updateAttention();
 }
 
 function updateApplyButton(): void {
@@ -694,6 +719,14 @@ async function confirmImport(): Promise<void> {
     await populateSettings();
     state.lastTopic = pending.backup.settings.lastTopic || undefined;
     const held = state.heldBackFrom.length > 0;
+    // The confirmation that had the focus is gone. Held back: the button that confirms the server is
+    // under Server, so go there; the status line below the tabs stays in view.
+    if (held) {
+      showSettingsTab('server');
+      elements.heldBackBtn.focus();
+    } else {
+      elements.importSettingsBtn.focus();
+    }
     showSettingsStatus(
       held ? 'Settings imported. Confirm the server under Server before your token and password are used.' : 'Settings imported',
       held ? 'warning' : 'success',
@@ -736,7 +769,41 @@ export async function populateSettings(): Promise<void> {
   void updateServerAccessUI();
 }
 
+/** Show one category of the settings; the others are hidden, not removed, so their fields keep their state */
+export function showSettingsTab(tab: SettingsTab): void {
+  for (const button of settingsTabButtons()) {
+    const selected = button.dataset.tab === tab;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
+  for (const panel of elements.settingsView.querySelectorAll<HTMLElement>('.settings-panel')) {
+    panel.hidden = panel.dataset.tab !== tab;
+  }
+}
+
+function setupSettingsTabs(): void {
+  elements.settingsTabs.addEventListener('click', (event) => {
+    const tab = (event.target as Element).closest<HTMLElement>('[role="tab"]')?.dataset.tab;
+    if (tab) showSettingsTab(tab as SettingsTab);
+  });
+  // Arrow keys, Home and End move between tabs, as in a tab list
+  elements.settingsTabs.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const buttons = settingsTabButtons();
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (index < 0) return;
+    event.preventDefault();
+    const step = event.key === 'ArrowRight' ? 1 : buttons.length - 1;
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + step) % buttons.length;
+    const button = buttons[next];
+    if (!button) return;
+    showSettingsTab(button.dataset.tab as SettingsTab);
+    button.focus();
+  });
+}
+
 export function setupSettings(): void {
+  setupSettingsTabs();
   const saveSetting = (patch: Record<string, unknown>) => {
     void saveSync(patch).catch(() => showSettingsStatus('Failed to save settings', 'error'));
   };

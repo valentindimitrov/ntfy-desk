@@ -17,7 +17,17 @@ import {
   updatePriorityUI,
   updateTopicOptions,
 } from './send';
-import { applyPreferences, applyTheme, hasUnsavedServerEdits, populateSettings, setupSettings, updateServerAccessUI } from './settings';
+import {
+  applyPreferences,
+  applyTheme,
+  hasUnsavedServerEdits,
+  populateSettings,
+  serverNeedsAttention,
+  setupSettings,
+  showSettingsTab,
+  updateAttention,
+  updateServerAccessUI,
+} from './settings';
 import { elements, isConfigured, isPageMode, loadReceiveFilter, loadSettings, pageParams, saveReceiveFilter, state } from './state';
 import { setupTooltips, showStatus } from './ui';
 
@@ -33,7 +43,7 @@ function requestSync(): void {
 function updateUI(): void {
   const configured = isConfigured();
   elements.mainView.classList.toggle('disabled', !configured);
-  elements.settingsBtn.classList.toggle('highlight', !configured || state.serverAccessMissing || state.heldBackFrom.length > 0);
+  updateAttention();
   elements.openUrlBtn.disabled = !state.apiUrl;
 
   updateTopicOptions();
@@ -42,6 +52,8 @@ function updateUI(): void {
 
 async function showSettingsView(): Promise<void> {
   await populateSettings();
+  // Something to fix under Server (no server yet, access not granted, credentials held back): start there
+  if (serverNeedsAttention()) showSettingsTab('server');
   elements.mainView.classList.remove('active');
   elements.settingsView.classList.add('active');
   elements.backBtn.focus();
@@ -62,6 +74,7 @@ function showMainView(): void {
 async function showSettingsFromLink(): Promise<void> {
   // An open settings form may hold unsaved edits: leave it as it is
   if (!elements.settingsView.classList.contains('active')) await showSettingsView();
+  showSettingsTab('more');
   elements.backupSection.scrollIntoView({ block: 'start' });
   elements.importSettingsBtn.focus();
 }

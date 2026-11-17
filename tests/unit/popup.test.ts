@@ -1635,6 +1635,252 @@ describe('settings', () => {
   });
 });
 
+describe('settings: tabs and links', () => {
+  const TABS = ['server', 'topics', 'messages', 'appearance', 'more'];
+  const tab = (key: string) => $<HTMLButtonElement>(`#settings-tab-${key}`);
+  const panel = (key: string) => $(`#settings-panel-${key}`);
+  const selectedTab = () => TABS.filter((key) => tab(key).getAttribute('aria-selected') === 'true');
+  const shownPanels = () => TABS.filter((key) => !panel(key).hidden);
+
+  /** One tab selected and in the Tab order, its panel the only one shown */
+  function expectShown(key: string): void {
+    expect(selectedTab()).toEqual([key]);
+    expect(shownPanels()).toEqual([key]);
+    for (const other of TABS) {
+      expect(tab(other).getAttribute('aria-selected')).toBe(String(other === key));
+      expect(tab(other).tabIndex).toBe(other === key ? 0 : -1);
+    }
+  }
+
+  function press(key: string): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    document.activeElement!.dispatchEvent(event);
+    return event;
+  }
+
+  it('puts every group of settings on one of five tabs', async () => {
+    await openPopup();
+    await openSettings();
+    const tablist = $('#settings-tabs');
+    expect(tablist.getAttribute('role')).toBe('tablist');
+    expect(tablist.getAttribute('aria-label')).toBe('Settings categories');
+    const tabs = [...tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs.map((button) => button.textContent.trim())).toEqual(['Server', 'Topics', 'Messages', 'Appearance', 'More']);
+    expect(tabs.map((button) => button.dataset.tab)).toEqual(TABS);
+    for (const key of TABS) {
+      expect(tab(key).type).toBe('button');
+      expect(tab(key).getAttribute('aria-controls')).toBe(panel(key).id);
+      expect(panel(key).getAttribute('role')).toBe('tabpanel');
+      expect(panel(key).getAttribute('aria-labelledby')).toBe(tab(key).id);
+    }
+    const headings = (key: string) => [...panel(key).querySelectorAll('.settings-section > h2')].map((heading) => heading.textContent);
+    expect(Object.fromEntries(TABS.map((key) => [key, headings(key)]))).toEqual({
+      server: ['Server'],
+      topics: ['Topics'],
+      messages: ['Notifications', 'Inbox', 'Sending'],
+      appearance: ['Appearance and layout'],
+      more: ['Keyboard shortcuts', 'Backup'],
+    });
+    // No group is left outside the tabs; the status line and the links are, so every tab shows them
+    for (const section of document.querySelectorAll('#settings-view .settings-section')) {
+      expect(section.closest('.settings-panel')).not.toBeNull();
+    }
+    expect($('#settings-status').closest('.settings-panel')).toBeNull();
+    expect($('.settings-links').closest('.settings-panel')).toBeNull();
+    expect($('#topic-settings-rows').closest('.settings-panel')).toBe(panel('topics'));
+  });
+
+  it('shows one tab at a time, selected with a click', async () => {
+    await openPopup();
+    await openSettings();
+    expectShown('server');
+    for (const key of ['topics', 'messages', 'appearance', 'more', 'server']) {
+      tab(key).click();
+      expectShown(key);
+    }
+  });
+
+  it('moves between the tabs with the arrow keys, Home and End, focus following', async () => {
+    await openPopup();
+    await openSettings();
+    tab('server').focus();
+    const steps: [string, string][] = [
+      ['ArrowRight', 'topics'],
+      ['ArrowRight', 'messages'],
+      ['ArrowRight', 'appearance'],
+      ['ArrowRight', 'more'],
+      ['ArrowRight', 'server'],
+      ['ArrowLeft', 'more'],
+      ['ArrowLeft', 'appearance'],
+      ['Home', 'server'],
+      ['End', 'more'],
+    ];
+    for (const [key, expected] of steps) {
+      expect(press(key).defaultPrevented).toBe(true);
+      expectShown(expected);
+      expect(document.activeElement).toBe(tab(expected));
+    }
+    // Other keys are left to the browser
+    for (const key of ['ArrowDown', 'a', 'Tab']) {
+      expect(press(key).defaultPrevented).toBe(false);
+      expectShown('more');
+    }
+    // Arrow keys in a field of a panel don't switch tabs
+    tab('server').click();
+    $('#url-input').focus();
+    expect(press('ArrowRight').defaultPrevented).toBe(false);
+    expect(press('End').defaultPrevented).toBe(false);
+    expectShown('server');
+  });
+
+  it('keeps what was typed and staged in a tab while another one is shown', async () => {
+    await openPopup();
+    await openSettings();
+    $<HTMLInputElement>('#url-input').value = 'https://typed.example';
+    $<HTMLInputElement>('#token-input').value = 'tk_synthetic_typed';
+    tab('topics').click();
+    $<HTMLInputElement>('#new-topic-input').value = 'half-typed';
+    const rule = $<HTMLSelectElement>('[aria-label="Desktop notifications for alerts"]');
+    rule.value = 'off';
+    rule.dispatchEvent(new Event('change'));
+    expect($<HTMLButtonElement>('#apply-topic-settings').disabled).toBe(false);
+
+    for (const key of ['messages', 'appearance', 'more', 'server']) tab(key).click();
+    expectShown('server');
+    expect($<HTMLInputElement>('#url-input').value).toBe('https://typed.example');
+    expect($<HTMLInputElement>('#token-input').value).toBe('tk_synthetic_typed');
+    tab('topics').click();
+    expect($<HTMLInputElement>('#new-topic-input').value).toBe('half-typed');
+    expect($<HTMLSelectElement>('[aria-label="Desktop notifications for alerts"]')).toBe(rule);
+    expect(rule.value).toBe('off');
+    expect($<HTMLButtonElement>('#apply-topic-settings').disabled).toBe(false);
+    // Nothing was saved by switching
+    expect(await fakeBrowser.storage.sync.get(['apiUrl', 'notifyRules'])).toEqual({ apiUrl: 'https://ntfy.example' });
+
+    // Staged in one tab, applied after a visit to another; the server fields are saved from their own tab
+    $('#apply-topic-settings').click();
+    await vi.waitFor(() => expect($('#topic-settings-status').textContent).toBe('Applied.'));
+    expect(await fakeBrowser.storage.sync.get('notifyRules')).toEqual({ notifyRules: [['alerts', 'off']] });
+    expect($<HTMLInputElement>('#url-input').value).toBe('https://typed.example');
+  });
+
+  it('reopens Settings on the tab used last', async () => {
+    await openPopup();
+    await openSettings();
+    tab('appearance').click();
+    $('#back-btn').click();
+    expect($('#settings-view').classList.contains('active')).toBe(false);
+    await openSettings();
+    expectShown('appearance');
+    expect(document.activeElement).toBe($('#back-btn'));
+    for (const key of TABS) {
+      expect(tab(key).classList.contains('attention')).toBe(false);
+      expect(tab(key).hasAttribute('aria-describedby')).toBe(false);
+    }
+  });
+
+  it('opens Settings on Server, and marks that tab, while the credentials are held back', async () => {
+    await import('@/utils/ntfy').then((ntfy) => ntfy.getConfig()); // approves https://ntfy.example
+    await openPopup();
+    await openSettings();
+    tab('appearance').click();
+    $('#back-btn').click();
+
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://evil.example' });
+    await openSettings();
+    expectShown('server');
+    expect($('#held-back-box').style.display).toBe('');
+    expect(tab('server').classList.contains('attention')).toBe(true);
+    expect(tab('server').getAttribute('aria-describedby')).toBe('settings-tab-attention');
+    expect($('#settings-tab-attention').textContent).toBe('Needs attention');
+    expect($('#settings-tab-attention').hidden).toBe(true);
+    expect(tab('topics').classList.contains('attention')).toBe(false);
+
+    // The mark stays while another tab is open, and goes with the confirmation
+    tab('more').click();
+    expect(tab('server').classList.contains('attention')).toBe(true);
+    tab('server').click();
+    $('#held-back-btn').click();
+    await vi.waitFor(() => expect(tab('server').classList.contains('attention')).toBe(false));
+    expect(tab('server').hasAttribute('aria-describedby')).toBe(false);
+    expect(tab('server').textContent.trim()).toBe('Server');
+  });
+
+  it('opens Settings on Server when server access is missing or no server is set', async () => {
+    mockResolved(fakeBrowser.permissions, 'contains', false);
+    await openPopup();
+    await openSettings();
+    tab('messages').click();
+    $('#back-btn').click();
+    await openSettings();
+    expectShown('server');
+    expect(tab('server').classList.contains('attention')).toBe(true);
+
+    mockResolved(fakeBrowser.permissions, 'contains', true);
+    await fakeBrowser.storage.local.set({ accessToken: '' });
+    await fakeBrowser.storage.sync.set({ apiUrl: '', topics: '' });
+    tab('messages').click();
+    $('#back-btn').click();
+    await openSettings();
+    expectShown('server');
+    // Nothing set up yet: the server is missing under Server, the topics under Topics
+    expect(TABS.filter((key) => tab(key).classList.contains('attention'))).toEqual(['server', 'topics']);
+    expect($('#settings-btn').classList.contains('highlight')).toBe(true);
+
+    // A topic added: the Topics mark goes, the Server one stays
+    tab('topics').click();
+    const input = $<HTMLInputElement>('#new-topic-input');
+    input.value = 'alerts';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(TABS.filter((key) => tab(key).classList.contains('attention'))).toEqual(['server']));
+    expectShown('topics');
+  });
+
+  it('opens the More tab from the backup link, whichever tab was open', async () => {
+    await openPopup('?mode=page');
+    location.hash = 'settings=backup&focus=1';
+    window.dispatchEvent(new Event('hashchange'));
+    await vi.waitFor(() => expect($('#settings-view').classList.contains('active')).toBe(true));
+    await vi.waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
+    expectShown('more');
+    expect($('#settings-backup').closest('.settings-panel')).toBe(panel('more'));
+
+    tab('topics').click();
+    location.hash = 'settings=backup&focus=2';
+    window.dispatchEvent(new Event('hashchange'));
+    await vi.waitFor(() => expect(document.activeElement).toBe($('#import-settings-btn')));
+    expectShown('more');
+    location.hash = '';
+  });
+
+  it('links to the repository, the website and the issues, each in a new tab', async () => {
+    await openPopup();
+    await openSettings();
+    const nav = $('nav.settings-links');
+    expect(nav.getAttribute('aria-label')).toBe('About ntfy Desk');
+    const links = [...nav.querySelectorAll<HTMLAnchorElement>('a')];
+    expect(
+      links.map((link) => ({ text: link.textContent.trim(), name: link.getAttribute('aria-label'), href: link.getAttribute('href') })),
+    ).toEqual([
+      { text: 'GitHub', name: 'ntfy Desk on GitHub', href: 'https://github.com/valentindimitrov/ntfy-desk' },
+      { text: 'Website', name: 'ntfy Desk website', href: 'https://ntfy-desk.minddevops.eu' },
+      { text: 'Contact', name: 'Contact: ntfy Desk issues on GitHub', href: 'https://github.com/valentindimitrov/ntfy-desk/issues' },
+    ]);
+    for (const link of links) {
+      expect(link.target).toBe('_blank');
+      expect(link.rel.split(' ').toSorted()).toEqual(['noopener', 'noreferrer']);
+      // The visible label is part of the accessible name (whatever the case); the icon is decoration
+      expect(link.getAttribute('aria-label')?.toLowerCase()).toContain(link.textContent.trim().toLowerCase());
+      expect(link.querySelectorAll('svg[aria-hidden="true"]')).toHaveLength(1);
+    }
+    // Shown with every tab
+    for (const key of TABS) {
+      tab(key).click();
+      expect(nav.closest('[hidden]')).toBeNull();
+    }
+  });
+});
+
 describe('settings: backup', () => {
   const backupFile = (settings: unknown, name = 'ntfy-desk-settings-2026-11-01.json', extra: Record<string, unknown> = {}) =>
     new File(
@@ -1810,6 +2056,8 @@ describe('settings: backup', () => {
     await pick(backupFile(IMPORTED));
     $('#import-confirm-btn').click();
     await vi.waitFor(() => expect($('#settings-status').textContent).toBe('Settings imported'));
+    // The confirmation that had the focus is gone: it returns to the Import button
+    expect(document.activeElement).toBe($('#import-settings-btn'));
 
     expect(await fakeBrowser.storage.sync.get()).toMatchObject({
       apiUrl: 'https://imported.example',
@@ -1860,6 +2108,7 @@ describe('settings: backup', () => {
     await openPopup('?mode=page');
     await fakeBrowser.storage.local.remove('authOrigins');
     await openSettings();
+    $('#settings-tab-more').click();
     await pick(backupFile({ apiUrl: 'https://evil.example', topics: ['inbox'] }));
     expect(confirmLines()).toContain("Your token and password aren't sent to https://evil.example until you confirm that under Server.");
     $('#import-confirm-btn').click();
@@ -1869,6 +2118,12 @@ describe('settings: backup', () => {
       ),
     );
     expect($('#settings-status').className).toContain('warning');
+    // The button that confirms the server is under Server: that tab opens, focus on the button
+    expect($('#settings-tab-server').getAttribute('aria-selected')).toBe('true');
+    expect($('#settings-panel-server').hidden).toBe(false);
+    expect($('#settings-panel-more').hidden).toBe(true);
+    expect(document.activeElement).toBe($('#held-back-btn'));
+    expect($('#settings-tab-server').classList.contains('attention')).toBe(true);
     expect(await fakeBrowser.storage.local.get()).toEqual({ accessToken: 'tk_x', authOrigins: ['https://ntfy.example'] });
     expect($('#held-back-box').style.display).toBe('');
     expect($('#held-back-text').textContent).toContain('https://evil.example');

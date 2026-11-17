@@ -887,6 +887,105 @@ body:has(#settings-view.active) #back-btn {
 }
 
 /* Groups of settings, each with a heading */
+/* Settings categories as tabs; the links below stay visible on every tab */
+.settings-tabs {
+  display: flex;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-tabs button {
+  /* As wide as its label needs, the rest shared: equal widths cut "Appearance" short in a narrow tab */
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 3px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-tabs button:hover {
+  color: var(--text-primary);
+}
+
+.settings-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--primary);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Something to fix on this tab (described to screen readers by #settings-tab-attention) */
+.settings-tabs button.attention::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-start: 6px;
+  border-radius: 50%;
+  background: var(--status-warning);
+  vertical-align: 1px;
+}
+
+.settings-tabs button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.settings-panel[hidden] {
+  display: none;
+}
+
+.settings-panel > .settings-section:last-child {
+  border-bottom: none;
+}
+
+.settings-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settings-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.settings-links a:hover {
+  border-color: var(--primary);
+  color: var(--primary-light);
+}
+
+.settings-links a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.settings-links svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
 .settings-section {
   margin-bottom: 14px;
   padding-bottom: 8px;
@@ -1362,6 +1461,26 @@ body:not(.page-mode) :is(#main-view, #settings-view) {
 body:not(.page-mode) #main-view.active {
   height: calc(600px - var(--desk-header-height));
   grid-template-rows: minmax(0, 1fr);
+}
+
+/* The settings tabs differ in length: without a fixed height the toolbar popup would resize on every switch */
+body:not(.page-mode) #settings-view.active {
+  height: calc(600px - var(--desk-header-height));
+}
+
+body:not(.page-mode) #settings-view > .main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+/* The links sit at the bottom of the popup, below the status line */
+body:not(.page-mode) .settings-links {
+  margin-top: auto;
+}
+
+body:not(.page-mode) #settings-status {
+  margin-bottom: 12px;
 }
 
 .send-section {
