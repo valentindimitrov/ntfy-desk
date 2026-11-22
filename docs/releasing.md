@@ -1,12 +1,12 @@
 # Releasing ntfy Desk
 
-A release is prepared by a workflow started by hand and finished by hand: the workflow builds, checks and attaches the packages to a **draft** GitHub release; publishing the draft and both store submissions are manual. Nothing is released by pushing a tag.
+A release is prepared by a workflow started by hand and finished by hand: the workflow builds, checks and attaches the packages to a **draft** GitHub release, and you publish the draft. The first submission to each store is done by hand; later versions go to the stores through the **Publish to stores** workflow ([store-publishing.md](store-publishing.md)), also started by hand. Nothing is released by pushing a tag.
 
 Files: [`.github/workflows/prepare-release.yml`](../.github/workflows/prepare-release.yml), `scripts/validate-packages.ts`, `scripts/sign-chrome.ts`, [crx-signing.md](crx-signing.md) (the optional Chrome Web Store signing key and the `release` environment), [`assets/store-listings/`](../assets/store-listings/README.md) (the text for the stores).
 
 ## Once, before the first release
 
-1. Create the `release` environment as described in [crx-signing.md](crx-signing.md#protecting-the-key-owner-setup). The signing job names it; a job that names a missing environment creates it without any protection.
+1. The environments `release`, `store-chrome` and `store-firefox` exist and accept deployments from `main` only ([crx-signing.md](crx-signing.md#protecting-the-key-owner-setup), [store-publishing.md](store-publishing.md#settings-it-needs)). A job that names a missing environment creates it without any protection.
 2. Decide about CRX signing. It is off until a public key is committed, and a first Chrome Web Store submission doesn't need it.
 
 ## 1. Bump the version
@@ -64,7 +64,7 @@ Edit the notes if needed, check the target commit, then **Publish release**. Git
 
 ## 5. Chrome Web Store
 
-In the [developer dashboard](https://chrome.google.com/webstore/devconsole), with the files of the published release:
+From the second version on, submit with the **Publish to stores** workflow instead ([store-publishing.md](store-publishing.md)), and change the listing in the dashboard only when its text changed. For the first submission, in the [developer dashboard](https://chrome.google.com/webstore/devconsole), with the files of the published release:
 
 1. First submission: **New item**, upload `ntfy-desk-<version>-chrome.zip`. Later versions: **Package → Upload new package**, the ZIP, or the `.crx` once verified uploads are on ([crx-signing.md](crx-signing.md)).
 2. **Store listing**: `chrome-web-store/description.txt` into Description; category, language and images as listed in [`assets/store-listings/README.md`](../assets/store-listings/README.md).
@@ -73,7 +73,7 @@ In the [developer dashboard](https://chrome.google.com/webstore/devconsole), wit
 
 ## 6. Firefox Add-ons
 
-On [addons.mozilla.org](https://addons.mozilla.org/developers/):
+From the second version on, submit with the **Publish to stores** workflow ([store-publishing.md](store-publishing.md)); it attaches the sources ZIP. For the first submission, on [addons.mozilla.org](https://addons.mozilla.org/developers/):
 
 1. **Submit a New Add-on** (later: **Upload New Version**), distribution **On this site**, upload `ntfy-desk-<version>-firefox.zip`. Compatibility: Firefox for desktop.
 2. Source code: answer **Yes** and upload `ntfy-desk-<version>-sources.zip`.
@@ -86,4 +86,4 @@ Mozilla signs the add-on; the signed file is then installed from its Add-ons pag
 
 - Put the store addresses into the website's configuration of install targets and into README's **Install** section. Until then both point to GitHub Releases.
 - Update the Roadmap in `AGENTS.md` if the release closed an item.
-- When the repository becomes public: the description and topics in `assets/store-listings/github/README.md`, and the reviewer on the `release` environment.
+- When the repository becomes public: the description and topics in `assets/store-listings/github/README.md`, and yourself as required reviewer on the `release`, `store-chrome` and `store-firefox` environments.

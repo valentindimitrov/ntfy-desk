@@ -84,7 +84,7 @@ For end-to-end tests, install the browser once with `pnpm exec playwright instal
 - **Chromium**. Run `pnpm build` and load `.output/chrome-mv3` from the browser's extensions page.
 - **Firefox**. Run `pnpm build:firefox`. Open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on**, and choose `.output/firefox-mv3/manifest.json`. You can also select the Firefox ZIP. The temporary installation lasts until Firefox restarts.
 
-`pnpm zip` produces the Chromium ZIP. `pnpm zip:firefox` produces the Firefox ZIP and a matching sources ZIP for review and distribution. `pnpm verify:packages` checks the three files against the checkout. A release attaches them to a draft GitHub release through the manually started **Prepare release** workflow; publishing it and the store submissions are done by hand ([docs/releasing.md](docs/releasing.md), store text in [`assets/store-listings/`](assets/store-listings/README.md)). For Mozilla submission, provide the sources ZIP and the Firefox build instructions above. [Mozilla source code submission](https://extensionworkshop.com/documentation/publish/source-code-submission/)
+`pnpm zip` produces the Chromium ZIP. `pnpm zip:firefox` produces the Firefox ZIP and a matching sources ZIP for review and distribution. `pnpm verify:packages` checks the three files against the checkout. A release attaches them to a draft GitHub release through the manually started **Prepare release** workflow; publishing it is done by hand, and the manually started **Publish to stores** workflow submits a published release to both stores ([docs/releasing.md](docs/releasing.md), [docs/store-publishing.md](docs/store-publishing.md), store text in [`assets/store-listings/`](assets/store-listings/README.md)). For Mozilla submission, provide the sources ZIP and the Firefox build instructions above. [Mozilla source code submission](https://extensionworkshop.com/documentation/publish/source-code-submission/)
 
 Code layout:
 
@@ -96,7 +96,7 @@ Code layout:
 - `tests/e2e/` contains the Playwright suite and its HTTP test ntfy server.
 - `scripts/browse.ts` opens the extension in an interactive browser via `pnpm browse`.
 - `website/` contains the public website and its [README](website/README.md).
-- `scripts/validate-packages.ts`, `scripts/sign-chrome.ts` and `scripts/crx3.ts` check and sign the release packages ([docs/releasing.md](docs/releasing.md)).
+- `scripts/validate-packages.ts`, `scripts/sign-chrome.ts` and `scripts/crx3.ts` check and sign the release packages ([docs/releasing.md](docs/releasing.md)); `scripts/publish-stores.ts` submits them to the stores ([docs/store-publishing.md](docs/store-publishing.md)).
 
 ## Credits
 

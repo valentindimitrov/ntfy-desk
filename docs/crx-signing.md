@@ -24,7 +24,7 @@ Firefox packages and the sources ZIP are not signed with this key; Mozilla signs
 
 The workflow file can be edited on any branch, so its "part of `origin/main`" check only catches a wrong selection. The `release` environment is the boundary. Create it before the first run: a job that names a missing environment creates it without protection.
 
-1. **Settings → Environments → New environment**, name `release`.
+1. **Settings → Environments → New environment**, name `release` (created on 2026-11-22 with step 2's rule; the store environments have the same, [store-publishing.md](store-publishing.md)).
 2. **Deployment branches and tags**: *Selected branches and tags*, one rule: `main`.
 3. **Required reviewers**: add yourself. Leave **Prevent self-review** off while you are the only reviewer, or you couldn't approve your own release.
 4. **Environment secrets**: add `NTFY_DESK_CRX_PRIVATE_KEY` (below). Paste or pipe it yourself, never through an agent.
