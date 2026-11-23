@@ -146,8 +146,22 @@ test.describe('receiving', () => {
       const { backgroundColor, borderRadius, color, fontSize, fontWeight, padding } = getComputedStyle(button);
       return { backgroundColor, borderRadius, color, fontSize, fontWeight, padding };
     };
+    // Both buttons fade their background (0.2 s) while the theme settles after loading: compare them in the same
+    // instant, and again until they match, rather than one reading of each
+    await expect
+      .poll(() =>
+        popup.evaluate(() => {
+          const [file, send] = ['#file-btn', '#send-btn'].map((selector) => {
+            const { backgroundColor, borderRadius, color, fontSize, fontWeight, padding } = getComputedStyle(
+              document.querySelector(selector)!,
+            );
+            return JSON.stringify({ backgroundColor, borderRadius, color, fontSize, fontWeight, padding });
+          });
+          return file === send;
+        }),
+      )
+      .toBe(true);
     const sendStyle = await popup.locator('#send-btn').evaluate(actionStyle);
-    expect(await popup.locator('#file-btn').evaluate(actionStyle)).toEqual(sendStyle);
     await popup.locator('#settings-btn').click();
     await selectSettingsTab(popup, 'Topics');
     const table = popup.getByRole('table', { name: 'Topic settings' });
