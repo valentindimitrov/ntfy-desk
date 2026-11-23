@@ -23,7 +23,7 @@ The site is **not public yet**. It goes live only when the owner does the steps 
 | `install.ts` | Where the extension can be installed from. An empty store URL is shown as "coming soon". |
 | `markdown.ts` | Converts `PRIVACY.md` for the privacy policy page. |
 | `website.css` | The one stylesheet. Colours and fonts are the extension's (`assets/styles.css`, `public/fonts`). |
-| `media/` | Screenshots (WebP, light and dark), their sizes (`shots.json`), and the social card with its source. |
+| `media/` | Screenshots (WebP, light and dark), their sizes (`shots.json`), the social card with its source, and the browser icons of the header's store buttons (`browsers/`, sources in its README). |
 | `public/` | `robots.txt` and `sitemap.xml`, copied as they are. |
 | `wrangler.jsonc`, `deploy/` | The Cloudflare deployment. |
 

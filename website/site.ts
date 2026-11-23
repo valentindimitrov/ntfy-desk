@@ -43,15 +43,34 @@ const GITHUB_ICON = `<svg width="18" height="18" viewBox="0 0 16 16" fill="curre
 const wordmark = (size: number) =>
   `<a class="wordmark" href="/"><img src="../public/icon/128.png" width="${size}" height="${size}" alt="" />ntfy Desk</a>`;
 
+/** The header's store buttons, in this order; an empty store address leads to the guide's manual install */
+const STORE_BUTTONS = [
+  { name: 'Vivaldi', icon: 'vivaldi', store: 'the Chrome Web Store', url: INSTALL.chromeWebStore },
+  { name: 'Chrome', icon: 'chrome', store: 'the Chrome Web Store', url: INSTALL.chromeWebStore },
+  { name: 'Edge', icon: 'edge', store: 'the Chrome Web Store', url: INSTALL.chromeWebStore },
+  { name: 'Firefox', icon: 'firefox', store: 'Firefox Add-ons', url: INSTALL.firefoxAddons },
+];
+
+function storeButton({ name, icon, store, url }: (typeof STORE_BUTTONS)[number]): string {
+  const target = url
+    ? `href="${url}" target="_blank" rel="noreferrer" title="Get ntfy Desk from ${store}"`
+    : `href="/getting-started#install" title="Coming soon to ${store}: until then, install a release build by hand"`;
+  return `<a class="store-link" aria-label="${name}" ${target}><img src="./media/browsers/${icon}.svg" width="20" height="20" alt="" /><span class="store-name">${name}</span></a>`;
+}
+
 function header(page: string): string {
   const current = (name: string) => (page === name ? ' aria-current="page"' : '');
   return `<div class="header-shell">
   <header class="site-header wrap">
     ${wordmark(32)}
     <nav aria-label="Main navigation">
-      <a class="nav-link nav-features" href="/#features">Features</a>
-      <a class="nav-link" href="/getting-started"${current('getting-started')}>Getting started</a>
-      <a class="nav-button" href="${REPOSITORY_URL}">${GITHUB_ICON}<span>GitHub</span></a>
+      <a class="nav-setup" href="/getting-started"${current('getting-started')}>Setup instructions</a>
+      <div class="header-install">
+        <div class="store-links" role="group" aria-label="Extension stores">
+          ${STORE_BUTTONS.map(storeButton).join('\n          ')}
+        </div>
+        <a class="nav-github" href="${REPOSITORY_URL}" target="_blank" rel="noreferrer">${GITHUB_ICON}<span>GitHub</span></a>
+      </div>
     </nav>
   </header>
 </div>`;

@@ -82,8 +82,14 @@ describe.each(PAGES)('website page $file', ({ file, route }) => {
       expect(image.hasAttribute('alt'), `${src} has no alt`).toBe(true);
       expect(Number(image.getAttribute('width')), `${src} has no width`).toBeGreaterThan(0);
       expect(Number(image.getAttribute('height')), `${src} has no height`).toBeGreaterThan(0);
-      // Only the logo next to the site's name is decorative
-      if (!image.closest('.wordmark')) expect(image.getAttribute('alt')!.length, `${src} needs a description`).toBeGreaterThan(40);
+      // Decorative: the logo next to the site's name, and a store button's browser icon (the button is named by its label)
+      const storeButton = image.closest('.store-link');
+      if (storeButton)
+        expect(storeButton.getAttribute('aria-label'), `${src} is in a store button without a label`).toMatch(
+          /^(Vivaldi|Chrome|Edge|Firefox)$/,
+        );
+      if (image.closest('.wordmark') || storeButton) expect(image.getAttribute('alt'), `${src} is decorative`).toBe('');
+      else expect(image.getAttribute('alt')!.length, `${src} needs a description`).toBeGreaterThan(40);
     }
     // Every screenshot has a dark version of the same size next to it
     for (const picture of page(file).querySelectorAll('picture')) {
