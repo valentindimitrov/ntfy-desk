@@ -193,6 +193,8 @@ describe('website', () => {
     for (const part of ['LICENSE', 'NOTICE.md', 'public/fonts/LICENSE.txt']) expect(license).toContain(readFileSync(resolve(part), 'utf8'));
     const headers = readFileSync(join(output, '_headers'), 'utf8');
     expect(headers).toContain(`Content-Security-Policy: ${CONTENT_SECURITY_POLICY}; frame-ancestors 'none'`);
+    // Pull request previews (pr-<number>-….workers.dev) stay out of search engines
+    expect(headers).toMatch(/^https:\/\/:version\.:subdomain\.workers\.dev\/\*\n {2}X-Robots-Tag: noindex$/m);
     expect(CONTENT_SECURITY_POLICY).toContain("default-src 'none'");
     expect(CONTENT_SECURITY_POLICY).not.toMatch(/unsafe|https?:|\*|data:/);
     // PNG: 2400 × 1254, as the pages' og:image tags say

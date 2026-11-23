@@ -43,7 +43,8 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
       # The website (website/README.md): static files, built here without secrets. The website job
-      # below publishes this artifact as it is, without installing or running anything from it.
+      # below publishes this artifact as it is, without installing or running anything from it; for a pull
+      # request, website-preview.yml (started when this workflow completes) uploads it as a preview.
       - run: pnpm website:build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

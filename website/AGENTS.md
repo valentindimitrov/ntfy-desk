@@ -22,6 +22,6 @@ The public site for `https://ntfy-desk.minddevops.eu` (its policy at `/privacy-p
 
 ## Deployment
 
-- Pushes to `main` deploy through the `website` job in `.github/workflows/ci.yml`, once the owner has set it up (`README.md`, "Going live"). Don't deploy by hand, and don't call the Cloudflare API.
-- The job that holds the token installs only `deploy/` and publishes the artifact as files. Keep it that way: no build step, no script from the artifact, actions pinned to commits.
+- Every push to `main` that passes CI deploys through the `website` job in `.github/workflows/ci.yml`, once the owner has set it up (`README.md`, "Going live"). Pull requests get a preview from `.github/workflows/website-preview.yml`, a `workflow_run` workflow that always runs `main`'s definition. Don't deploy by hand, and don't call the Cloudflare API.
+- The jobs that hold the token install only `deploy/` and publish the artifact as files. Keep it that way: no build step, no script from the artifact, actions pinned to commits. The preview workflow's checks on the artifact (`resolve` job) are its security boundary: don't loosen them, and keep the token out of `pull_request` workflows.
 - A local build or a push doesn't prove the site is live: after a deployment, check the public address.

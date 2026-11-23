@@ -78,21 +78,32 @@ The site is a Cloudflare Worker with static assets only, `ntfy-desk-website` (`w
 - The `check` job builds the site and uploads `.output/website` as the `website` artifact. It has no secrets.
 - The `website` job runs on pushes to `main`, in the environment `production`. It checks out only `wrangler.jsonc` and `deploy/`, installs the Wrangler locked in `deploy/pnpm-lock.yaml` (a standalone pnpm project), downloads the artifact and deploys it. It is skipped while the variable `CLOUDFLARE_ACCOUNT_ID` is unset.
 
-There are no pull request previews.
+- Pull requests get a preview through `.github/workflows/website-preview.yml` (below).
+
+### Pull request previews
+
+When the CI run of a pull request from a branch of this repository succeeds, **Website preview** uploads its `website` artifact as a preview version of the Worker with the alias `pr-<number>`, at `https://pr-<number>-ntfy-desk-website.<subdomain>.workers.dev`. Production doesn't change. The pull request's commit gets the status **Website preview**, linking the preview, or the run when the upload failed. Previews send `X-Robots-Tag: noindex` (`_headers`).
+
+- It is a `workflow_run` workflow: GitHub always runs the definition on `main`, with `main` as its ref, so a branch can't rewrite the job that holds the token. Its changes take effect only once merged. A `pull_request` workflow would run the branch's own file.
+- The artifact comes from the branch, so it is treated as files to publish and nothing else. A job without secrets downloads it through the API, checks that it belongs to the tested commit, and extracts regular files only: no path traversal, links or encrypted entries, no `_worker.js`, `.assetsignore`, `.wrangler` or `node_modules`, at most 2,000 files, 25 MiB per file and 100 MiB in all, with an `index.html`. Only then does the deploy job, on another machine, run `main`'s locked Wrangler on them.
+- Pull requests from forks and from Dependabot get no preview. A commit that is no longer the pull request's head when its upload starts is skipped, so a late run can't replace a newer preview.
+- It is skipped while `CLOUDFLARE_ACCOUNT_ID` is unset, like production. It needs the workers.dev subdomain enabled on the Cloudflare account.
 
 ### Going live
 
 Nothing is deployed until the owner does this, once:
 
 1. In Cloudflare, create an API token from the **Edit Cloudflare Workers** template, limited to the account and to the `minddevops.eu` zone.
-2. In the repository's settings on GitHub, under **Environments**, create the environment `production`. Under **Deployment branches and tags**, choose **Selected branches and tags** and add `main`.
-3. In that environment, add the secret `CLOUDFLARE_API_TOKEN` with the token. Keep it an environment secret, not a repository secret.
-4. Add the variable `CLOUDFLARE_ACCOUNT_ID` with the Cloudflare account ID. A repository variable works, and so does a variable of the `production` environment.
-5. Push to `main`, or run the CI workflow again on `main`. The `website` job then deploys, and Cloudflare creates the DNS record and the certificate for the custom domain on the first deployment.
-6. Open https://ntfy-desk.minddevops.eu and check the pages, and the response headers with `curl -I`.
+2. The environments `production` and `preview` exist on GitHub (created on 2026-11-22 and 2026-11-23), each accepting deployments from `main` only (**Deployment branches and tags**: *Selected branches and tags*, `main`). A job that names a missing environment creates it without that rule.
+3. In both environments, add the secret `CLOUDFLARE_API_TOKEN` with the token. Keep it an environment secret, not a repository secret.
+4. Add the repository variable `CLOUDFLARE_ACCOUNT_ID` with the Cloudflare account ID. It has to be a repository variable: the preview workflow checks it before it enters an environment.
+5. Check that the account's workers.dev subdomain is enabled (**Workers & Pages**): previews are served there.
+6. Cloudflare creates the custom domain's DNS record: remove any existing record for `ntfy-desk.minddevops.eu` first, or the first deployment fails.
+7. Push to `main`, or run the CI workflow again on `main`. The `website` job then deploys, and Cloudflare creates the DNS record and the certificate for the custom domain on the first deployment.
+8. Open https://ntfy-desk.minddevops.eu and check the pages, and the response headers with `curl -I`. Then push to a pull request and check its **Website preview** status.
 
-Why an environment secret: a repository secret is passed to every `pull_request` run from a branch of this repository, and that branch controls its own workflow file, so it could add a job that reads the token. An environment limited to `main` refuses those runs. Anyone who can push to `main` can still change the workflow and use the token.
+Why an environment secret: a repository secret is passed to every `pull_request` run from a branch of this repository, and that branch controls its own workflow file, so it could add a job that reads the token. An environment limited to `main` refuses those runs (their ref is `refs/pull/<n>/merge`), while pushes to `main` and the preview workflow (ref `main`) are let in. Anyone who can push to `main` can still change the workflow and use the token.
 
-To take the site down again, clear the variable (the job is skipped) and delete the Worker in Cloudflare.
+To take the site down again, clear the variable (both workflows are skipped) and delete the Worker in Cloudflare.
 
 To update Wrangler, change its version in `deploy/package.json` and run `pnpm install --lockfile-only` in `deploy/`.
