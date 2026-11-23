@@ -24,7 +24,7 @@ The site is **not public yet**. It goes live only when the owner does the steps 
 | `markdown.ts` | Converts `PRIVACY.md` for the privacy policy page. |
 | `website.css` | The one stylesheet. Colours and fonts are the extension's (`assets/styles.css`, `public/fonts`). |
 | `media/` | Screenshots (WebP, light and dark), their sizes (`shots.json`), the social card with its source, and the browser icons of the header's store buttons (`browsers/`, sources in its README). |
-| `public/` | `robots.txt`, `sitemap.xml` and `_redirects` (old addresses: `/getting-started` is now `/setup-instructions`), copied as they are. |
+| `public/` | `robots.txt`, `sitemap.xml`, `_redirects` (old addresses: `/getting-started` is now `/setup-instructions`; `/security.txt`) and `.well-known/security.txt`, copied as they are. |
 | `wrangler.jsonc`, `deploy/` | The Cloudflare deployment. |
 
 The build also writes `LICENSE.txt` (the GPL, `NOTICE.md` and the Roboto fonts' Apache licence), `_headers` and `social-card.png` (unhashed, because link previews need a fixed address).
@@ -52,6 +52,16 @@ Put the listing's address in `install.ts` (`chromeWebStore` or `firefoxAddons`).
 Screenshots are written into the pages as `<img data-shot="name" alt="…" />`. The build replaces that with the light and dark files and the size from `shots.json`.
 
 Run one Chromium at a time, and look at the new files before committing them: the times ("4m ago") and file sizes change with every run.
+
+## Search engines
+
+What search engines read is checked by `tests/unit/website.test.ts`: a description of 50 to 160 characters on every page (a result shows about that much), one `h1`, a canonical address equal to the page's address, and a sitemap that lists exactly the public pages (`PAGES` in the test; the 404 page is `noindex` and stays out). The home page carries `WebSite` structured data (`STRUCTURED_DATA` in `site.ts`), so results can show the name "ntfy Desk" instead of the domain. It is a JSON-LD data block: browsers don't run it, so the Content-Security-Policy still allows no script.
+
+The checklist this follows, and the steps outside the repository (Search Console, Bing, the store listings), are in the owner's setup repository (`z_project_tooling/website-checklist.md`).
+
+## security.txt
+
+`public/.well-known/security.txt` tells security researchers where to report: GitHub's private vulnerability reporting, with `SECURITY.md` as the policy; `/security.txt` redirects there (`public/_redirects`). Its `Expires` date must stay in the future and at most a year ahead: the website test fails otherwise. Renew it before 2027-05-23.
 
 ## Link previews
 

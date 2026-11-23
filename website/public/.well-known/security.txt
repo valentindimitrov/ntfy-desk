@@ -1,0 +1,5 @@
+Contact: https://github.com/valentindimitrov/ntfy-desk/security/advisories/new
+Expires: 2027-05-23T00:00:00Z
+Preferred-Languages: en
+Canonical: https://ntfy-desk.minddevops.eu/.well-known/security.txt
+Policy: https://github.com/valentindimitrov/ntfy-desk/blob/main/SECURITY.md

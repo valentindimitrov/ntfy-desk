@@ -1,6 +1,7 @@
 // The public website (website/): built here as pnpm website:build does, then the output is checked.
 // It loads nothing from other sites, its pages and files all exist, images are described and sized,
-// and the privacy policy page says what PRIVACY.md says.
+// the privacy policy page says what PRIVACY.md says, and what search engines read is there: descriptions,
+// canonical addresses, the sitemap, structured data and security.txt.
 
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,7 +11,7 @@ import { build } from 'vite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { INSTALL } from '@/website/install';
 import { renderMarkdown } from '@/website/markdown';
-import { CONTENT_SECURITY_POLICY, SITE_URL } from '@/website/site';
+import { CONTENT_SECURITY_POLICY, SITE_URL, STRUCTURED_DATA } from '@/website/site';
 
 const PAGES = [
   { file: 'index.html', route: '/' },
@@ -47,7 +48,11 @@ afterAll(() => rmSync(output, { recursive: true, force: true }));
 describe.each(PAGES)('website page $file', ({ file, route }) => {
   it('loads nothing from another site', () => {
     const document = page(file);
-    expect(document.querySelectorAll('script, iframe, object, embed, video, audio, form, style, [style]')).toHaveLength(0);
+    // The home page's JSON-LD is data that no browser runs; any other script is refused
+    expect(
+      document.querySelectorAll('script:not([type="application/ld+json"]), iframe, object, embed, video, audio, form, style, [style]'),
+    ).toHaveLength(0);
+    expect(document.querySelectorAll('script')).toHaveLength(file === 'index.html' ? 1 : 0);
     const loaded = [...document.querySelectorAll('*')].flatMap((element) => [
       ...LOADING.map((name) => element.getAttribute(name)),
       // A stylesheet or icon is fetched; a canonical link is only an address
@@ -128,7 +133,9 @@ describe.each(PAGES)('website page $file', ({ file, route }) => {
     expect(text(document.querySelector('footer')?.textContent)).toContain('not affiliated with ntfy');
     expect(sources.get(file)).not.toMatch(/<!-- site:|data-shot=/);
     const meta = (selector: string) => document.querySelector(selector)?.getAttribute('content');
-    expect(meta('meta[name="description"]')).toBeTruthy();
+    // What a search result shows under the title: long enough to say something, short enough not to be cut
+    expect(meta('meta[name="description"]')?.length).toBeGreaterThanOrEqual(50);
+    expect(meta('meta[name="description"]')?.length).toBeLessThanOrEqual(160);
     if (!route) {
       expect(meta('meta[name="robots"]')).toBe('noindex');
       return;
@@ -192,6 +199,35 @@ describe('website', () => {
     const stored = [...sources.values()].join('\n');
     if (!INSTALL.chromeWebStore) expect(stored).not.toContain('chromewebstore.google.com');
     if (!INSTALL.firefoxAddons) expect(stored).not.toContain('addons.mozilla.org');
+  });
+
+  it("tells search engines the site's name on the home page", () => {
+    const blocks = [...page('index.html').querySelectorAll('script[type="application/ld+json"]')];
+    expect(blocks).toHaveLength(1);
+    expect(JSON.parse(blocks[0]!.textContent!)).toEqual(STRUCTURED_DATA);
+    expect(STRUCTURED_DATA).toEqual({ '@context': 'https://schema.org', '@type': 'WebSite', name: 'ntfy Desk', url: `${SITE_URL}/` });
+  });
+
+  it('lists exactly the public pages in the sitemap', () => {
+    const sitemap = readFileSync(join(output, 'sitemap.xml'), 'utf8');
+    const listed = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+    const routes = PAGES.flatMap(({ route }) => (route ? [SITE_URL + route] : []));
+    expect(new Set(listed)).toEqual(new Set(routes));
+    expect(listed).toHaveLength(routes.length);
+    expect(readFileSync(join(output, 'robots.txt'), 'utf8')).toContain(`Sitemap: ${SITE_URL}/sitemap.xml`);
+  });
+
+  it('publishes a security.txt that has not expired', () => {
+    const security = readFileSync(join(output, '.well-known', 'security.txt'), 'utf8');
+    expect(security).toMatch(/^Contact: https:\/\/github\.com\/valentindimitrov\/ntfy-desk\/security\/advisories\/new$/m);
+    expect(security).toContain(`Canonical: ${SITE_URL}/.well-known/security.txt`);
+    expect(security).toMatch(/^Policy: https:\/\/github\.com\/valentindimitrov\/ntfy-desk\/blob\/main\/SECURITY\.md$/m);
+    expect(existsSync(resolve('SECURITY.md'))).toBe(true);
+    // Renew it before this fails: website/README.md, "security.txt"
+    const expires = Date.parse(/^Expires: (\S+)$/m.exec(security)?.[1] ?? '');
+    expect(expires, 'security.txt has expired: set a new Expires date, at most a year ahead').toBeGreaterThan(Date.now());
+    expect(expires - Date.now()).toBeLessThan(366 * 24 * 60 * 60 * 1000);
+    expect(readFileSync(join(output, '_redirects'), 'utf8')).toContain('/security.txt /.well-known/security.txt 301');
   });
 
   it('ships the licences, the security headers and the social card', () => {
