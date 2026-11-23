@@ -7,7 +7,7 @@ The public website (`https://ntfy-desk.minddevops.eu`) is in `website/`: read `w
 ## Commands
 
 - `pnpm check`: format check, lint with type checking, and Vitest. Run it before every commit; `pnpm fmt` fixes formatting.
-- Lint and format come from Vite+ (`vp lint`, `vp fmt`; settings in `vite.config.ts`, used only by Vite+). Oxlint runs with type-aware rules and the full type check (`typeCheck`), strict with `noUncheckedIndexedAccess`; warnings fail. `pnpm compile` runs `tsc --noEmit` on its own. Markdown isn't formatted.
+- Lint and format come from Vite+ (`vp lint`, `vp fmt`; settings in `vite.config.ts`, used only by Vite+). Oxlint runs with type-aware rules and the full type check (`typeCheck`), strict with `noUncheckedIndexedAccess`; warnings fail. `pnpm compile` runs `tsc --noEmit` on its own. Markdown isn't formatted. `vitest` is pinned to the exact version `vite-plus` depends on (5.1.0 with vite-plus 1.7.0): update them together, or `pnpm peers check` reports a mismatch.
 - `pnpm build` / `pnpm build:firefox`: `.output/chrome-mv3`, `.output/firefox-mv3`.
 - `pnpm zip` / `pnpm zip:firefox`: the release zips. `pnpm verify:packages` (`scripts/validate-packages.ts`) checks them against the checkout: manifests (version, name, permissions, Firefox id), license notices, no stray files, source maps or E2E hooks, sources identical to the repository. Its expected permissions (`EXTENSION`) are written out, not read from `wxt.config.ts`: change a permission in both, and its justification in `assets/store-listings/` (a unit test compares them).
 - `pnpm website:build`: the website, into `.output/website` (`website/README.md`). `pnpm check` builds it too, in `tests/unit/website.test.ts`.
