@@ -27,7 +27,7 @@ A browser extension for [ntfy](https://ntfy.sh): send notifications to your topi
 
 ## Install
 
-Published versions, extension ZIPs and matching source archives are available on [GitHub Releases](https://github.com/valentindimitrov/ntfy-desk/releases) when a release is published. For preview builds, use the `ntfy-desk` artifact on a successful [CI run](https://github.com/valentindimitrov/ntfy-desk/actions/workflows/ci.yml). Downloading a CI artifact requires signing in to GitHub with access to the repository.
+Published versions, extension ZIPs and matching source archives are available on [GitHub Releases](https://github.com/valentindimitrov/ntfy-desk/releases) when a release is published. For preview builds, use the `ntfy-desk` artifact on a successful [CI run](https://github.com/valentindimitrov/ntfy-desk/actions/workflows/ci.yml). Downloading a CI artifact requires signing in to GitHub.
 
 - **Chromium**. Download and extract the `-chrome.zip` file. Open the browser's extensions page, turn on **Developer mode**, then choose **Load unpacked** and select the folder containing `manifest.json`.
 - **Firefox 142 or later**. For a permanent installation, use a signed add-on when one becomes available. The Firefox ZIP from GitHub is for [temporary testing](#load-a-local-build). [Firefox signing and distribution](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)

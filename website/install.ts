@@ -9,5 +9,5 @@ export const INSTALL = {
   /** Extension ZIPs and the matching source archive of each release */
   githubReleases: 'https://github.com/valentindimitrov/ntfy-desk/releases',
   /** Whether a visitor can open the repository; while false, the pages say its links don't work yet */
-  repositoryPublic: false,
+  repositoryPublic: true,
 };
