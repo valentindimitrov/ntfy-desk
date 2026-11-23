@@ -1,5 +1,5 @@
 // Customization preferences (storage.sync): the unread badge's scope, notification persistence, the
-// history limit and the inbox display. A missing or invalid stored value reads as the default.
+// history limit, the inbox display and the topic list's place. A missing or invalid stored value reads as the default.
 
 import { browser } from 'wxt/browser';
 
@@ -18,6 +18,10 @@ export type MessageTimes = (typeof MESSAGE_TIMES)[number];
 export const DENSITIES = ['comfortable', 'compact'] as const;
 export type Density = (typeof DENSITIES)[number];
 
+/** side: a column left of the inbox; top: a row above it (the extension's tab uses the row below 960 px either way) */
+export const TOPIC_LAYOUTS = ['side', 'top'] as const;
+export type TopicLayout = (typeof TOPIC_LAYOUTS)[number];
+
 export interface Preferences {
   badgeScope: BadgeScope;
   /** requireInteraction for high and urgent notifications (Chromium only) */
@@ -25,10 +29,18 @@ export interface Preferences {
   historyPerTopic: HistoryLimit;
   messageTimes: MessageTimes;
   inboxDensity: Density;
+  topicLayout: TopicLayout;
 }
 
 /** The storage.sync keys are the property names */
-export const PREFERENCE_KEYS = ['badgeScope', 'keepUrgentOnScreen', 'historyPerTopic', 'messageTimes', 'inboxDensity'] as const;
+export const PREFERENCE_KEYS = [
+  'badgeScope',
+  'keepUrgentOnScreen',
+  'historyPerTopic',
+  'messageTimes',
+  'inboxDensity',
+  'topicLayout',
+] as const;
 
 export const DEFAULT_PREFERENCES: Preferences = {
   badgeScope: 'all',
@@ -36,6 +48,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   historyPerTopic: DEFAULT_HISTORY_PER_TOPIC,
   messageTimes: 'relative',
   inboxDensity: 'comfortable',
+  topicLayout: 'side',
 };
 
 function oneOf<T>(allowed: readonly T[], value: unknown, fallback: T): T {
@@ -49,6 +62,7 @@ export function parsePreferences(stored: Record<string, unknown>): Preferences {
     historyPerTopic: oneOf(HISTORY_LIMITS, stored.historyPerTopic, DEFAULT_PREFERENCES.historyPerTopic),
     messageTimes: oneOf(MESSAGE_TIMES, stored.messageTimes, DEFAULT_PREFERENCES.messageTimes),
     inboxDensity: oneOf(DENSITIES, stored.inboxDensity, DEFAULT_PREFERENCES.inboxDensity),
+    topicLayout: oneOf(TOPIC_LAYOUTS, stored.topicLayout, DEFAULT_PREFERENCES.topicLayout),
   };
 }
 

@@ -47,6 +47,7 @@ const SYNCED = {
   historyPerTopic: 250,
   messageTimes: 'absolute',
   inboxDensity: 'compact',
+  topicLayout: 'top',
 };
 const SETTINGS = { ...SYNCED, topics: ['alerts', 'backups', '__proto__'] } as unknown as BackupSettings;
 
@@ -132,6 +133,7 @@ describe('export', () => {
       historyPerTopic: 100,
       messageTimes: 'relative',
       inboxDensity: 'comfortable',
+      topicLayout: 'side',
     });
   });
 
@@ -226,6 +228,7 @@ describe('import: round trip', () => {
       historyPerTopic: 100,
       messageTimes: 'relative',
       inboxDensity: 'comfortable',
+      topicLayout: 'side',
     });
   });
 

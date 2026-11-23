@@ -1047,6 +1047,53 @@ test.describe('customization', () => {
     });
   });
 
+  test('puts the topic list above the inbox when chosen, in the toolbar popup and the extension tab', async ({
+    configure,
+    openPopup,
+    serviceWorker,
+  }) => {
+    await configure({ topics: 'alerts,coolify' });
+    // Where the topic list sits next to the inbox's message list
+    const layout = (page: Page) =>
+      page.evaluate(() => {
+        const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+        const topics = box('#topic-sidebar');
+        const inbox = box('#notifications-list');
+        return topics.right <= inbox.left ? 'side' : topics.bottom <= inbox.top ? 'top' : 'overlap';
+      });
+    const popup = await openPopup();
+    await popup.setViewportSize({ width: 800, height: 600 });
+    const tab = await openPopup('?mode=page');
+    await tab.setViewportSize({ width: 1280, height: 800 });
+    await expect(popup.locator('.topic-filter-btn')).toHaveCount(3);
+    await expect(tab.locator('.topic-filter-btn')).toHaveCount(3);
+    expect(await layout(popup)).toBe('side');
+    expect(await layout(tab)).toBe('side');
+
+    await popup.getByRole('button', { name: 'Settings' }).click();
+    await selectSettingsTab(popup, 'Appearance');
+    await popup.getByLabel('Topic list').selectOption('Above the inbox');
+    expect(await serviceWorker.evaluate(() => chrome.storage.sync.get('topicLayout'))).toEqual({ topicLayout: 'top' });
+    // The other open view follows at once; the topics are one row, without the divider that resizes them
+    await expect(tab.locator('body')).toHaveAttribute('data-topic-layout', 'top');
+    expect(await layout(tab)).toBe('top');
+    await expect(tab.locator('#topic-divider')).toBeHidden();
+    const rowTops = await tab
+      .locator('.topic-filter-btn')
+      .evaluateAll((buttons) => new Set(buttons.map((b) => b.getBoundingClientRect().top)).size);
+    expect(rowTops).toBe(1);
+    await popup.getByRole('button', { name: 'Back' }).click();
+    expect(await layout(popup)).toBe('top');
+
+    // Beside the inbox again, except in a narrow extension tab, which keeps the row
+    await serviceWorker.evaluate(() => chrome.storage.sync.set({ topicLayout: 'side' }));
+    await expect(tab.locator('body')).toHaveAttribute('data-topic-layout', 'side');
+    expect(await layout(tab)).toBe('side');
+    expect(await layout(popup)).toBe('side');
+    await tab.setViewportSize({ width: 860, height: 800 });
+    expect(await layout(tab)).toBe('top');
+  });
+
   test('lists the keyboard shortcuts in Settings at popup width and opens the browser page that changes them', async ({
     configure,
     context,

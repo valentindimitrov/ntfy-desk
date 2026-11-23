@@ -14,6 +14,7 @@ describe('preferences', () => {
       historyPerTopic: 100,
       messageTimes: 'relative',
       inboxDensity: 'comfortable',
+      topicLayout: 'side',
     });
   });
 
@@ -24,6 +25,7 @@ describe('preferences', () => {
       historyPerTopic: 500,
       messageTimes: 'absolute',
       inboxDensity: 'compact',
+      topicLayout: 'top',
     };
     await fakeBrowser.storage.sync.set(stored);
     expect(await getPreferences()).toEqual(stored);
@@ -37,6 +39,7 @@ describe('preferences', () => {
         historyPerTopic: 5000,
         messageTimes: ['absolute'],
         inboxDensity: 'compact',
+        topicLayout: 'left',
       }),
     ).toEqual({ ...DEFAULT_PREFERENCES, inboxDensity: 'compact' });
     // A number stored as text, a fraction, or a prototype key is not one of the choices

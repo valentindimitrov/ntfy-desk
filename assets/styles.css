@@ -1844,6 +1844,31 @@ body:not(.page-mode) .send-section :is(.form-input, .form-textarea) {
   max-height: max(250px, calc(100vh - 170px));
 }
 
+/* Topics in a row above the inbox: the Topic list setting (topicLayout), in the popup and the tab, and
+   the extension's tab below 960 px whatever the setting. The two blocks must stay the same. */
+body[data-topic-layout='top'] #main-view {
+  --inbox-start-inset: 0px;
+  --receive-space: var(--inbox-space);
+}
+
+body[data-topic-layout='top'] .receive-layout {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+body[data-topic-layout='top'] .topic-divider {
+  display: none;
+}
+
+body[data-topic-layout='top'] .topic-sidebar {
+  flex: none;
+  flex-direction: row;
+  overflow-x: auto;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
 @media (max-width: 959px) {
   .page-mode #main-view {
     --inbox-start-inset: 0px;

@@ -84,6 +84,7 @@ const SETTING_NAMES: Record<keyof BackupSettings, string> = {
   historyPerTopic: 'messages kept per topic',
   messageTimes: 'message times',
   inboxDensity: 'density',
+  topicLayout: 'topic list layout',
 };
 export const BACKUP_KEYS = Object.keys(SETTING_NAMES) as (keyof BackupSettings)[];
 

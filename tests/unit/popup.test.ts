@@ -1469,7 +1469,7 @@ describe('settings', () => {
     select(id).value = value;
     select(id).dispatchEvent(new Event('change'));
   };
-  const PREFERENCES = ['badgeScope', 'keepUrgentOnScreen', 'historyPerTopic', 'messageTimes', 'inboxDensity'];
+  const PREFERENCES = ['badgeScope', 'keepUrgentOnScreen', 'historyPerTopic', 'messageTimes', 'inboxDensity', 'topicLayout'];
 
   it('groups the settings under headings', async () => {
     await openPopup();
@@ -1494,15 +1494,24 @@ describe('settings', () => {
   });
 
   it('shows the defaults, and the default in place of an invalid stored value', async () => {
-    await fakeBrowser.storage.sync.set({ badgeScope: 7, historyPerTopic: 99, messageTimes: 'iso', inboxDensity: 'compact' });
+    await fakeBrowser.storage.sync.set({
+      badgeScope: 7,
+      historyPerTopic: 99,
+      messageTimes: 'iso',
+      inboxDensity: 'compact',
+      topicLayout: 'left',
+    });
     await openPopup();
     expect(document.body.dataset.density).toBe('compact');
+    expect(document.body.dataset.topicLayout).toBe('side');
     await openSettings();
     expect(select('#badge-scope-select').value).toBe('all');
     expect($<HTMLInputElement>('#keep-urgent-checkbox').checked).toBe(true);
     expect(select('#history-limit-select').value).toBe('100');
     expect(select('#message-times-select').value).toBe('relative');
     expect(select('#density-select').value).toBe('compact');
+    expect(select('#topic-layout-select').value).toBe('side');
+    expect([...select('#topic-layout-select').options].map((option) => option.value)).toEqual(['side', 'top']);
     expect([...select('#history-limit-select').options].map((option) => option.value)).toEqual(['50', '100', '250', '500']);
   });
 
@@ -1515,6 +1524,7 @@ describe('settings', () => {
     choose('#history-limit-select', '500');
     choose('#message-times-select', 'absolute');
     choose('#density-select', 'compact');
+    choose('#topic-layout-select', 'top');
     await flush();
     expect(set.mock.calls.map(([items]) => items)).toEqual([
       { badgeScope: 'notifying' },
@@ -1522,6 +1532,7 @@ describe('settings', () => {
       { historyPerTopic: 500 },
       { messageTimes: 'absolute' },
       { inboxDensity: 'compact' },
+      { topicLayout: 'top' },
     ]);
     expect(await fakeBrowser.storage.sync.get(['topics', 'apiUrl'])).toEqual({
       apiUrl: 'https://ntfy.example',
@@ -1562,16 +1573,19 @@ describe('settings', () => {
   it('follows preferences changed in another view or through sync, without a reload', async () => {
     await fakeBrowser.storage.local.set({ receivedNotifications: [message('recent', 'alerts', 5)] });
     await openPopup('?mode=page');
-    await fakeBrowser.storage.sync.set({ inboxDensity: 'compact', messageTimes: 'absolute', historyPerTopic: 250 });
+    await fakeBrowser.storage.sync.set({ inboxDensity: 'compact', messageTimes: 'absolute', historyPerTopic: 250, topicLayout: 'top' });
     await waitFor(() => expect(document.body.dataset.density).toBe('compact'));
+    expect(document.body.dataset.topicLayout).toBe('top');
+    expect(select('#topic-layout-select').value).toBe('top');
     await waitFor(() => expect($('.notification-time').textContent).not.toContain('ago'));
     expect(select('#history-limit-select').value).toBe('250');
     expect(select('#density-select').value).toBe('compact');
 
     // An invalid value, and a removed key, read as the defaults
     await fakeBrowser.storage.sync.set({ inboxDensity: 'tiny' });
-    await fakeBrowser.storage.sync.remove(['messageTimes', 'historyPerTopic']);
+    await fakeBrowser.storage.sync.remove(['messageTimes', 'historyPerTopic', 'topicLayout']);
     await waitFor(() => expect(document.body.dataset.density).toBe('comfortable'));
+    expect(document.body.dataset.topicLayout).toBe('side');
     await waitFor(() => expect($('.notification-time').textContent).toBe('alerts · 5m ago'));
     expect(select('#history-limit-select').value).toBe('100');
     expect(await fakeBrowser.storage.sync.get(PREFERENCES)).toEqual({ inboxDensity: 'tiny' }); // reading never writes

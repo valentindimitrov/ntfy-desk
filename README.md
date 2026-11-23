@@ -34,7 +34,7 @@ Published versions, extension ZIPs and matching source archives are available on
 
 ## Setup
 
-The settings (gear icon) have five tabs: **Server** (items 1 to 4 below), **Topics** (5 and 6), **Messages** (7 to 9: Notifications, Inbox and Sending), **Appearance** (the theme, **Freeze dividers** and **Remember collapsed/expanded state**) and **More** (10 and 11). The arrow keys, Home and End move between the tabs. Settings opens on **Server** while something there needs you (no server yet, server access not granted, or a server to confirm for your credentials), otherwise on the tab used last; a dot marks a tab with something to fix. Below the tabs are links to the project on GitHub, its website and its issues page (**Contact**).
+The settings (gear icon) have five tabs: **Server** (items 1 to 4 below), **Topics** (5 and 6), **Messages** (7 to 9: Notifications, Inbox and Sending), **Appearance** (the theme, **Topic list** beside or above the inbox, **Freeze dividers** and **Remember collapsed/expanded state**) and **More** (10 and 11). The arrow keys, Home and End move between the tabs. Settings opens on **Server** while something there needs you (no server yet, server access not granted, or a server to confirm for your credentials), otherwise on the tab used last; a dot marks a tab with something to fix. Below the tabs are links to the project on GitHub, its website and its issues page (**Contact**).
 
 Use an HTTPS server and a topic with access controls for sensitive messages. Anyone who can read a public topic can receive what you send to it. Start with a harmless test message. [ntfy quick start](https://docs.ntfy.sh/)
 

@@ -77,15 +77,17 @@ function updateThemeChips(): void {
   });
 }
 
-/** Show the preferences in their controls, and apply the inbox density (CSS on the body) */
+/** Show the preferences in their controls, and apply the inbox density and the topic list's place (CSS on the body) */
 export function applyPreferences(): void {
-  const { badgeScope, keepUrgentOnScreen, historyPerTopic, messageTimes, inboxDensity } = state.preferences;
+  const { badgeScope, keepUrgentOnScreen, historyPerTopic, messageTimes, inboxDensity, topicLayout } = state.preferences;
   document.body.dataset.density = inboxDensity;
+  document.body.dataset.topicLayout = topicLayout;
   elements.badgeScopeSelect.value = badgeScope;
   elements.keepUrgentCheckbox.checked = keepUrgentOnScreen;
   elements.historyLimitSelect.value = String(historyPerTopic);
   elements.messageTimesSelect.value = messageTimes;
   elements.densitySelect.value = inboxDensity;
+  elements.topicLayoutSelect.value = topicLayout;
 }
 
 /** A change from this view, another open view or browser sync */
@@ -835,6 +837,7 @@ export function setupSettings(): void {
   );
   elements.messageTimesSelect.addEventListener('change', () => savePreference('messageTimes', elements.messageTimesSelect.value));
   elements.densitySelect.addEventListener('change', () => savePreference('inboxDensity', elements.densitySelect.value));
+  elements.topicLayoutSelect.addEventListener('change', () => savePreference('topicLayout', elements.topicLayoutSelect.value));
   // requireInteraction is Chromium-only: Firefox has no such option
   elements.keepUrgentGroup.hidden = import.meta.env.BROWSER === 'firefox';
   elements.shortcutSettingsBtn.addEventListener('click', () => void changeShortcuts());

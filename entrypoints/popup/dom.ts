@@ -88,6 +88,7 @@ export function getElements() {
     historyLimitSelect: byId<HTMLSelectElement>('history-limit-select'),
     messageTimesSelect: byId<HTMLSelectElement>('message-times-select'),
     densitySelect: byId<HTMLSelectElement>('density-select'),
+    topicLayoutSelect: byId<HTMLSelectElement>('topic-layout-select'),
     shortcutList: byId('shortcut-list'),
     shortcutSettingsBtn: byId<HTMLButtonElement>('shortcut-settings-btn'),
     shortcutHint: byId('shortcut-hint'),
