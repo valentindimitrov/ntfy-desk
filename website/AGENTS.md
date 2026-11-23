@@ -6,7 +6,7 @@ The public site for `https://ntfy-desk.minddevops.eu` (its policy at `/privacy-p
 
 - Every claim comes from the repository's `README.md`, `PRIVACY.md`, `ARCHITECTURE.md` or the code. No invented features, numbers, ratings, testimonials or availability. When the extension changes, change the page that describes it in the same change.
 - Availability is `install.ts` only: store addresses stay empty until a listing is published, and the pages say "coming soon". Never write a store link into a page.
-- The pages run no script and load nothing from another site: no CDN, analytics, embeds, remote fonts or inline styles. The Content-Security-Policy in `site.ts` allows none of it; don't loosen it to make something work.
+- The pages run no script and load nothing from another site: no CDN, analytics, embeds, remote fonts or inline styles. The one `<script>` element is the home page's JSON-LD (`STRUCTURED_DATA` in `site.ts`), a data block browsers don't run; add no other. The Content-Security-Policy in `site.ts` allows none of it; don't loosen it to make something work.
 - The privacy policy is `PRIVACY.md`. Edit that file, never the page. If it needs Markdown that `markdown.ts` refuses, extend `markdown.ts` and its test.
 - Screenshots come from `pnpm website:screenshots`, never from an image editor or a mock-up. Demo content is invented (`ntfy.example.com`, example hosts): no real server, token, topic or personal data. Don't fake what a page screenshot can't show (OS notifications, the browser's menus and toolbar); say what the picture is in its caption.
 - Every image has `alt` text that describes it, and a width and height. Screenshots go in as `<img data-shot="name" alt="…" />`.
