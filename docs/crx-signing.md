@@ -24,7 +24,7 @@ Firefox packages and the sources ZIP are not signed with this key; Mozilla signs
 
 The workflow file can be edited on any branch, so its "part of `origin/main`" check only catches a wrong selection. The `release` environment is the boundary. Create it before the first run: a job that names a missing environment creates it without protection.
 
-1. **Settings → Environments → New environment**, name `release` (created on 2026-11-22 with step 2's rule; the store environments have the same, [store-publishing.md](store-publishing.md)).
+1. **Settings → Environments → New environment**, name `release` (created on 2026-11-22 with step 2's rule, reviewer of step 3 added on 2026-11-23; the store environments have the same, [store-publishing.md](store-publishing.md)).
 2. **Deployment branches and tags**: *Selected branches and tags*, one rule: `main`.
 3. **Required reviewers**: add yourself. Leave **Prevent self-review** off while you are the only reviewer, or you couldn't approve your own release.
 4. **Environment secrets**: add `NTFY_DESK_CRX_PRIVATE_KEY` (below). Paste or pipe it yourself, never through an agent.
@@ -34,7 +34,7 @@ Each run then pauses at the signing job until you approve it, and a run started 
 
 ### What your GitHub plan allows
 
-The repository is private at the moment. [GitHub's documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments) (read on 2026-11-17):
+The repository is public since 2026-11-23, so all of steps 2 to 4 are available and steps 1 to 3 are done. What applied while it was private, from [GitHub's documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments) (read on 2026-11-17):
 
 | | Public repository, any plan | Private, GitHub Free | Private, GitHub Pro or Team |
 |---|---|---|---|
@@ -42,7 +42,7 @@ The repository is private at the moment. [GitHub's documentation](https://docs.g
 | Deployment branch rule (`main` only) | yes | no | yes |
 | Required reviewers | yes | no | no (Enterprise only) |
 
-So the full protection (steps 2 to 4) exists only once the repository is public. Until then:
+So the full protection (steps 2 to 4) exists only for a public repository. If it ever becomes private again:
 
 - **Recommended: keep signing off.** Don't commit the public key and don't create the secret. The workflow still builds, validates and creates the draft with the ZIPs, which is all a first store submission needs. Its write token can do no more than you can: only you can start the workflow.
 - On GitHub Pro, the secret and the `main` rule work in the private repository, without the reviewer. That is acceptable while you are the only person who can push to `main`; add the reviewer when the repository becomes public.

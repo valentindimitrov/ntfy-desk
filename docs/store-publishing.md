@@ -18,7 +18,7 @@ gh workflow run publish-stores.yml --ref main -f version=1.0.1 -f submit=true   
 - `chrome`, `firefox`: which stores.
 - `chrome_publish_type`: `publish-after-review` goes live once Chrome's review passes; `stage-for-manual-publish` waits for you to publish it in the developer dashboard (within 30 days; after that the submission goes back to a draft).
 
-The repository is private, and GitHub offers no required reviewers for environments of private repositories on this plan ([crx-signing.md](crx-signing.md#what-your-github-plan-allows)). The store jobs therefore start without pausing: starting the run with `submit` on is the approval. Add yourself as required reviewer of `store-chrome` and `store-firefox` (and `release`) once the repository is public; each store job then waits under **Review deployments**.
+`store-chrome` and `store-firefox` have you as required reviewer (since 2026-11-23, when the repository was public): each store job waits until you approve it under **Review deployments**. Check the run's verification first. The `submit` input stays as a second safeguard: a run without it never reaches the environments.
 
 ## What it does
 
@@ -32,7 +32,7 @@ When the Chrome job fails after the upload but before `publish`, the new package
 
 ## Settings it needs
 
-All three environments (`release`, `store-chrome`, `store-firefox`) exist and accept deployments from `main` only. A job naming a missing environment creates it without protection, so keep the names exact.
+All three environments (`release`, `store-chrome`, `store-firefox`) exist, accept deployments from `main` only and require your approval (**Prevent self-review** off, since you are the only reviewer). A job naming a missing environment creates it without protection, so keep the names exact.
 
 | Name | Kind | Where |
 |---|---|---|

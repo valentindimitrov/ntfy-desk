@@ -86,4 +86,4 @@ Mozilla signs the add-on; the signed file is then installed from its Add-ons pag
 
 - Put the store addresses into the website's configuration of install targets and into README's **Install** section. Until then both point to GitHub Releases.
 - Update the Roadmap in `AGENTS.md` if the release closed an item.
-- When the repository becomes public: the description and topics in `assets/store-listings/github/README.md`, and yourself as required reviewer on the `release`, `store-chrome` and `store-firefox` environments.
+- The description and topics in `assets/store-listings/github/README.md`, if they aren't set on the repository yet.
