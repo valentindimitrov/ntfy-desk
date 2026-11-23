@@ -14,7 +14,7 @@ import { CONTENT_SECURITY_POLICY, SITE_URL } from '@/website/site';
 
 const PAGES = [
   { file: 'index.html', route: '/' },
-  { file: 'getting-started.html', route: '/getting-started' },
+  { file: 'setup-instructions.html', route: '/setup-instructions' },
   { file: 'privacy-policy.html', route: '/privacy-policy' },
   { file: '404.html', route: undefined },
 ];
@@ -178,7 +178,7 @@ describe('website', () => {
   });
 
   it('says "coming soon" for a store without an address and links the others', () => {
-    const list = page('getting-started.html').querySelector('.install-list')!;
+    const list = page('setup-instructions.html').querySelector('.install-list')!;
     const stores = [
       ['Chrome Web Store', INSTALL.chromeWebStore],
       ['Firefox Add-ons', INSTALL.firefoxAddons],
@@ -207,5 +207,7 @@ describe('website', () => {
     const card = readFileSync(join(output, 'social-card.png'));
     expect([card.readUInt32BE(16), card.readUInt32BE(20)]).toEqual([2400, 1254]);
     expect(existsSync(join(output, 'robots.txt'))).toBe(true);
+    // The guide moved: links to its old address keep working
+    expect(readFileSync(join(output, '_redirects'), 'utf8')).toMatch(/^\/getting-started \/setup-instructions 301$/m);
   });
 });

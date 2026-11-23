@@ -1,6 +1,6 @@
 # ntfy Desk website
 
-The public site for https://ntfy-desk.minddevops.eu: a home page, a getting started guide and the privacy policy. Static HTML and CSS, built with Vite. The pages run no script and load nothing from other sites.
+The public site for https://ntfy-desk.minddevops.eu: a home page, the setup instructions and the privacy policy. Static HTML and CSS, built with Vite. The pages run no script and load nothing from other sites.
 
 From the repository root:
 
@@ -18,13 +18,13 @@ The site is **not public yet**. It goes live only when the owner does the steps 
 
 | File | What it is |
 |---|---|
-| `index.html`, `getting-started.html`, `privacy-policy.html`, `404.html` | The pages. Their text is written here by hand, from `README.md` and the code. |
+| `index.html`, `setup-instructions.html`, `privacy-policy.html`, `404.html` | The pages. Their text is written here by hand, from `README.md` and the code. |
 | `site.ts` | The parts the pages share, filled in at build time: header, footer, install list, screenshots, privacy policy, Content-Security-Policy and the `_headers` file. |
 | `install.ts` | Where the extension can be installed from. An empty store URL is shown as "coming soon". |
 | `markdown.ts` | Converts `PRIVACY.md` for the privacy policy page. |
 | `website.css` | The one stylesheet. Colours and fonts are the extension's (`assets/styles.css`, `public/fonts`). |
 | `media/` | Screenshots (WebP, light and dark), their sizes (`shots.json`), the social card with its source, and the browser icons of the header's store buttons (`browsers/`, sources in its README). |
-| `public/` | `robots.txt` and `sitemap.xml`, copied as they are. |
+| `public/` | `robots.txt`, `sitemap.xml` and `_redirects` (old addresses: `/getting-started` is now `/setup-instructions`), copied as they are. |
 | `wrangler.jsonc`, `deploy/` | The Cloudflare deployment. |
 
 The build also writes `LICENSE.txt` (the GPL, `NOTICE.md` and the Roboto fonts' Apache licence), `_headers` and `social-card.png` (unhashed, because link previews need a fixed address).

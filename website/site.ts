@@ -54,7 +54,7 @@ const STORE_BUTTONS = [
 function storeButton({ name, icon, store, url }: (typeof STORE_BUTTONS)[number]): string {
   const target = url
     ? `href="${url}" target="_blank" rel="noreferrer" title="Get ntfy Desk from ${store}"`
-    : `href="/getting-started#install" title="Coming soon to ${store}: until then, install a release build by hand"`;
+    : `href="/setup-instructions#install" title="Coming soon to ${store}: until then, install a release build by hand"`;
   return `<a class="store-link" aria-label="${name}" ${target}><img src="./media/browsers/${icon}.svg" width="20" height="20" alt="" /><span class="store-name">${name}</span></a>`;
 }
 
@@ -64,7 +64,7 @@ function header(page: string): string {
   <header class="site-header wrap">
     ${wordmark(32)}
     <nav aria-label="Main navigation">
-      <a class="nav-setup" href="/getting-started"${current('getting-started')}>Setup instructions</a>
+      <a class="nav-setup" href="/setup-instructions"${current('setup-instructions')}>Setup instructions</a>
       <div class="header-install">
         <div class="store-links" role="group" aria-label="Extension stores">
           ${STORE_BUTTONS.map(storeButton).join('\n          ')}
@@ -83,7 +83,6 @@ const FOOTER = `<footer class="site-footer wrap">
     ntfy Desk is an independent project and is not affiliated with ntfy.
   </p>
   <nav class="footer-links" aria-label="Project and legal">
-    <a href="${REPOSITORY_URL}">GitHub</a>
     <a href="${ISSUES_URL}">Contact</a>
     <a href="/privacy-policy">Privacy policy</a>
     <a href="/LICENSE.txt">License &amp; attribution</a>
@@ -99,9 +98,9 @@ function installTarget(browsers: string, store: string, url: string): string {
 function install(page: string): string {
   const notes = [
     // The guide itself explains it right below the list
-    (INSTALL.chromeWebStore && INSTALL.firefoxAddons) || page === 'getting-started'
+    (INSTALL.chromeWebStore && INSTALL.firefoxAddons) || page === 'setup-instructions'
       ? ''
-      : 'Until ntfy Desk is in the browser stores, you can load a release build by hand: see <a href="/getting-started#install">Install</a> in the guide.',
+      : 'Until ntfy Desk is in the browser stores, you can load a release build by hand: see <a href="/setup-instructions#install">Install</a> in the guide.',
     INSTALL.repositoryPublic
       ? ''
       : 'The repository is not public yet: until it is, the GitHub links on this site only open for people with access to it.',

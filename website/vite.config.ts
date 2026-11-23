@@ -53,7 +53,7 @@ export default defineConfig(({ command }) => ({
     rolldownOptions: {
       input: {
         index: fromHere('./index.html'),
-        'getting-started': fromHere('./getting-started.html'),
+        'setup-instructions': fromHere('./setup-instructions.html'),
         'privacy-policy': fromHere('./privacy-policy.html'),
         '404': fromHere('./404.html'),
       },

@@ -1,0 +1,3 @@
+# Cloudflare redirects (website/README.md): old addresses of pages that moved
+/getting-started /setup-instructions 301
+/getting-started/ /setup-instructions 301
