@@ -5,6 +5,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # The Wrangler that deploys the website: a standalone pnpm project with its own lockfile
+  # (website/README.md, "Deployment"), which the root entry doesn't cover
+  - package-ecosystem: npm
+    directory: /website/deploy
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

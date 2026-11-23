@@ -106,4 +106,4 @@ Why an environment secret: a repository secret is passed to every `pull_request`
 
 To take the site down again, clear the variable (both workflows are skipped) and delete the Worker in Cloudflare.
 
-To update Wrangler, change its version in `deploy/package.json` and run `pnpm install --lockfile-only` in `deploy/`.
+Dependabot proposes Wrangler updates (`.github/dependabot.yml`, directory `/website/deploy`). To update it by hand, change its version in `deploy/package.json` and run `pnpm install --lockfile-only` in `deploy/`.
