@@ -6,7 +6,8 @@
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "../.output/website",
-    // /getting-started serves getting-started.html; an unknown address gets 404.html
+    // /setup-instructions serves setup-instructions.html; an unknown address gets 404.html.
+    // public/_redirects sends the old /getting-started on
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page",
   },

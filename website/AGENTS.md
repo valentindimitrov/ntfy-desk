@@ -10,7 +10,7 @@ The public site for `https://ntfy-desk.minddevops.eu` (its policy at `/privacy-p
 - The privacy policy is `PRIVACY.md`. Edit that file, never the page. If it needs Markdown that `markdown.ts` refuses, extend `markdown.ts` and its test.
 - Screenshots come from `pnpm website:screenshots`, never from an image editor or a mock-up. Demo content is invented (`ntfy.example.com`, example hosts): no real server, token, topic or personal data. Don't fake what a page screenshot can't show (OS notifications, the browser's menus and toolbar); say what the picture is in its caption.
 - Every image has `alt` text that describes it, and a width and height. Screenshots go in as `<img data-shot="name" alt="…" />`.
-- Links in the shared header and footer (`site.ts`) start at the site's root (`/getting-started`), because `404.html` is served at any address.
+- Links in the shared header and footer (`site.ts`) start at the site's root (`/setup-instructions`), because `404.html` is served at any address.
 - Keep one `h1` per page, the landmarks, visible focus, AA contrast in both colour schemes, and no horizontal scrolling from 360 px up.
 - A new page needs an entry in `vite.config.ts` (`rolldownOptions.input`), in `public/sitemap.xml` and in `PAGES` of `tests/unit/website.test.ts`.
 

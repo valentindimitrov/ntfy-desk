@@ -15,7 +15,7 @@ import { CONTENT_SECURITY_POLICY, SITE_URL, STRUCTURED_DATA } from '@/website/si
 
 const PAGES = [
   { file: 'index.html', route: '/' },
-  { file: 'getting-started.html', route: '/getting-started' },
+  { file: 'setup-instructions.html', route: '/setup-instructions' },
   { file: 'privacy-policy.html', route: '/privacy-policy' },
   { file: '404.html', route: undefined },
 ];
@@ -87,8 +87,14 @@ describe.each(PAGES)('website page $file', ({ file, route }) => {
       expect(image.hasAttribute('alt'), `${src} has no alt`).toBe(true);
       expect(Number(image.getAttribute('width')), `${src} has no width`).toBeGreaterThan(0);
       expect(Number(image.getAttribute('height')), `${src} has no height`).toBeGreaterThan(0);
-      // Only the logo next to the site's name is decorative
-      if (!image.closest('.wordmark')) expect(image.getAttribute('alt')!.length, `${src} needs a description`).toBeGreaterThan(40);
+      // Decorative: the logo next to the site's name, and a store button's browser icon (the button is named by its label)
+      const storeButton = image.closest('.store-link');
+      if (storeButton)
+        expect(storeButton.getAttribute('aria-label'), `${src} is in a store button without a label`).toMatch(
+          /^(Vivaldi|Chrome|Edge|Firefox)$/,
+        );
+      if (image.closest('.wordmark') || storeButton) expect(image.getAttribute('alt'), `${src} is decorative`).toBe('');
+      else expect(image.getAttribute('alt')!.length, `${src} needs a description`).toBeGreaterThan(40);
     }
     // Every screenshot has a dark version of the same size next to it
     for (const picture of page(file).querySelectorAll('picture')) {
@@ -179,7 +185,7 @@ describe('website', () => {
   });
 
   it('says "coming soon" for a store without an address and links the others', () => {
-    const list = page('getting-started.html').querySelector('.install-list')!;
+    const list = page('setup-instructions.html').querySelector('.install-list')!;
     const stores = [
       ['Chrome Web Store', INSTALL.chromeWebStore],
       ['Firefox Add-ons', INSTALL.firefoxAddons],
@@ -237,5 +243,7 @@ describe('website', () => {
     const card = readFileSync(join(output, 'social-card.png'));
     expect([card.readUInt32BE(16), card.readUInt32BE(20)]).toEqual([2400, 1254]);
     expect(existsSync(join(output, 'robots.txt'))).toBe(true);
+    // The guide moved: links to its old address keep working
+    expect(readFileSync(join(output, '_redirects'), 'utf8')).toMatch(/^\/getting-started \/setup-instructions 301$/m);
   });
 });
