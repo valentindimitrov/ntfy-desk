@@ -23,7 +23,7 @@ The site is **not public yet**. It goes live only when the owner does the steps 
 | `install.ts` | Where the extension can be installed from. An empty store URL is shown as "coming soon". |
 | `markdown.ts` | Converts `PRIVACY.md` for the privacy policy page. |
 | `website.css` | The one stylesheet. Colours and fonts are the extension's (`assets/styles.css`, `public/fonts`). |
-| `media/` | Screenshots (WebP, light and dark), their sizes (`shots.json`), the social card with its source, and the browser icons of the header's store buttons (`browsers/`, sources in its README). |
+| `media/` | Screenshots (WebP, light and dark, each with smaller copies), their sizes (`shots.json`), the social card with its source, and the browser icons of the header's store buttons (`browsers/`, sources in its README). |
 | `public/` | `robots.txt`, `sitemap.xml`, `_redirects` (old addresses: `/getting-started` is now `/setup-instructions`; `/security.txt`) and `.well-known/security.txt`, copied as they are. |
 | `wrangler.jsonc`, `deploy/` | The Cloudflare deployment. |
 
@@ -50,6 +50,8 @@ Put the listing's address in `install.ts` (`chromeWebStore` or `firefoxAddons`).
 - In the Topics table, **Sync server deletions** is selected but not applied: applying it also asks for access to the server.
 
 Screenshots are written into the pages as `<img data-shot="name" alt="…" />`. The build replaces that with the light and dark files and the size from `shots.json`.
+
+Each screenshot also comes in smaller copies (`<name>-<scheme>-<width>w.webp`, widths in `shot-sizes.ts`), written from the full-size file by `pnpm website:image-sizes` (ImageMagick), which `website:screenshots` runs at the end. The pages list every copy in `srcset`, with a `sizes` value per place (`SHOT_SIZES` in `site.ts`, which follows the widths in `website.css`), so a browser downloads the smallest copy that is still sharp. Change `SHOT_SIZES` when a screenshot's place or width changes. The pages also preload the three Roboto weights, so text doesn't move when the fonts arrive.
 
 Run one Chromium at a time, and look at the new files before committing them: the times ("4m ago") and file sizes change with every run.
 

@@ -11,6 +11,7 @@ import { build } from 'vite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { INSTALL } from '@/website/install';
 import { renderMarkdown } from '@/website/markdown';
+import { shotWidths } from '@/website/shot-sizes';
 import { CONTENT_SECURITY_POLICY, SITE_URL, STRUCTURED_DATA } from '@/website/site';
 
 const PAGES = [
@@ -96,9 +97,21 @@ describe.each(PAGES)('website page $file', ({ file, route }) => {
       if (image.closest('.wordmark') || storeButton) expect(image.getAttribute('alt'), `${src} is decorative`).toBe('');
       else expect(image.getAttribute('alt')!.length, `${src} needs a description`).toBeGreaterThan(40);
     }
-    // Every screenshot has a dark version of the same size next to it
+    // Every screenshot has a dark version of the same size next to it, both in every width with a sizes hint
     for (const picture of page(file).querySelectorAll('picture')) {
-      expect(picture.querySelector('source')?.getAttribute('media')).toBe('(prefers-color-scheme: dark)');
+      const source = picture.querySelector('source')!;
+      const image = picture.querySelector('img')!;
+      expect(source.getAttribute('media')).toBe('(prefers-color-scheme: dark)');
+      const widths = (element: { getAttribute(name: string): string | null }) =>
+        element
+          .getAttribute('srcset')!
+          .split(',')
+          .map((candidate) => candidate.trim().split(/\s+/)[1]);
+      const expected = shotWidths(Number(image.getAttribute('width'))).map((width) => `${width}w`);
+      expect(widths(image)).toEqual(expected);
+      expect(widths(source)).toEqual(expected);
+      expect(image.getAttribute('sizes')).toMatch(/^\(max-width: 520px\) calc\(100vw - 32px\), /);
+      expect(source.getAttribute('sizes')).toBe(image.getAttribute('sizes'));
     }
   });
 
@@ -243,6 +256,14 @@ describe('website', () => {
     const card = readFileSync(join(output, 'social-card.png'));
     expect([card.readUInt32BE(16), card.readUInt32BE(20)]).toEqual([2400, 1254]);
     expect(existsSync(join(output, 'robots.txt'))).toBe(true);
+    // The fonts are asked for before the stylesheet, so text doesn't move when they arrive
+    for (const file of ['index.html', 'setup-instructions.html']) {
+      const links = [...page(file).querySelectorAll('head link')].map(
+        (link) => `${link.getAttribute('rel')}:${link.getAttribute('as') ?? ''}`,
+      );
+      expect(links.filter((link) => link === 'preload:font')).toHaveLength(3);
+      expect(links.indexOf('preload:font')).toBeLessThan(links.indexOf('stylesheet:'));
+    }
     // The guide moved: links to its old address keep working
     expect(readFileSync(join(output, '_redirects'), 'utf8')).toMatch(/^\/getting-started \/setup-instructions 301$/m);
   });

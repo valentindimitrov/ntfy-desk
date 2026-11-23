@@ -1,5 +1,5 @@
-// pnpm website:screenshots: the website's screenshots (website/media/*.webp and their sizes in
-// shots.json), taken from the real
+// pnpm website:screenshots: the website's screenshots (website/media/*.webp and their sizes in shots.json;
+// the package script then writes their smaller copies with scripts/website-image-sizes.ts), taken from the real
 // extension. Playwright's Chromium loads the E2E build (.output/chrome-mv3-e2e, built by the package
 // script) and talks to the test ntfy server of the end-to-end tests, filled with invented content.
 //

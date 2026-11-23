@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { INSTALL } from './install.ts';
 import { renderMarkdown } from './markdown.ts';
+import { shotFile, shotWidths } from './shot-sizes.ts';
 
 export const SITE_URL = 'https://ntfy-desk.minddevops.eu';
 export const REPOSITORY_URL = 'https://github.com/valentindimitrov/ntfy-desk';
@@ -51,8 +52,9 @@ export const STRUCTURED_DATA = {
   url: `${SITE_URL}/`,
 };
 
+/** The extension's icon at 32 px (header) or 26 px (footer): the 32 px file, and 96 px for sharper screens */
 const wordmark = (size: number) =>
-  `<a class="wordmark" href="/"><img src="../public/icon/128.png" width="${size}" height="${size}" alt="" />ntfy Desk</a>`;
+  `<a class="wordmark" href="/"><img src="../public/icon/32.png" srcset="../public/icon/32.png 1x, ../public/icon/96.png 3x" width="${size}" height="${size}" alt="" />ntfy Desk</a>`;
 
 /** The header's store buttons, in this order; an empty store address leads to the guide's manual install */
 const STORE_BUTTONS = [
@@ -126,19 +128,51 @@ ${notes.map((note) => `<p class="install-note">${note}</p>`).join('\n')}`;
 
 type Shots = Record<string, { width: number; height: number }>;
 
-/** <img data-shot="name" alt="…" /> becomes the light and dark screenshot with its size */
-function screenshots(html: string, shots: Shots): string {
+/**
+ * How wide each kind of screenshot is shown, for the browser to pick a copy before the layout exists. It
+ * follows website.css: .wrap is 1240 px at most, 96 px narrower than the window, 48 px up to 1100 px wide and
+ * 32 px up to 520 px; a feature's picture takes 7 of 12 columns after a 64 px gap, the whole width up to 860 px.
+ */
+const SHOT_SIZES = {
+  hero: '(max-width: 520px) calc(100vw - 32px), (max-width: 1100px) calc(100vw - 48px), min(1240px, calc(100vw - 96px))',
+  feature:
+    '(max-width: 520px) calc(100vw - 32px), (max-width: 860px) calc(100vw - 48px), (max-width: 1100px) calc((100vw - 112px) * 0.58), min(686px, calc((100vw - 160px) * 0.58))',
+  narrow: '(max-width: 520px) calc(100vw - 32px), 410px',
+  guide: '(max-width: 520px) calc(100vw - 32px), min(840px, calc(100vw - 48px))',
+};
+
+/** Where a screenshot sits: the home page's first picture, its narrow Send form, the guide's column, or a feature */
+function shotPlace(page: string, name: string): keyof typeof SHOT_SIZES {
+  if (page === 'setup-instructions') return 'guide';
+  return name === 'overview' ? 'hero' : name === 'send' ? 'narrow' : 'feature';
+}
+
+/** <img data-shot="name" alt="…" /> becomes the light and dark screenshot, in every size, with its size */
+function screenshots(html: string, shots: Shots, page: string): string {
   return html.replaceAll(/<img\s+data-shot="([^"]+)"\s+alt="([^"]*)"\s*\/?>/g, (_tag, name: string, alt: string) => {
     const size = shots[name];
     if (!size) throw new Error(`No screenshot named ${name} in website/media/shots.json`);
+    const srcset = (scheme: 'light' | 'dark') =>
+      shotWidths(size.width)
+        .map((width) => `./media/${shotFile(name, scheme, width, size.width)} ${width}w`)
+        .join(', ');
+    const sizes = SHOT_SIZES[shotPlace(page, name)];
     // The first image of a page is in view at once; the others load when they come near
     const loading = name === 'overview' ? 'fetchpriority="high"' : 'loading="lazy" decoding="async"';
     return `<picture>
-  <source srcset="./media/${name}-dark.webp" media="(prefers-color-scheme: dark)" />
-  <img src="./media/${name}-light.webp" width="${size.width}" height="${size.height}" alt="${alt}" ${loading} />
+  <source srcset="${srcset('dark')}" sizes="${sizes}" media="(prefers-color-scheme: dark)" />
+  <img src="./media/${name}-light.webp" srcset="${srcset('light')}" sizes="${sizes}" width="${size.width}" height="${size.height}" alt="${alt}" ${loading} />
 </picture>`;
   });
 }
+
+/**
+ * The text fonts, requested with the page instead of after the stylesheet: text drawn in the fallback font
+ * first and in Roboto a moment later moved the content below it (Lighthouse counted it as layout shift)
+ */
+const FONT_PRELOADS = ['400', '500', '600']
+  .map((weight) => `<link rel="preload" href="../public/fonts/roboto-${weight}.woff2" as="font" type="font/woff2" crossorigin />`)
+  .join('\n    ');
 
 /** One page's source HTML with the shared parts filled in. `page` is its file name without .html */
 export function renderPage(html: string, page: string, root: string, production: boolean): string {
@@ -149,7 +183,10 @@ export function renderPage(html: string, page: string, root: string, production:
     .replace('<!-- site:install -->', () => install(page))
     .replace('<!-- site:structured-data -->', () => `<script type="application/ld+json">${JSON.stringify(STRUCTURED_DATA)}</script>`)
     .replace('<!-- site:privacy -->', () => renderMarkdown(readFileSync(`${root}/../PRIVACY.md`, 'utf8')));
-  output = screenshots(output, shots);
+  output = screenshots(output, shots, page);
+  // Before the stylesheet, which would otherwise be the first to ask for the fonts
+  if (!/<link rel="stylesheet"/.test(output)) throw new Error(`${page}.html has no stylesheet link`);
+  output = output.replace(/<link rel="stylesheet"/, (link) => `${FONT_PRELOADS}\n    ${link}`);
   if (/<!-- site:|data-shot=/.test(output)) throw new Error(`${page}.html: a placeholder was not filled in`);
   // Not in the dev server, whose hot reload needs scripts and a connection
   if (production) {
