@@ -79,8 +79,8 @@ function header(page: string): string {
 const FOOTER = `<footer class="site-footer wrap">
   ${wordmark(26)}
   <p>
-    A browser extension to send and receive <a href="https://ntfy.sh">ntfy</a> notifications. ntfy Desk is an
-    independent project and is not affiliated with ntfy.
+    A browser extension to send and receive <a href="https://ntfy.sh">ntfy</a> notifications.<br />
+    ntfy Desk is an independent project and is not affiliated with ntfy.
   </p>
   <nav class="footer-links" aria-label="Project and legal">
     <a href="${REPOSITORY_URL}">GitHub</a>
