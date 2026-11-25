@@ -341,9 +341,14 @@ export function createReceiver(events: ReceiverEvents) {
       const httpStatus = /^HTTP [1-5]\d\d\b/.exec(message)?.[0];
       const noResponse = isNoResponse(error);
       const detail = noResponse ? 'no response' : (httpStatus ?? (message === 'Response too large' ? message : 'request failed'));
-      console.error(`Failed to sync topic ${topic}:`, detail);
+      const transient = noResponse || httpStatus?.startsWith('HTTP 5') === true;
+      // Not console.error: the browser lists errors and warnings on the extension's page, and an unreachable or
+      // failing server is expected (offline, server restart) and already shown in the sync status. Only a
+      // problem the user has to fix (refused access, missing topic, bad response) is logged as a warning.
+      if (transient) console.log(`Could not sync topic ${topic} (${detail}); the next sync tries again`);
+      else console.warn(`Failed to sync topic ${topic}:`, detail);
       syncErrors.set(topic, prefix + detail);
-      return noResponse || httpStatus?.startsWith('HTTP 5') === true;
+      return transient;
     }
 
     for (const topic of topics) {
