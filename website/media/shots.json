@@ -3,6 +3,10 @@
     "width": 1280,
     "height": 800
   },
+  "topics-above": {
+    "width": 1100,
+    "height": 760
+  },
   "inbox": {
     "width": 860,
     "height": 940

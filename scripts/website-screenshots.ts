@@ -291,6 +291,16 @@ async function main(): Promise<void> {
     await toTop();
     await capture(page, 'overview', null);
 
+    // The same view with the Appearance setting Topic list: Above the inbox, at a width where it is
+    // otherwise beside it (the extension tab moves it above by itself below 960 px)
+    await worker.evaluate(() => chrome.storage.sync.set({ topicLayout: 'top' }));
+    await until(() => page.evaluate(() => document.body.dataset.topicLayout === 'top'), 'the topic list above the inbox');
+    await page.setViewportSize({ width: 1100, height: 760 });
+    await toTop();
+    await capture(page, 'topics-above', null);
+    await worker.evaluate(() => chrome.storage.sync.set({ topicLayout: 'side' }));
+    await until(() => page.evaluate(() => document.body.dataset.topicLayout === 'side'), 'the topic list beside the inbox');
+
     // The inbox alone: Send collapsed to its rail, a taller window
     await page.locator('#send-section > summary').click();
     await page.setViewportSize({ width: 860, height: 940 });
