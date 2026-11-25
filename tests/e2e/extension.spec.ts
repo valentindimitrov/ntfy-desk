@@ -1590,9 +1590,17 @@ test.describe('backup', () => {
         }),
       )
       .toBe('ntfy Desk');
-    expect(await inPopup('#settings-btn')).toBe(true);
-    // Backup is on the More tab
-    await expect.poll(() => inPopup('#settings-tab-more')).toBe(true);
+    // Backup is on the More tab. A toolbar popup can close by itself (CI once lost it right after the
+    // Settings click): open it again and repeat the steps, which are what this test is not about
+    await expect
+      .poll(async () => {
+        const open = await tab.evaluate(() => chrome.extension.getViews({ type: 'popup' as Browser.extension.ViewType }).length > 0);
+        if (!open) await serviceWorker.evaluate(() => chrome.action.openPopup().catch(() => {}));
+        else if (!(await inPopup('#settings-tab-more'))) await inPopup('#settings-btn');
+        else return true;
+        return false;
+      })
+      .toBe(true);
     await expect.poll(() => inPopup('#export-settings-btn')).toBe(true);
     await expect.poll(() => readdirSync(downloads).filter((name) => !name.endsWith('.crdownload'))).toHaveLength(1);
     const [name] = readdirSync(downloads);
