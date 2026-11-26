@@ -1172,7 +1172,7 @@ test.describe('customization', () => {
         for (const label of await page.getByRole('tab').all()) {
           expect(await label.evaluate((button) => button.scrollWidth <= button.clientWidth)).toBe(true);
         }
-        await expect(links).toHaveText(['GitHub', 'Website', 'Contact']);
+        await expect(links).toHaveText(['GitHub', 'Website', 'Contact', 'Tip']);
         for (const link of await links.all()) await expect(link).toBeVisible();
         // The toolbar popup takes the height of its page: it must not change from tab to tab
         if (!search) expect(await page.locator('body').evaluate((body) => body.getBoundingClientRect().height)).toBe(600);

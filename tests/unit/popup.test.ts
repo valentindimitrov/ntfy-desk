@@ -1942,7 +1942,7 @@ describe('settings: tabs and links', () => {
     location.hash = '';
   });
 
-  it('links to the repository, the website and the issues, each in a new tab', async () => {
+  it('links to the repository, the website, the issues and the tip page, each in a new tab', async () => {
     await openPopup();
     await openSettings();
     const nav = $('nav.settings-links');
@@ -1954,6 +1954,7 @@ describe('settings: tabs and links', () => {
       { text: 'GitHub', name: 'ntfy Desk on GitHub', href: 'https://github.com/valentindimitrov/ntfy-desk' },
       { text: 'Website', name: 'ntfy Desk website', href: 'https://ntfy-desk.minddevops.eu' },
       { text: 'Contact', name: 'Contact: ntfy Desk issues on GitHub', href: 'https://github.com/valentindimitrov/ntfy-desk/issues' },
+      { text: 'Tip', name: 'Leave a tip for ntfy Desk', href: 'https://buy.stripe.com/28E00kdpS4Tm9uW7QF5c401' },
     ]);
     for (const link of links) {
       expect(link.target).toBe('_blank');
