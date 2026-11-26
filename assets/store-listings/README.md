@@ -12,6 +12,9 @@ The steps of a submission are in [docs/releasing.md](../../docs/releasing.md).
 |---|---|
 | `description.txt` | **Store listing → Description** (plain text). The short summary under the title is the manifest's `description` from `wxt.config.ts`, at most 132 characters. |
 | `privacy-fields.txt` | **Privacy**: single purpose, one justification per permission, remote code, data usage, certifications, privacy policy URL. Each block is one field. |
+| `test-instructions.txt` | **Access → Test instructions → Additional instructions** (at most 500 characters). |
+| `small-promo-tile.png`, `marquee-promo-tile.png` | **Store listing → Small promo tile** (440 × 280) and **Marquee promo tile** (1400 × 560). |
+| `README.txt` | Every dashboard field as filled in for 1.0.0: the item, category, URLs, privacy choices, distribution. |
 | `crx-signing-public-key.pem` | Not there yet. Once committed, releases carry a signed CRX: [docs/crx-signing.md](../../docs/crx-signing.md). |
 
 Other fields: category **Communication** (or **Tools**; the dashboard's list decides), language English. Homepage and support URL: the website (`https://ntfy-desk.minddevops.eu`) and the GitHub issues page (`https://github.com/valentindimitrov/ntfy-desk/issues`), both public.
@@ -32,7 +35,7 @@ Other fields: license GPL-3.0-only; the privacy policy field takes the text of `
 
 ## Images
 
-Screenshots come from the real extension: `pnpm website:screenshots` captures the website's screenshots and then writes the store's from them (`scripts/store-screenshots.ts`, also `pnpm store:screenshots`) into `screenshots/`: `overview-light.png` and `overview-dark.png`, 1280 × 800 px PNG without alpha, for the Chrome Web Store and Firefox Add-ons. They aren't part of the sources ZIP. The promo tiles and the GitHub social preview are still to make. Each store needs:
+Screenshots come from the real extension: `pnpm website:screenshots` captures the website's screenshots and then writes the store's from them (`scripts/store-screenshots.ts`, also `pnpm store:screenshots`) into `screenshots/`: `overview-light.png` and `overview-dark.png`, 1280 × 800 px PNG without alpha, for the Chrome Web Store and Firefox Add-ons. The same script draws the Chrome Web Store promo tiles into `chrome-web-store/` from the extension's icon and README claims (`--tiles` or `--screenshots` makes only those). None of the images are part of the sources ZIP. The GitHub social preview is still to make. Each store needs:
 
 | Store | Image | Size | Count |
 |---|---|---|---|

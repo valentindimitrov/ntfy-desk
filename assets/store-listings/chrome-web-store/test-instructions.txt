@@ -1,0 +1,1 @@
+No account is needed: ntfy.sh is a free public ntfy server. Open ntfy Desk > Settings > Server, enter https://ntfy.sh and click Save server settings. Under Topics, add a topic with a random name, for example ntfy-desk-review-4821. Send a message from the Send form, or run: curl -d "Hello" ntfy.sh/ntfy-desk-review-4821. It appears in the inbox and as a desktop notification.

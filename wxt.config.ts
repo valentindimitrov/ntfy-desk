@@ -20,6 +20,7 @@ export default defineConfig({
       'scripts/website-*.ts',
       'tests/unit/website.test.ts',
       'assets/store-listings/screenshots/**',
+      'assets/store-listings/chrome-web-store/*.png',
       'scripts/store-screenshots.ts',
     ],
   },
