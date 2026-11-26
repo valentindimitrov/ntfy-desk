@@ -652,6 +652,26 @@ describe('Send form: per-topic send defaults', () => {
     });
   });
 
+  it('reorders tags by dragging one badge onto another, and ignores a drop on itself', async () => {
+    await openPopup();
+    addTag('second');
+    addTag('third');
+    expect(tags()).toEqual(['last', 'second', 'third']);
+    const badge = (text: string) =>
+      [...document.querySelectorAll<HTMLElement>('#tags-container .tag-badge')].find((b) => b.firstChild?.textContent === text)!;
+    const drag = (from: string, to: string) => {
+      badge(from).dispatchEvent(new Event('dragstart'));
+      badge(to).dispatchEvent(new Event('dragenter', { cancelable: true }));
+      const highlighted = badge(to).classList.contains('drag-over');
+      badge(to).dispatchEvent(new Event('drop', { cancelable: true }));
+      return highlighted;
+    };
+    expect(drag('third', 'last')).toBe(true);
+    expect(tags()).toEqual(['third', 'last', 'second']);
+    expect(drag('second', 'second')).toBe(false);
+    expect(tags()).toEqual(['third', 'last', 'second']);
+  });
+
   it('removes the last tag on Backspace in the empty field, but not on a held key repeating', async () => {
     await openPopup();
     const input = $('#new-tag-input');

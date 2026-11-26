@@ -18,18 +18,18 @@
         flex-direction: column;
       }
 
-      .header {
-        justify-content: space-between;
-      }
-
+      /* Popup only: status line spacing, and the header's title and buttons at opposite ends */
       .status {
         margin-top: 10px;
+      }
+
+      .header {
+        justify-content: space-between;
       }
     </style>
   </head>
 
   <body data-theme="auto">
-    <!-- Header -->
     <header class="header desk-header">
       <div class="header-left">
         <div class="header-title">
@@ -66,7 +66,6 @@
       </div>
     </header>
 
-    <!-- Main View -->
     <div class="view active" id="main-view">
       <section id="inbox" aria-labelledby="inbox-heading">
         <div class="main-content receive-layout">
@@ -81,7 +80,6 @@
             aria-controls="topic-sidebar"
             tabindex="0"
           ></div>
-          <!-- Notifications Section -->
           <div class="notifications-section" id="notifications-section">
             <div class="section-header">
               <h2 class="section-title" id="inbox-heading">Inbox</h2>
@@ -123,14 +121,12 @@
           </svg>
         </summary>
         <div class="main-content" id="main-content">
-          <!-- Topic Selection -->
           <div class="form-group">
             <label class="form-label" for="topic-select">Send to</label>
             <select class="form-select" id="topic-select"></select>
             <p class="form-hint" id="send-topic-hint" hidden>Follows the selected inbox topic.</p>
           </div>
 
-          <!-- Title (Optional) -->
           <div class="form-group">
             <div class="form-label-row">
               <label class="form-label" for="title-input">Title</label>
@@ -146,13 +142,11 @@
             <input type="text" class="form-input" id="title-input" />
           </div>
 
-          <!-- Message -->
           <div class="form-group">
             <label class="form-label" for="message-input">Message</label>
             <textarea class="form-textarea" id="message-input" rows="3"></textarea>
           </div>
 
-          <!-- File Attachment -->
           <div class="file-section">
             <div class="file-input-wrapper">
               <input type="file" class="file-input" id="file-input" multiple />
@@ -184,7 +178,6 @@
             </label>
           </div>
 
-          <!-- Priority -->
           <div class="form-group">
             <div class="form-label-row">
               <div class="form-label" id="priority-label">Priority</div>
@@ -217,7 +210,6 @@
             </div>
           </div>
 
-          <!-- Tags -->
           <div class="form-group">
             <label class="form-label" for="new-tag-input">Tags</label>
             <div class="tags-container" id="tags-container">
@@ -290,7 +282,6 @@
             </div>
           </details>
 
-          <!-- Send Footer -->
           <div class="send-footer">
             <div class="send-another-group">
               <input type="checkbox" id="send-another-checkbox" />
@@ -307,13 +298,11 @@
             </button>
           </div>
 
-          <!-- Status Message -->
           <div class="status" id="status" role="status"></div>
         </div>
       </details>
     </div>
 
-    <!-- Settings View -->
     <div class="view" id="settings-view">
       <div class="main-content">
         <div class="settings-tabs" id="settings-tabs" role="tablist" aria-label="Settings categories">

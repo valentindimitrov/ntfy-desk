@@ -1,66 +1,69 @@
-/* Ntfy for chrome - Styles */
+/*
+ * ntfy Desk's stylesheet, shared by the toolbar popup, the extension's tab and the file picker.
+ * What changes with the theme is a custom property: light on :root, dark on body.
+ */
 
-/* ========================================
-   Local Font Definitions
-   ======================================== */
-
+/* Roboto comes with the extension (public/fonts), so no page loads a font from the network */
 @font-face {
+  src: url('/fonts/roboto-400.woff2') format('woff2');
   font-family: 'Roboto';
-  font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/roboto-400.woff2') format('woff2');
 }
 
 @font-face {
+  src: url('/fonts/roboto-500.woff2') format('woff2');
   font-family: 'Roboto';
-  font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url('/fonts/roboto-500.woff2') format('woff2');
 }
 
 @font-face {
+  src: url('/fonts/roboto-600.woff2') format('woff2');
   font-family: 'Roboto';
-  font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url('/fonts/roboto-600.woff2') format('woff2');
 }
 
-/* ========================================
-   CSS Variables & Theming
-   ======================================== */
-
+/* The light theme, which is also the default. The accent is ntfy's green. */
 :root {
-  /* NTFY.sh inspired color palette */
+  --text-primary: #111111;
+  --text-secondary: #4a4a4a;
+  --bg-main: #f3f5f4;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --border-color: #cdd5d2;
+  --border-focus: #338574;
   --primary: #338574;
   --primary-dark: #2a6e60;
   --primary-light: #2a7566; /* text accent: 5.5:1 on white */
   --status-success: #215f52;
   --status-warning: #8a4100;
   --status-error: #a52121;
-
-  /* Light theme */
-  --bg-main: #f3f5f4;
-  --bg-card: #ffffff;
-  --bg-input: #ffffff;
-  --text-primary: #111111;
-  --text-secondary: #4a4a4a;
-  --border-color: #cdd5d2;
-  --border-focus: #338574;
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   --desk-header-height: 46px;
+
+  /* Colours both themes share: badges, priorities, and the tints behind hovered actions */
+  --accent-gradient: linear-gradient(to right, #317f6e 0%, #57a49a 100%);
+  --accent-tint: rgba(51, 133, 116, 0.1);
+  --red: #f44336;
+  --red-dark: #e53935;
+  --red-tint: rgba(244, 67, 54, 0.1);
+  --orange: #ff9800;
+  --orange-tint: rgba(255, 152, 0, 0.15);
+  --blue: #2196f3;
 }
 
-/* Dark theme - matching NTFY.sh web UI */
+/*
+ * The dark theme, chosen in Settings or followed from the system while the theme is Auto.
+ * The two blocks hold the same values.
+ */
 body[data-theme='dark'] {
-  color-scheme: dark;
+  --text-primary: #f2f4f3;
+  --text-secondary: #b9c2bf;
   --bg-main: #1b2124;
   --bg-card: #252e32;
   --bg-input: #252b2a;
-  --text-primary: #f2f4f3;
-  --text-secondary: #b9c2bf;
   --border-color: #4b5754;
   --border-focus: #4a9d8c;
   --primary-light: #66c0ac; /* text accent: 6.7:1 on the dark inputs */
@@ -68,17 +71,16 @@ body[data-theme='dark'] {
   --status-warning: #ffba70;
   --status-error: #ffa39f;
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
 }
 
-/* Auto theme (system preference) */
 @media (prefers-color-scheme: dark) {
   body[data-theme='auto'] {
-    color-scheme: dark;
+    --text-primary: #f2f4f3;
+    --text-secondary: #b9c2bf;
     --bg-main: #1b2124;
     --bg-card: #252e32;
     --bg-input: #252b2a;
-    --text-primary: #f2f4f3;
-    --text-secondary: #b9c2bf;
     --border-color: #4b5754;
     --border-focus: #4a9d8c;
     --primary-light: #66c0ac; /* text accent: 6.7:1 on the dark inputs */
@@ -86,113 +88,113 @@ body[data-theme='dark'] {
     --status-warning: #ffba70;
     --status-error: #ffa39f;
     --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
   }
 }
 
-/* ========================================
-   Reset & Base Styles
-   ======================================== */
-
+/* No default margins or padding anywhere; widths and heights include padding and borders */
 * {
-  box-sizing: border-box;
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
 }
 
 body {
-  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--bg-main);
   color: var(--text-primary);
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* ========================================
-   Header Component
-   ======================================== */
+/* Header: the title on one side, the view buttons on the other */
+
+.header,
+.header-left,
+.header-title,
+.header-actions {
+  display: flex;
+}
+
+.header,
+.header-left,
+.header-title {
+  align-items: center;
+}
+
+.header-left,
+.header-title,
+.header-actions {
+  gap: 8px;
+}
 
 .header {
+  padding: 4px 16px; /* 40 px with the 32 px buttons, like the Send/Receive row */
   background: linear-gradient(to right, #317f6e 0, #57a49a 600px);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-  padding: 4px 16px; /* 40 px with the 32 px buttons, like the Send/Receive row */
-  display: flex;
-  align-items: center;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .header-title {
-  color: white;
   font-size: 16px;
   font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  color: white;
 }
 
 .header-title img {
-  width: 20px;
   height: 20px;
+  width: 20px;
 }
 
-.header-actions {
-  display: flex;
-  gap: 8px;
-}
-
+/* Square icon buttons. These colours suit a green bar; .desk-header below gives them its own. */
 .icon-btn {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   width: 32px;
   height: 32px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: rgba(255, 255, 255, 0.9);
   box-shadow: none;
+  cursor: pointer;
+  transition: background 0.2s;
 }
 
 .icon-btn svg {
-  width: 24px;
   height: 24px;
+  width: 24px;
   fill: currentColor;
 }
 
 .icon-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  transform: none;
-  box-shadow: none;
   color: white;
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: none;
+  transform: none;
 }
 
 .icon-btn:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.25);
   transform: none;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .icon-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
   background: transparent;
   color: white;
+  opacity: 0.4;
   box-shadow: none;
+  cursor: not-allowed;
 }
 
-/* Highlighted settings button when not configured */
+/* Something in the settings needs the user: the settings button stands out */
 .icon-btn.highlight {
+  animation: pulse 1.5s ease-in-out infinite;
+  border-color: white;
   background: white;
   color: var(--primary);
-  border-color: white;
-  animation: pulse 1.5s ease-in-out infinite;
 }
 
 .icon-btn.highlight:hover {
-  background: #f0f0f0;
+  background-color: #f0f0f0;
 }
 
 .desk-header {
@@ -264,129 +266,129 @@ body:has(#settings-view.active) #back-btn {
   display: flex;
 }
 
+/* A white ring that grows from the button and fades out */
 @keyframes pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
-  }
-
   50% {
     box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
   }
+
+  from,
+  to {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+  }
 }
 
-/* ========================================
-   View Containers
-   ======================================== */
+/* Views: the inbox with the Send form, and Settings. One shows at a time. */
 
-.view {
+.view:not(.active) {
   display: none;
 }
 
-.view.active {
+/* Parts hidden until a state class shows them: a view, the status line, the hints under the topic and tag boxes */
+.view.active,
+.status.visible,
+.topic-input-hint.visible,
+.tag-input-hint.visible {
   display: block;
 }
 
-/* ========================================
-   Main Content
-   ======================================== */
+/* No server configured yet: the inbox and Send form show, dimmed, and can't be used */
+.view.disabled {
+  user-select: none;
+  pointer-events: none;
+  opacity: 0.4;
+}
 
 .main-content {
-  padding: 12px 16px;
-  padding-bottom: 12px;
   min-height: auto;
+  padding: 12px 16px;
 }
 
-/* Disabled/unconfigured state */
-.view.disabled {
-  opacity: 0.4;
-  pointer-events: none;
-  user-select: none;
-}
-
-/* ========================================
-   Form Elements
-   ======================================== */
+/* Form fields: a label above, the field underlined rather than boxed */
 
 .form-group {
-  margin-bottom: 8px;
+  margin-bottom: 8px; /* the Send form and More options set wider gaps */
 }
 
 .form-label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
   margin-bottom: 4px;
+  display: block;
+  color: var(--text-secondary);
+  font-size: 13px;
   letter-spacing: 0.5px;
   transition: color 0.2s;
+  font-weight: 500;
 }
 
 .form-group:focus-within .form-label {
-  color: var(--primary);
+  color: var(--primary); /* the label of the field being edited */
+}
+
+/* The underline, shared with the topic and tag boxes: it darkens on hover and while editing */
+.tags-container,
+.topics-container,
+.form-input,
+.form-textarea {
+  margin-bottom: -1px;
+  border: none;
+  border-bottom: 2px solid var(--border-color);
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.tags-container,
+.topics-container,
+.form-select,
+.form-input,
+.form-textarea {
+  transition: border-color 0.2s;
+}
+
+.tags-container:is(:hover, :focus-within),
+.topics-container:is(:hover, :focus-within),
+.form-input:is(:hover, :focus),
+.form-textarea:is(:hover, :focus) {
+  border-bottom-color: var(--border-focus);
 }
 
 .form-input,
-.form-select,
 .form-textarea {
   width: 100%;
-  padding: 4px 0 10px 0;
-  font-size: 15px;
-  background-color: transparent;
+  padding: 4px 0 10px;
   color: var(--text-primary);
-  border: none;
-  border-bottom: 2px solid var(--border-color);
-  margin-bottom: -1px;
-  border-radius: 0;
-  transition: border-color 0.2s;
+  font-size: 15px;
   outline: none;
 }
 
-.form-input:hover,
-.form-select:hover,
-.form-textarea:hover {
-  border-bottom-color: var(--border-focus);
-}
-
-.form-input:focus,
-.form-select:focus,
-.form-textarea:focus {
-  border-bottom-color: var(--border-focus);
-}
-
-.form-input::placeholder,
-.form-textarea::placeholder {
-  font-size: 13px;
-  font-style: italic;
-  color: var(--text-secondary);
-}
-
-/* Tag/Topic input hint: hidden by default, shown when user has input */
-.tag-input-hint,
-.topic-input-hint {
-  display: none;
-  font-size: 11px;
-  font-style: italic;
-  color: var(--text-secondary);
-  pointer-events: none;
-  white-space: nowrap;
-  flex-basis: 100%;
-  text-align: right;
-}
-
-.tag-input-hint.visible,
-.topic-input-hint.visible {
-  display: block;
-}
-
 .form-textarea {
-  resize: vertical;
   min-height: 60px;
   font-family: inherit;
+  resize: vertical;
 }
 
-.form-select {
-  background-color: var(--bg-input);
+.form-textarea::placeholder,
+.form-input::placeholder,
+.topic-setting-input::placeholder {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.form-textarea::placeholder,
+.form-input::placeholder {
+  font-size: 13px;
+}
+
+/* "Enter to add": shown under the topic and tag boxes once something is typed */
+.topic-input-hint,
+.tag-input-hint {
+  display: none;
+  flex-basis: 100%;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: italic;
+  text-align: right;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /*
@@ -445,125 +447,108 @@ body:has(#settings-view.active) #back-btn {
   color: var(--text-primary);
 }
 
+/* Help text under a field, quieter than the label */
 .form-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
   margin-top: 4px;
   padding-bottom: 6px;
-  font-style: italic;
   opacity: 0.8;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: italic;
 }
 
-/* ========================================
-   Badges (Topics & Tags)
-   ======================================== */
+/* Topics and tags: badges in a wrapping box, with the text field for the next one at the end */
 
-.topics-container,
-.tags-container {
+.tags-container,
+.topics-container {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 6px;
-  padding: 4px 0 8px 0;
-  background-color: transparent;
-  border: none;
-  border-bottom: 2px solid var(--border-color);
-  margin-bottom: -1px;
-  border-radius: 0;
+  align-items: center;
   min-height: 38px;
-  transition: border-color 0.2s;
+  padding: 4px 0 8px;
 }
 
-.topics-container:hover,
-.tags-container:hover {
-  border-bottom-color: var(--border-focus);
-}
-
-.topics-container:focus-within,
-.tags-container:focus-within {
-  border-bottom-color: var(--border-focus);
-}
-
-.topic-badge,
-.tag-badge {
+.tag-badge,
+.topic-badge {
   display: flex;
   align-items: center;
-  background: linear-gradient(to right, #317f6e 0%, #57a49a 100%);
-  color: white;
   padding: 4px 8px;
   border-radius: 12px;
+  background: var(--accent-gradient);
+  color: white;
   font-size: 13px;
-  cursor: move;
   user-select: none;
+  cursor: move; /* they can be dragged into another order */
 }
 
-.topic-badge.dragging,
-.tag-badge.dragging {
+.tag-badge.dragging,
+.topic-badge.dragging {
   opacity: 0.5;
 }
 
-.topic-badge.drag-over,
-.tag-badge.drag-over {
-  transform: scale(1.05);
+.tag-badge.drag-over,
+.topic-badge.drag-over {
   box-shadow: 0 0 0 2px var(--primary);
+  transform: scale(1.05);
 }
 
-.topic-remove,
-.tag-remove {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  margin-left: 6px;
-  cursor: pointer;
-  opacity: 0.8;
-  font-weight: bold;
+.tag-remove,
+.topic-remove {
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   width: 12px;
   height: 12px;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.topic-remove:hover,
-.tag-remove:hover {
-  opacity: 1;
-}
-
-.topic-input-field,
-.tag-input-field {
-  border: none;
-  outline: none;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
   background: transparent;
-  padding: 4px 0;
+  color: inherit;
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1;
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+.tag-input-field,
+.topic-input-field {
   flex: 1;
   min-width: 20px;
-  font-size: 14px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
   color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
 }
 
-.topic-input-field:focus,
-.tag-input-field:focus {
+/* While typing, the field keeps enough room before it wraps */
+.tag-input-field:focus,
+.topic-input-field:focus {
   min-width: 80px;
 }
 
-/* ========================================
-   File Attachment
-   ======================================== */
-
-.file-section {
-  margin-bottom: 13px;
-  margin-top: 10px;
+.tag-remove:hover,
+.topic-remove:hover {
+  opacity: 1;
 }
 
-.file-input {
+/* Attachments: the queued files, and the switch that sends several as one ZIP */
+
+.file-section {
+  margin-top: 10px;
+  margin-bottom: 13px;
+}
+
+/* The file input is opened through the Attach button; the list shows once a file is queued */
+.file-input,
+.file-preview {
   display: none;
 }
 
 .file-preview {
-  display: none;
   flex-direction: column;
   gap: 6px;
   margin-top: 8px;
@@ -572,18 +557,14 @@ body:has(#settings-view.active) #back-btn {
   overflow-y: auto;
 }
 
-.file-preview.visible {
-  display: flex;
-}
-
 .file-preview-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  background-color: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: 8px;
+  background-color: var(--bg-input);
 }
 
 .zip-toggle {
@@ -593,9 +574,10 @@ body:has(#settings-view.active) #back-btn {
   gap: 10px;
   margin-top: 8px;
   padding: 9px 10px;
-  background-color: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: 8px;
+  background-color: var(--bg-input);
+
   cursor: pointer;
   transition:
     border-color 0.2s,
@@ -603,6 +585,7 @@ body:has(#settings-view.active) #back-btn {
     opacity 0.2s;
 }
 
+.file-preview.visible,
 .zip-toggle.visible {
   display: flex;
 }
@@ -684,79 +667,79 @@ body:has(#settings-view.active) #back-btn {
   outline-offset: 2px;
 }
 
+/* One queued file: icon, name and size, remove button */
 .file-icon {
   font-size: 20px;
-  flex-shrink: 0;
+  flex: none;
 }
 
 .file-info {
-  flex: 1;
   overflow: hidden;
+  flex: 1;
 }
 
 .file-name {
+  overflow: hidden;
   font-size: 13px;
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-size {
-  font-size: 11px;
   color: var(--text-secondary);
+  font-size: 11px;
 }
 
 .file-remove {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 18px;
   padding: 4px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 18px;
   line-height: 1;
   transition: color 0.2s;
+  cursor: pointer;
 }
 
 .file-remove:hover {
-  color: #e53935;
+  color: var(--red-dark);
 }
 
 .file-remove:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
+  opacity: 0.5;
 }
 
-/* ========================================
-   Chips (Priority & Theme)
-   ======================================== */
+/* Chips: rounded toggle buttons (priority, theme, and a few actions in Settings) */
 
 .chips {
   display: flex;
-  gap: 4px;
   flex-wrap: wrap;
+  gap: 4px;
 }
 
 .chip {
   padding: 6px 8px;
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  background-color: var(--bg-input);
   font-size: 13px;
   font-weight: 500;
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  background-color: var(--bg-input);
-  color: var(--text-secondary);
-  cursor: pointer;
   transition: all 0.2s;
+  cursor: pointer;
 }
 
 .chip:hover {
-  border-color: var(--primary);
   color: var(--primary);
+  border-color: var(--primary);
 }
 
+/* The selected chip is filled like the badges */
 .chip.active {
-  background: linear-gradient(to right, #317f6e 0%, #57a49a 100%);
   border-color: #317f6e;
+  background: var(--accent-gradient);
   color: white;
 }
 
@@ -782,39 +765,40 @@ body:has(#settings-view.active) #back-btn {
   stroke-linejoin: round;
 }
 
-/* ========================================
-   Send Footer & Buttons
-   ======================================== */
+/* The Send button's row, pinned to the bottom of the form while it scrolls */
 
 .send-footer {
   position: sticky;
   bottom: 0;
   z-index: 1;
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   margin-top: 10px;
   margin-inline: calc(-1 * var(--pane-padding));
   padding: 8px var(--pane-padding) 12px;
   background-color: var(--bg-main);
 }
 
-.send-another-group {
+.send-another-group,
+.checkbox-group {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
-.send-another-group input[type='checkbox'] {
+.send-another-group input[type='checkbox'],
+.checkbox-group input[type='checkbox'] {
+  accent-color: var(--primary);
   width: 14px;
   height: 14px;
-  accent-color: var(--primary);
   cursor: pointer;
 }
 
-.send-another-group label {
-  font-size: 13px;
+.send-another-group label,
+.checkbox-group label {
   color: var(--text-secondary);
+  font-size: 13px;
   cursor: pointer;
 }
 
@@ -861,22 +845,17 @@ body:has(#settings-view.active) #back-btn {
   flex: none;
 }
 
-/* ========================================
-   Status Message
-   ======================================== */
+/* Status line: the result of a send, a save or an import */
 
 .status {
-  text-align: center;
-  font-size: 13px;
+  display: none;
   padding: 8px 12px;
   border-radius: 6px;
-  display: none;
+  font-size: 13px;
+  text-align: center;
 }
 
-.status.visible {
-  display: block;
-}
-
+/* An empty polite status line stays in the page for screen readers, out of sight and out of the way */
 .status[role='status']:not(.visible) {
   display: block;
   position: absolute;
@@ -888,54 +867,39 @@ body:has(#settings-view.active) #back-btn {
 }
 
 .status.success {
-  background-color: rgba(51, 133, 116, 0.15);
   color: var(--status-success);
+  background-color: rgba(51, 133, 116, 0.15);
 }
 
 .status.error {
-  background-color: rgba(229, 57, 53, 0.15);
   color: var(--status-error);
+  background-color: rgba(229, 57, 53, 0.15);
 }
 
 .status.warning {
-  background-color: rgba(255, 152, 0, 0.15);
   color: var(--status-warning);
+  background-color: var(--orange-tint);
 }
 
-/* ========================================
-   Settings View
-   ======================================== */
+/* Settings */
 
 .section-title {
+  margin: 12px 0 8px;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
-  margin: 12px 0 8px 0;
-  color: var(--text-secondary);
 }
 
 .section-title:first-of-type {
-  margin-top: 0;
+  margin-top: 0; /* nothing above it to keep apart from */
 }
 
 .checkbox-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin-bottom: 14px;
 }
 
-.checkbox-group input[type='checkbox'] {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-
 .checkbox-group label {
-  font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
 }
 
 /* Groups of settings, each with a heading */
@@ -1069,10 +1033,10 @@ body:has(#settings-view.active) #back-btn {
 }
 
 .settings-heading {
-  margin: 0 0 10px 0;
+  margin: 0 0 10px;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary);
 }
 
 /* Short selects side by side; one per line when the view is narrow */
@@ -1156,163 +1120,168 @@ body:has(#settings-view.active) #back-btn {
   color: var(--text-secondary);
 }
 
-/* ========================================
-   Tooltip
-   ======================================== */
-
+/* The tooltip that ui.ts places next to a hovered control */
 .tooltip {
   position: fixed;
+  z-index: 1000;
   padding: 6px 10px;
-  background-color: var(--bg-card);
-  color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 500;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  box-shadow: var(--shadow);
-  z-index: 1000;
   white-space: nowrap;
+  opacity: 0;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  transition: opacity 0.15s;
 }
 
 .tooltip.visible {
   opacity: 1;
 }
 
+/* File picker window: a line of explanation and the drop zone below it */
+
 .subtitle {
+  margin-bottom: 16px;
   color: var(--text-secondary);
   font-size: 13px;
-  margin-bottom: 16px;
 }
 
-/* Drop zone */
 .drop-zone {
-  background: transparent;
-  font: inherit;
-  border: 2px dashed var(--border-color);
-  border-radius: 12px;
-  padding: 28px 24px;
-  margin-bottom: 12px;
-  transition: all 0.2s;
-  cursor: pointer;
   width: 100%;
   max-width: 320px;
+  margin-bottom: 12px;
+  padding: 28px 24px;
+  border: 2px dashed var(--border-color);
+  border-radius: 12px;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: var(--primary);
 }
 
 .drop-zone:hover {
-  border-color: var(--primary);
   background-color: rgba(51, 133, 116, 0.05);
 }
 
+/* Files dragged over it: a stronger tint, and the zone grows a little */
 .drop-zone.drag-over {
-  border-color: var(--primary);
-  background-color: rgba(51, 133, 116, 0.1);
+  background-color: var(--accent-tint);
   transform: scale(1.02);
 }
 
-.drop-zone-icon {
+.drop-zone-icon,
+.drop-zone-text,
+.drop-zone-hint {
   display: block;
-  font-size: 36px;
+}
+
+.drop-zone-icon {
   margin-bottom: 8px;
+  font-size: 36px;
+}
+
+.drop-zone-text,
+.drop-zone-hint {
+  color: var(--text-secondary);
 }
 
 .drop-zone-text {
-  display: block;
-  color: var(--text-secondary);
-  font-size: 14px;
   margin-bottom: 2px;
+  font-size: 14px;
 }
 
 .drop-zone-hint {
-  display: block;
-  color: var(--text-secondary);
-  font-size: 12px;
   opacity: 0.7;
+  font-size: 12px;
 }
 
-/* ========================================
-   Recent Notifications Section
-   ======================================== */
+/* Inbox: heading with the bulk actions, then the messages as cards */
 
 .notifications-section {
   margin-top: 0;
-  border-top: none;
   padding-top: 0;
+  border-top: none;
 }
 
 .notifications-section .section-header {
+  margin-bottom: 10px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 10px;
 }
 
+/* The headings of the inbox and the Send form, and "All topics" in the topic list */
 .notifications-section .section-title,
 .send-heading,
 .all-topics-label {
   margin: 0;
-  line-height: 1.3;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary);
+  line-height: 1.3;
 }
 
 .notifications-list {
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   gap: 8px;
+  overflow-y: auto;
 }
 
 .notification-item {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 10px 10px 10px 14px; /* Left padding increased for priority indicator */
+  position: relative;
   display: flex;
   flex-direction: column;
+  padding: 10px 10px 10px 14px; /* wider on the left, where the priority edge is */
   gap: 4px;
-  position: relative;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
   transition: border-color 0.2s;
+  background-color: var(--bg-card);
 }
 
-.notification-item:hover {
+/* Hovered, or the message a desktop notification click opened */
+.notification-item:hover,
+.notification-item.focused {
   border-color: var(--primary-light);
 }
 
-/* Priority indicator left border */
+/* The priority as a coloured edge down the left of the card. Default priority (3) has none. */
 .notification-item::before {
-  content: '';
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  inset: 0 auto 0 0;
   width: 4px;
-  border-top-left-radius: 8px;
-  border-bottom-left-radius: 8px;
-  background-color: transparent;
+  border-radius: 8px 0 0 8px;
+  content: '';
 }
 
 .notification-item[data-priority='1']::before {
   background-color: #9e9e9e;
-} /* Min - Gray */
+}
+
 .notification-item[data-priority='2']::before {
-  background-color: #2196f3;
-} /* Low - Blue */
-.notification-item[data-priority='3']::before {
-  background-color: transparent;
-} /* Default - None */
+  background-color: var(--blue);
+}
+
 .notification-item[data-priority='4']::before {
-  background-color: #ff9800;
-} /* High - Orange */
+  background-color: var(--orange);
+}
+
 .notification-item[data-priority='5']::before {
-  background-color: #f44336;
-} /* Urgent - Red */
+  background-color: var(--red);
+}
 
 .notification-header {
   display: flex;
@@ -1337,102 +1306,107 @@ body:has(#settings-view.active) #back-btn {
 }
 
 .notification-message {
-  font-size: 14px;
   color: var(--text-primary);
-  word-break: break-word;
+  font-size: 14px;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .notification-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
   margin-top: 4px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .notification-tag {
-  font-size: 12px;
-  background-color: var(--border-color);
-  color: var(--text-secondary);
   padding: 2px 6px;
   border-radius: 4px;
+  background-color: var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
-.notifications-loading,
+/* In place of the list: loading, nothing to show, or an error */
+.notifications-error,
 .notifications-empty,
-.notifications-error {
+.notifications-loading {
   padding: 20px;
-  text-align: center;
   color: var(--text-secondary);
   font-size: 14px;
+  text-align: center;
 }
 
 .notifications-error {
   color: var(--status-error);
 }
 
-/* Read state */
+/* A read message fades, its priority edge more so */
 .notification-item.read {
   opacity: 0.75;
 }
 
 .notification-item.read::before {
-  opacity: 0.5; /* Fade priority indicator too */
+  opacity: 0.5;
 }
 
 .notification-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
 .notification-actions {
+  margin-left: auto; /* at the right end even without tags */
   display: flex;
   gap: 6px;
-  margin-left: auto; /* Push to right if no tags */
 }
 
+/* Round icon buttons: mark read, open the link, delete */
 .notification-action-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  border-radius: 50%;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
   width: 26px;
   height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .notification-action-btn:hover {
-  background-color: var(--border-color);
   color: var(--text-primary);
+  background-color: var(--border-color);
 }
 
-.notification-action-btn.read-btn:hover {
+/* Hovered, each action and its bulk version show their colour */
+.notification-action-btn.read-btn:hover,
+#mark-all-read-btn:hover {
+  background-color: var(--accent-tint);
   color: var(--primary-light);
-  background-color: rgba(51, 133, 116, 0.1);
 }
 
-.notification-action-btn.delete-btn:hover {
-  color: #f44336;
-  background-color: rgba(244, 67, 54, 0.1);
+.notification-action-btn.delete-btn:hover,
+#delete-all-btn:hover {
+  background-color: var(--red-tint);
+  color: var(--red);
 }
 
 .notification-action-btn.link-btn:hover {
-  color: #2196f3;
   background-color: rgba(33, 150, 243, 0.1);
+  color: var(--blue);
 }
 
 .notification-item.read .read-btn {
-  color: var(--primary-light);
+  color: var(--primary-light); /* the tick stays green on a read message */
 }
 
 /* Compact density (a setting): tighter rows, nothing removed */
@@ -1471,9 +1445,7 @@ body[data-density='compact'] .notification-image {
   margin-top: 3px;
 }
 
-/* ========================================
-   Inbox and send form
-   ======================================== */
+/* Inbox and Send form side by side: column widths, the resizing dividers and the popup's fixed height */
 
 #main-view {
   --divider-width: 10px;
@@ -1711,49 +1683,34 @@ body:not(.page-mode) .send-section :is(.form-input, .form-textarea) {
   }
 }
 
-/* ========================================
-   Notifications Control Bar (Bulk Actions)
-   ======================================== */
-
+/* Bulk actions beside the inbox heading (their hover colours are with the per-message actions) */
 .notifications-control-bar {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
   padding: 0 4px;
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
 }
 
 .control-btn {
-  background: none;
-  border: none;
+  display: flex;
+  gap: 4px;
+  align-items: center;
   padding: 4px 8px;
+  border: none;
   border-radius: 4px;
+  background: none;
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary);
   cursor: pointer;
   transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .control-btn:hover {
-  background-color: var(--border-color);
+  background: var(--border-color);
 }
 
-#mark-all-read-btn:hover {
-  color: var(--primary-light);
-  background-color: rgba(51, 133, 116, 0.1);
-}
-
-#delete-all-btn:hover {
-  color: #f44336;
-  background-color: rgba(244, 67, 54, 0.1);
-}
-
-/* ========================================
-   Inbox: Topic List
-   ======================================== */
+/* The topic list, beside the inbox or in a row above it */
 
 #inbox {
   align-self: stretch;
@@ -1933,9 +1890,9 @@ body:not(.page-mode) .send-section #message-input {
   gap: 6px;
   height: 18px;
   list-style: none;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-secondary);
   cursor: pointer;
 }
 
@@ -2029,9 +1986,7 @@ body:not(.page-mode) .send-section #message-input {
   line-height: 1.3;
 }
 
-/* ========================================
-   Receive Tab: Connection Status
-   ======================================== */
+/* Connection lines above the inbox, one per server, with a coloured dot */
 
 .connection-status {
   display: flex;
@@ -2082,9 +2037,7 @@ body:not(.page-mode) .send-section #message-input {
   letter-spacing: 0.5px;
 }
 
-/* ========================================
-   Settings: Per-topic options
-   ======================================== */
+/* Settings, Topics tab: the table of per-topic options */
 
 .topic-settings-scroll {
   overflow-x: auto;
@@ -2161,9 +2114,7 @@ body:not(.page-mode) .send-section #message-input {
   font-size: 11px;
 }
 
-/* ========================================
-   Receive Tab: Links and Actions
-   ======================================== */
+/* Message titles that open a link, and the buttons of view actions */
 
 button.notification-title {
   padding: 0;
@@ -2197,13 +2148,10 @@ button.notification-title {
 
 /* The message a desktop notification click opened */
 .notification-item.focused {
-  border-color: var(--primary-light);
   box-shadow: 0 0 0 1px var(--primary-light);
 }
 
-/* ========================================
-   Receive Tab: Search, Images, Markdown
-   ======================================== */
+/* Inbox search, image previews, and messages written in Markdown */
 
 .notifications-search {
   width: 100%;

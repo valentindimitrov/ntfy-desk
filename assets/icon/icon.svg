@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- ntfy Desk icon: a message card dropping into an inbox tray, with an unread dot. Rendered to public/icon/ by pnpm icons (scripts/icons.ts); 16 px uses icon-16.svg. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f9d88"/>
+      <stop offset="1" stop-color="#2a6e60"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="url(#bg)"/>
+  <!-- message card dropping into the tray -->
+  <rect x="40" y="26" width="48" height="34" rx="7" fill="#ffffff"/>
+  <rect x="49" y="36" width="30" height="5" rx="2.5" fill="#2f7d6c"/>
+  <rect x="49" y="46" width="20" height="5" rx="2.5" fill="#2f7d6c"/>
+  <!-- inbox tray -->
+  <path d="M26 70 H48 L55 81 H73 L80 70 H102 V92 Q102 102 92 102 H36 Q26 102 26 92 Z" fill="#ffffff"/>
+  <!-- unread dot -->
+  <circle cx="98" cy="30" r="15" fill="#f5a524" stroke="#ffffff" stroke-width="5"/>
+</svg>

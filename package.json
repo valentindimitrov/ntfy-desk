@@ -23,6 +23,7 @@
     "website:screenshots": "wxt build --mode e2e && node scripts/website-screenshots.ts && node scripts/website-image-sizes.ts && node scripts/store-screenshots.ts",
     "website:image-sizes": "node scripts/website-image-sizes.ts",
     "store:screenshots": "node scripts/store-screenshots.ts",
+    "icons": "node scripts/icons.ts",
     "website:card": "node scripts/website-card.ts",
     "compile": "tsc --noEmit",
     "lint": "vp lint --deny-warnings",

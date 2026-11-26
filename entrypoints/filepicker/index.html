@@ -4,44 +4,44 @@
     <meta charset="UTF-8" />
     <title>Attach files - ntfy Desk</title>
     <style>
-      /* Filepicker layout overrides */
+      /* The picker opens as a window of its own: the page fills it, the header keeps its height and
+         the drop zone sits in the middle of the space below. */
       html,
       body {
-        height: 100%;
         overflow-y: auto;
+        height: 100%;
       }
 
       body {
-        display: flex;
         flex-direction: column;
+        display: flex;
       }
 
       .header {
-        min-height: 56px;
+        flex: none;
         gap: 8px;
-        flex-shrink: 0;
+        min-height: 56px;
       }
 
       .main-content {
-        flex: 1;
-        display: flex;
+        flex: 1 1 0%;
         flex-direction: column;
-        align-items: center;
+        display: flex;
         justify-content: center;
-        padding: 10px 20px 8px 20px;
+        align-items: center;
         text-align: center;
+        padding: 10px 20px 8px;
       }
 
       .status {
-        margin-top: 8px;
-        padding: 10px;
         border-radius: 8px;
+        padding: 10px;
+        margin-top: 8px;
       }
     </style>
   </head>
 
   <body>
-    <!-- Header -->
     <div class="header">
       <div class="header-title">
         <img src="/icon/48.png" alt="" />
@@ -49,7 +49,6 @@
       </div>
     </div>
 
-    <!-- Main Content -->
     <div class="main-content">
       <p class="subtitle">Select or drop files to attach to your notifications</p>
 

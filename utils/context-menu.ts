@@ -96,12 +96,13 @@ async function getLinkText(tab: Browser.tabs.Tab | undefined, linkUrl: string): 
   try {
     const results = await browser.scripting.executeScript({
       target: { tabId: tab.id },
+      // Runs in the page: the first anchor whose absolute address is the clicked one (.href is absolute too)
       func: (targetUrl: string) => {
-        // .href is absolute, like targetUrl
-        for (const link of document.querySelectorAll('a')) {
-          if (link.href === targetUrl) {
-            return link.innerText || link.textContent || '';
-          }
+        // Stops at the first match: a page can hold very many anchors
+        const anchors = document.getElementsByTagName('a');
+        for (let i = 0; i < anchors.length; i++) {
+          const anchor = anchors[i];
+          if (anchor?.href === targetUrl) return anchor.innerText || anchor.textContent || '';
         }
         return '';
       },

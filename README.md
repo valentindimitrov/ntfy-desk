@@ -102,7 +102,7 @@ Code layout:
 
 ## Credits
 
-ntfy Desk is based on:
+ntfy Desk began as a port of these two extensions; its code, styles and icon have since been rewritten:
 
 - [Send to ntfy](https://github.com/TheDuffman85/send_to_ntfy_extension) by TheDuffman85: the sending extension (popup, context menu, attachments, ZIP).
 - [Ntfy-for-chrome](https://github.com/paulhybryant/Ntfy-for-chrome) by paulhybryant: receiving (WebSocket, message list, unread badge, desktop notifications).

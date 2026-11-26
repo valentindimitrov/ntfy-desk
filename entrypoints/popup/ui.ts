@@ -36,139 +36,120 @@ export function showSettingsStatus(message: string, type: StatusType): void {
   show(elements.settingsStatus, message, type);
 }
 
+/** Space kept between a tooltip and its element, and between a tooltip and the window's edges */
+const TOOLTIP_GAP = 8;
+
+/**
+ * Where a tooltip goes: centred over its element, or under it when there is no room above, and moved
+ * sideways to stay within the window (from its left edge first, when the tooltip is wider than the window).
+ */
+function tooltipPosition(anchor: DOMRect, box: DOMRect): { top: number; left: number } {
+  const above = anchor.top - box.height - TOOLTIP_GAP;
+  const centred = anchor.left + (anchor.width - box.width) / 2;
+  return {
+    top: above >= 0 ? above : anchor.bottom + TOOLTIP_GAP,
+    left: centred < TOOLTIP_GAP ? TOOLTIP_GAP : Math.min(centred, window.innerWidth - box.width - TOOLTIP_GAP),
+  };
+}
+
+/** How long the pointer rests on an element before its tooltip shows */
+const TOOLTIP_DELAY = 1000;
+
+/** Moves an element's title to data-tooltip, so the browser's own tooltip doesn't show as well; returns the text */
+function adoptTitle(element: HTMLElement): string | null {
+  const title = element.getAttribute('title');
+  if (title !== null) {
+    element.removeAttribute('title');
+    element.setAttribute('data-tooltip', title);
+  }
+  return element.getAttribute('data-tooltip');
+}
+
 /** Custom tooltips after 1 s: an element's title moves to data-tooltip to suppress the native one */
 export function setupTooltips(): void {
   const tooltip = elements.tooltip;
-  let activeElement: HTMLElement | null = null;
-  let tooltipTimeout: ReturnType<typeof setTimeout> | undefined;
+  // The element under the pointer, and the timer that will show its tooltip
+  let hovered: HTMLElement | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
-  function hideTooltip(): void {
+  function dismiss(): void {
+    clearTimeout(timer);
     tooltip.classList.remove('visible');
-    activeElement = null;
+    hovered = null;
   }
 
-  function showTooltip(element: HTMLElement, text: string): void {
+  function show(element: HTMLElement, text: string): void {
     if (!element.isConnected) return;
-
     tooltip.textContent = text;
     tooltip.classList.add('visible');
-
-    const rect = element.getBoundingClientRect();
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const margin = 8;
-
-    // Above and centred; below if there's no room above; kept inside the window
-    let top = rect.top - tooltipRect.height - margin;
-    let left = rect.left + (rect.width - tooltipRect.width) / 2;
-    if (top < 0) {
-      top = rect.bottom + margin;
-    }
-    if (left < margin) {
-      left = margin;
-    } else if (left + tooltipRect.width > window.innerWidth - margin) {
-      left = window.innerWidth - tooltipRect.width - margin;
-    }
-
+    const { top, left } = tooltipPosition(element.getBoundingClientRect(), tooltip.getBoundingClientRect());
     tooltip.style.top = `${top}px`;
     tooltip.style.left = `${left}px`;
   }
 
-  document.addEventListener('mouseover', (event) => {
-    const target = (event.target as Element).closest<HTMLElement>('[title], [data-tooltip]');
-    // Still on the same element: keep the timer
-    if (activeElement && target === activeElement) {
-      return;
+  document.addEventListener('mouseover', ({ target }) => {
+    const element = (target as Element).closest<HTMLElement>('[title], [data-tooltip]');
+    if (hovered) {
+      // Moving within the same element keeps its timer running
+      if (element === hovered) return;
+      dismiss();
     }
-    if (activeElement) {
-      clearTimeout(tooltipTimeout);
-      hideTooltip();
-    }
-    if (!target) {
-      return;
-    }
-
-    const title = target.getAttribute('title');
-    if (title !== null) {
-      target.setAttribute('data-tooltip', title);
-      target.removeAttribute('title');
-    }
-    const text = target.getAttribute('data-tooltip');
-    if (!text) return;
-
-    activeElement = target;
-    tooltipTimeout = setTimeout(() => {
-      if (activeElement === target) {
-        showTooltip(target, text);
-      }
-    }, 1000);
+    const text = element && adoptTitle(element);
+    if (!element || !text) return;
+    hovered = element;
+    timer = setTimeout(() => {
+      if (hovered === element) show(element, text);
+    }, TOOLTIP_DELAY);
   });
 
-  document.addEventListener('mouseout', (event) => {
-    const target = event.target as Element;
-    if (activeElement && (target === activeElement || target.closest('[data-tooltip]') === activeElement)) {
-      // Moving to a child of the element doesn't leave it
-      if (event.relatedTarget instanceof Node && activeElement.contains(event.relatedTarget)) {
-        return;
-      }
-      clearTimeout(tooltipTimeout);
-      hideTooltip();
-    }
+  document.addEventListener('mouseout', ({ target, relatedTarget }) => {
+    if (!hovered) return;
+    const from = target as Element;
+    const leavesHovered = from === hovered || from.closest('[data-tooltip]') === hovered;
+    // Moving onto a child of the element doesn't count as leaving it
+    if (leavesHovered && !(relatedTarget instanceof Node && hovered.contains(relatedTarget))) dismiss();
   });
 }
 
-// Drag-and-drop reordering of tag and topic badges
-let dragSrcIndex: number | null = null;
-let dragType: string | null = null;
+/** The tag or topic badge being dragged: its kind and position, or null while nothing is */
+let dragged: { type: string; index: number } | null = null;
 
 /** Make a badge draggable; onMove(from, to) is called when it is dropped on another badge of the same type */
 export function setupDragAndDrop(element: HTMLElement, index: number, type: string, onMove: (from: number, to: number) => void): void {
+  // A badge takes a drop only from another badge of its own kind
+  const takes = (source: typeof dragged): source is { type: string; index: number } =>
+    source !== null && source.type === type && source.index !== index;
+  const unmark = () => element.classList.remove('drag-over');
+
   element.draggable = true;
-
-  element.addEventListener('dragstart', (event) => {
-    dragSrcIndex = index;
-    dragType = type;
+  element.addEventListener('dragstart', ({ dataTransfer }) => {
+    dragged = { type, index };
     element.classList.add('dragging');
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', String(index));
-    }
+    dataTransfer?.setData('text/plain', String(index));
+    if (dataTransfer) dataTransfer.effectAllowed = 'move';
   });
-
-  element.addEventListener('dragend', () => {
-    element.classList.remove('dragging', 'drag-over');
-    dragSrcIndex = null;
-    dragType = null;
-  });
-
+  // Dropping is allowed only where dragover's default is prevented
   element.addEventListener('dragover', (event) => {
-    event.preventDefault(); // allows dropping
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'move';
-    }
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   });
-
   element.addEventListener('dragenter', (event) => {
     event.preventDefault();
-    if (dragType === type && dragSrcIndex !== index) {
-      element.classList.add('drag-over');
-    }
+    if (takes(dragged)) element.classList.add('drag-over');
   });
-
-  element.addEventListener('dragleave', () => element.classList.remove('drag-over'));
-
+  element.addEventListener('dragleave', unmark);
   element.addEventListener('drop', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    element.classList.remove('drag-over');
-
-    // The badges are re-rendered, so dragend may not fire: reset here too
-    const from = dragSrcIndex;
-    const sameType = dragType === type;
-    dragSrcIndex = null;
-    dragType = null;
-    if (sameType && from !== null && from !== index) {
-      onMove(from, index);
-    }
+    unmark();
+    // The badges are drawn again after a move, so dragend may never come: forget the drag here as well
+    const source = dragged;
+    dragged = null;
+    if (takes(source)) onMove(source.index, index);
+  });
+  element.addEventListener('dragend', () => {
+    element.classList.remove('dragging', 'drag-over');
+    dragged = null;
   });
 }
 
