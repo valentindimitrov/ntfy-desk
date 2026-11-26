@@ -110,13 +110,11 @@ Code layout:
 
 ## Credits
 
-ntfy Desk began as a port of these two extensions; its code, styles and icon have since been rewritten:
+ntfy Desk began as a port of these two GPL-3.0 extensions; its code, styles and icon have since been rewritten:
 
 - [Send to ntfy](https://github.com/TheDuffman85/send_to_ntfy_extension) by TheDuffman85: the sending extension (popup, context menu, attachments, ZIP).
 - [Ntfy-for-chrome](https://github.com/paulhybryant/Ntfy-for-chrome) by paulhybryant: receiving (WebSocket, message list, unread badge, desktop notifications).
 
-Both are GPL-3.0, and so is ntfy Desk.
-
 ## License
 
-[GNU General Public License v3.0](LICENSE). The bundled Roboto fonts use Apache-2.0. See the [license notices](NOTICE.md) for attribution and license files.
+[Apache License 2.0](LICENSE), from version 1.1.0; 1.0.0 was released under GPL-3.0. The bundled Roboto fonts use Apache-2.0 too. See the [license notices](NOTICE.md) for attribution and license files.

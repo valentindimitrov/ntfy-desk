@@ -27,7 +27,7 @@ The site is live since 2026-11-23: every push to `main` that passes CI deploys i
 | `public/` | `robots.txt`, `sitemap.xml`, `_redirects` (old addresses: `/getting-started` is now `/setup-instructions`; `/security.txt`) and `.well-known/security.txt`, copied as they are. |
 | `wrangler.jsonc`, `deploy/` | The Cloudflare deployment. |
 
-The build also writes `LICENSE.txt` (the GPL, `NOTICE.md` and the Roboto fonts' Apache licence), `_headers` and `social-card.png` (unhashed, because link previews need a fixed address).
+The build also writes `LICENSE.txt` (the Apache licence, which the Roboto fonts share, and `NOTICE.md`), `_headers` and `social-card.png` (unhashed, because link previews need a fixed address).
 
 `tests/unit/website.test.ts` builds the site and checks the output, as part of `pnpm check`: nothing loaded from another site, every link and file exists, every image has a description and a size, and the privacy page says what `PRIVACY.md` says.
 

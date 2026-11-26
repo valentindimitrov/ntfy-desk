@@ -10,9 +10,11 @@ import { HEADERS_FILE, renderPage } from './site.ts';
 const fromHere = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 const root = fromHere('.').replace(/\/$/, '');
 
-/** The extension's licence, its notices and the licence of the Roboto fonts the site also uses */
+/** The extension's licence, its notices and the licence of the Roboto fonts the site also uses (once if they are the same) */
 const license = () =>
-  ['../LICENSE', '../NOTICE.md', '../public/fonts/LICENSE.txt'].map((path) => readFileSync(fromHere(path), 'utf8')).join('\n\n');
+  [...new Set(['../LICENSE', '../NOTICE.md', '../public/fonts/LICENSE.txt'].map((path) => readFileSync(fromHere(path), 'utf8')))].join(
+    '\n\n',
+  );
 
 export default defineConfig(({ command }) => ({
   root,

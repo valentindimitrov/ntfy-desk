@@ -37,4 +37,4 @@ Firefox lists authentication information, personal communications, browsing acti
 
 Use an HTTPS server and a topic with access control for anything sensitive: anyone who can read a public topic receives what is sent to it.
 
-Open source under GPL-3.0. Source code and issue tracker: https://github.com/valentindimitrov/ntfy-desk
+Open source under the Apache License 2.0. Source code and issue tracker: https://github.com/valentindimitrov/ntfy-desk

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Pins the Cloudflare Wrangler CLI that deploys the website, outside the extension's dependencies.",
-  "license": "GPL-3.0-only",
+  "license": "Apache-2.0",
   "devDependencies": {
     "wrangler": "4.165.0"
   },

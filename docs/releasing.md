@@ -77,7 +77,7 @@ From the second version on, submit with the **Publish to stores** workflow ([sto
 
 1. **Submit a New Add-on** (later: **Upload New Version**), distribution **On this site**, upload `ntfy-desk-<version>-firefox.zip`. Compatibility: Firefox for desktop.
 2. Source code: answer **Yes** and upload `ntfy-desk-<version>-sources.zip`.
-3. Listing: `firefox-add-ons/summary.txt` into Summary, `description.md` into Description, license GPL-3.0-only, the text of `PRIVACY.md` into the privacy policy field.
+3. Listing: `firefox-add-ons/summary.txt` into Summary, `description.md` into Description, license Apache-2.0 (from 1.1.0; 1.0.0 was GPL-3.0-only), the text of `PRIVACY.md` into the privacy policy field.
 4. **Notes to Reviewer**: `firefox-add-ons/reviewer-notes.txt` below its first lines.
 
 Mozilla signs the add-on; the signed file is then installed from its Add-ons page. The ZIP on GitHub stays unsigned and is for temporary testing.

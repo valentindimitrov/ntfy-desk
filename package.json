@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "private": true,
   "description": "Browser extension to send and receive ntfy notifications",
-  "license": "GPL-3.0-only",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/valentindimitrov/ntfy-desk.git"
