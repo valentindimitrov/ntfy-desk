@@ -100,6 +100,10 @@ Code layout:
 - `website/` contains the public website and its [README](https://github.com/valentindimitrov/ntfy-desk/blob/main/website/README.md) (not in the sources ZIP).
 - `scripts/validate-packages.ts`, `scripts/sign-chrome.ts` and `scripts/crx3.ts` check and sign the release packages ([docs/releasing.md](docs/releasing.md)); `scripts/publish-stores.ts` submits them to the stores ([docs/store-publishing.md](docs/store-publishing.md)).
 
+## Support ntfy Desk
+
+[Optional tips](https://buy.stripe.com/28E00kdpS4Tm9uW7QF5c401) support development and do not unlock features. Contact: the [issues page](https://github.com/valentindimitrov/ntfy-desk/issues).
+
 ## Credits
 
 ntfy Desk began as a port of these two extensions; its code, styles and icon have since been rewritten:
