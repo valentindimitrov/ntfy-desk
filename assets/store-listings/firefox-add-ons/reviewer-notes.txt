@@ -1,42 +1,37 @@
 NTFY DESK: NOTES FOR REVIEWERS (Firefox Add-ons)
-Paste the text below the line into "Notes to Reviewer". Upload ntfy-desk-<version>-sources.zip as the source code.
+Paste the text below the line into "Notes to Reviewer" (AMO accepts at most 3,000 characters; a unit test checks it). Upload ntfy-desk-<version>-sources.zip as the source code.
 ----------------------------------------------------------------------
 
-BUILD FROM THE SOURCE ARCHIVE
+BUILD
 
-The add-on is written in TypeScript and bundled by WXT (Vite), so the submitted code is generated. The source archive holds the repository's files at the released commit that the build needs, with the tests, scripts and documentation; it leaves out the project website (website/, its scripts and its test), hidden files and folders such as .github/, and test output. No file is minified by hand. All code ships in the package: no script, style or font is loaded from elsewhere. At run time the add-on downloads data only: messages and inbox image previews from the user's ntfy server (previews from its attachment route only), and an image the user sends from the context menu, from that image's site.
+TypeScript bundled by WXT (Vite): the submitted code is generated; nothing is minified by hand. The source archive holds the repository at the release commit, without the website (website/), the store images, hidden folders (.github/) and test output. All code ships in the package. At run time it downloads data only: messages and image previews from the user's ntfy server, and an image the user sends from the context menu.
 
-Requirements: Node.js 24 and pnpm 12.14.0 (the version in package.json's packageManager field). The release is built on Ubuntu (GitHub Actions); the build also runs on macOS.
+Node.js 24 and pnpm 12.14.0 (packageManager in package.json):
 
   pnpm install --frozen-lockfile
   pnpm zip:firefox
 
-This writes the unpacked add-on to .output/firefox-mv3/ and the package to .output/ntfy-desk-<version>-firefox.zip. pnpm-lock.yaml pins every dependency; pnpm-workspace.yaml applies one patch from patches/ to a development tool (the add-on linter's deepmerge), which is not part of the add-on.
+Output: .output/firefox-mv3/ and .output/ntfy-desk-<version>-firefox.zip. The patch in patches/ applies to a development tool only (the linter's deepmerge).
 
 TESTING
 
-ntfy Desk is a client for ntfy (https://ntfy.sh), a separate open-source project. It needs a ntfy server; it has no account or service of its own. The public server https://ntfy.sh works without an account:
+No account is needed: https://ntfy.sh is a free public ntfy server.
 
-1. Click the toolbar icon, open Settings (gear), tab Server: enter https://ntfy.sh as the server URL and choose "Save server settings".
-2. Tab Topics: add a topic with a name that is hard to guess, for example ntfy-desk-review-<random letters>. Topics on ntfy.sh are public: anyone who knows the name can read it, so send test content only.
-3. Send a notification from the Send form. It arrives in the inbox and as a desktop notification.
-4. To publish from outside the add-on: curl -d "hello" https://ntfy.sh/<your topic>
-5. Right-click a page, a selection, a link or an image for the context-menu sends.
-
-No credentials are needed for ntfy.sh. Access tokens, usernames and passwords are only for servers with access control; a self-hosted server can be started with: docker run -p 8080:80 binwiederhier/ntfy serve
+1. Toolbar icon > Settings (gear) > Server: enter https://ntfy.sh and choose "Save server settings".
+2. Topics: add a hard-to-guess topic, e.g. ntfy-desk-review-<random letters>. ntfy.sh topics are public: send test content only.
+3. Send from the Send form: it arrives in the inbox and as a desktop notification. From outside: curl -d "hello" https://ntfy.sh/<topic>
+4. Right-click a page, a selection, a link or an image to send it.
 
 PERMISSIONS
 
-- storage, unlimitedStorage: settings, the inbox (received messages, kept on the device) and the queue of attachments waiting to be sent.
+- storage, unlimitedStorage: settings, the inbox and queued attachments, on the device.
 - notifications: desktop notifications for received messages.
-- alarms: a one-minute alarm to reconnect and fetch missed messages.
+- alarms: reconnect and catch up every minute.
 - contextMenus, activeTab: the right-click sends and "Fill in the current tab" read the active tab's title and URL after a user action.
-- scripting: one call (utils/context-menu.ts, getLinkText) that reads the text of the link the user right-clicked. The function is part of the package.
-- tabs (optional): requested by "Use tab" in the add-on's own tab, to read the title and URL of the page the user was on. Once granted, that tab reads the title and URL of the most recently used web page tab when it opens and when the user returns to it, and fills them into the Send form when "Fill in the current tab" is on or the user chooses "Use tab".
-- <all_urls> (optional host permission): never requested as a whole. The add-on requests specific origins after a click: the user's ntfy server and its fallback address together, from "Allow access to this server" in Settings when credentials or deletion sync are configured (the Authorization header needs host access, and deletion sync reads response headers that CORS otherwise hides), and the site of an image sent from the context menu.
+- scripting: one call (utils/context-menu.ts, getLinkText) reads the text of the right-clicked link.
+- tabs (optional): requested by "Use tab" in the add-on's own tab, to read the title and URL of the web page used last.
+- <all_urls> (optional): never requested as a whole. Only the user's ntfy server and its fallback, together (from "Allow access to this server", for credentials or deletion sync), and the site of an image sent from the context menu.
 
 DATA
 
-data_collection_permissions declares authenticationInfo, personalCommunications, browsingActivity and websiteContent because this data is sent to the ntfy server the user configured: credentials in the Authorization header, the notifications themselves, and a page's title, URL, selected text or image when the user sends it. A sent notification can also carry the options set under "More options" (click URL, Markdown, delivery delay, and the browser's time zone name for a delivery time such as "tomorrow 9am"). Other data flows the user starts: an image sent from the context menu is downloaded from its site, and Firefox Sync, if enabled, syncs the settings (server addresses without credentials, topic names, preferences). Nothing is sent to the developer; there is no analytics or other developer-operated service. PRIVACY.md in the source archive is the privacy policy.
-
-Remote content is treated as data: messages are validated (utils/ntfy.ts, parseMessage) and rendered with textContent; Markdown is built as DOM nodes (utils/markdown.ts). ARCHITECTURE.md, "Security model", describes this.
+authenticationInfo, personalCommunications, browsingActivity and websiteContent are declared because they go to the user's own ntfy server: credentials in the Authorization header, the notifications, and a page's title, URL, selected text or image when the user sends it. Nothing goes to the developer; there is no analytics. Server data is validated (utils/ntfy.ts, parseMessage) and rendered with textContent. Privacy policy: PRIVACY.md.

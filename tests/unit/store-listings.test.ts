@@ -31,6 +31,9 @@ it('explains every permission and data category to the Firefox reviewers', () =>
   expect(notes).toContain('pnpm install --frozen-lockfile');
   expect(notes).toContain('pnpm zip:firefox');
   expect(notes).toContain('https://ntfy.sh');
+  // The part pasted into AMO's "Notes to Reviewer", below the separator line: AMO accepts at most 3,000 characters
+  const pasted = notes.slice(notes.indexOf('-'.repeat(70)) + 70).trim();
+  expect(pasted.length).toBeLessThanOrEqual(3000);
 });
 
 it('keeps the summaries within the stores’ limits and says the extension is unofficial', () => {
