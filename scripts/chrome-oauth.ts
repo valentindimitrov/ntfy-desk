@@ -114,8 +114,9 @@ export async function exchangeCode(
   if (typeof refreshToken !== 'string' || !refreshToken) {
     throw new Error('Google token exchange: no refresh token (revoke the app at myaccount.google.com/permissions, then run this again)');
   }
+  // `scope` lists the granted scopes separated by spaces: the Chrome Web Store one has to be an entry of its own
   const scope = body['scope'];
-  if (typeof scope === 'string' && !scope.split(' ').includes(SCOPE))
+  if (typeof scope === 'string' && !new Set(scope.split(' ')).has(SCOPE))
     throw new Error(`Google token exchange: the token lacks the scope ${SCOPE}`);
   return { accessToken, refreshToken };
 }
