@@ -22,6 +22,8 @@ export default defineConfig({
       'assets/store-listings/screenshots/**',
       'assets/store-listings/chrome-web-store/*.png',
       'scripts/store-screenshots.ts',
+      'scripts/chrome-oauth.ts',
+      'tests/unit/chrome-oauth.test.ts',
     ],
   },
   hooks: {

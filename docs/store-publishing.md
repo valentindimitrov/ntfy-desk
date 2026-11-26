@@ -42,7 +42,7 @@ All three environments (`release`, `store-chrome`, `store-firefox`) exist, accep
 
 Never add the credentials as repository secrets: a workflow on any branch can read those. The Firefox add-on id is not a setting: it is `EXTENSION.firefoxId` in `scripts/validate-packages.ts` and the `gecko.id` in `wxt.config.ts`.
 
-- **Chrome**: an OAuth client (Google Cloud console) with the Chrome Web Store API enabled and a refresh token for the scope `https://www.googleapis.com/auth/chromewebstore`, from the account that owns the item. The publisher id and the item id are in the developer dashboard.
+- **Chrome**: an OAuth client (Google Cloud console) with the Chrome Web Store API enabled and a refresh token for the scope `https://www.googleapis.com/auth/chromewebstore`, from the account that owns the item. The publisher id and the item id are in the developer dashboard. See [Chrome credentials](#chrome-credentials).
 - **Firefox**: an API key from the [AMO developer hub](https://addons.mozilla.org/developers/addon/api/key/): the JWT issuer and its secret.
 
 Add the secrets yourself, never through an agent. `gh secret set` reads standard input and saves an empty secret when the command feeding it fails, and still reports success. Pipe only after the value was read:
@@ -52,6 +52,22 @@ reader | { IFS= read -r first || { echo "Nothing read; nothing changed" >&2; exi
 ```
 
 `gh secret list -e store-chrome -R valentindimitrov/ntfy-desk` then shows the secret's update time; the value can't be read back.
+
+### Chrome credentials
+
+1. In the [Google Cloud console](https://console.cloud.google.com), in the project of KeyMove's client or a new one, enable the **Chrome Web Store API**.
+2. **Google Auth Platform → Clients → Create client**, type **Desktop app**. Google shows a new client secret once: save it in Proton Pass.
+3. Set the app's publishing status to **In production**: in **Testing**, refresh tokens expire after 7 days.
+4. Run, yourself, in a terminal:
+
+   ```bash
+   node scripts/chrome-oauth.ts                                                  # ntfy Desk
+   node scripts/chrome-oauth.ts --repo valentindimitrov/ntfy-desk --repo valentindimitrov/keymove   # both
+   ```
+
+   It reads the client id and secret from `CHROME_CLIENT_ID` and `CHROME_CLIENT_SECRET` (for example through `pass-cli run`), else asks for them without echo. It opens Google's consent page in Vivaldi: sign in with the account that owns the items. It then checks that the new token can read each repository's item (its `CHROME_PUBLISHER_ID` and `CHROME_EXTENSION_ID` variables) and only then stores `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET` and `CHROME_REFRESH_TOKEN` in each repository's `store-chrome` environment through `gh secret set`. Nothing is printed or written to a file: the refresh token exists only in GitHub, and if it is lost or revoked, run the script again.
+
+One client and refresh token cover every item of the account. "No refresh token" means Google remembered an earlier consent: remove the app at myaccount.google.com/permissions and run it again.
 
 ## Before the first run
 
