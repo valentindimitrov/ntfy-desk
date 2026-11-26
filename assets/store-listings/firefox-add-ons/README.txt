@@ -15,7 +15,7 @@ Summary: summary.txt (at most 250 characters).
 Description: description.md (AMO's Markdown subset).
 Experimental: no. Requires payment or non-free services: no.
 Categories: Alerts & Updates, Social & Communication.
-Support email: empty. Support website: https://github.com/valentindimitrov/ntfy-desk/issues
+Support email: ntfy-desk.scrambled066@passmail.com (the project's support address, set 2026-11-26). Support website: https://github.com/valentindimitrov/ntfy-desk/issues
 License: GNU General Public License v3.0 only.
 Privacy policy: ticked, with the text of PRIVACY.md.
 Notes to Reviewer: reviewer-notes.txt below its line.
