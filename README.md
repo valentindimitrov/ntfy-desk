@@ -1,6 +1,11 @@
-# <img src="public/icon/48.png" alt="" width="40" height="40" style="vertical-align: middle;"> ntfy Desk
+<p align="center">
+  <img src="assets/icon/icon.svg" width="112" height="112" alt="ntfy Desk logo">
+</p>
 
-Send and receive [ntfy](https://ntfy.sh) notifications in your browser. Messages arrive live as desktop notifications and wait in an inbox per topic; send a note, a file or the page you're on in a few keystrokes. Works with ntfy.sh and self-hosted servers.
+# ntfy Desk
+
+Send and receive [ntfy](https://ntfy.sh) notifications in your browser. Messages arrive live as desktop
+notifications and wait in an inbox per topic; send a note, a file or the page you're on in a few keystrokes.
 
 [Website](https://ntfy-desk.minddevops.eu) ·
 [Setup instructions](https://ntfy-desk.minddevops.eu/setup-instructions) ·
@@ -9,10 +14,9 @@ Send and receive [ntfy](https://ntfy.sh) notifications in your browser. Messages
 [![ntfy Desk with its topic list, inbox and Send form](assets/store-listings/screenshots/overview-light.png)](https://ntfy-desk.minddevops.eu)
 
 > [!IMPORTANT]
-> The Chrome Web Store and Firefox Add-ons listings are in review. Until they are published, install ntfy Desk from [GitHub Releases](https://github.com/valentindimitrov/ntfy-desk/releases) as described [below](#install). It runs in Chrome, Edge, Vivaldi and other Chromium browsers (116+), and in Firefox (142+).
-
-> [!NOTE]
-> This is an unofficial extension and is not affiliated with the ntfy project.
+> ntfy Desk is in review at Firefox Add-ons and the Chrome Web Store (Chrome, Edge and Vivaldi). Until it is published there,
+> install a release build using the [instructions below](#install). It works with ntfy.sh and self-hosted servers,
+> in Chromium browsers 116+ and Firefox 142+. It is unofficial and not affiliated with the ntfy project.
 
 ## What it does
 
