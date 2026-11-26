@@ -1,6 +1,6 @@
 {
   "name": "ntfy-desk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Browser extension to send and receive ntfy notifications",
   "license": "GPL-3.0-only",
