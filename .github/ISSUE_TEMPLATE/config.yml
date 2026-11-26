@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and help
+    url: https://github.com/valentindimitrov/ntfy-desk/discussions/categories/q-a
+    about: Ask how to use ntfy Desk or get help with your setup.
+  - name: Ideas and feedback
+    url: https://github.com/valentindimitrov/ntfy-desk/discussions/categories/ideas
+    about: Suggest features and discuss improvements to ntfy Desk.
+  - name: Security problem
+    url: https://github.com/valentindimitrov/ntfy-desk/security/advisories/new
+    about: Report a vulnerability privately (SECURITY.md).
+  - name: Problems with the ntfy server itself
+    url: https://docs.ntfy.sh/
+    about: ntfy's own documentation, for the server, its configuration and the ntfy apps.

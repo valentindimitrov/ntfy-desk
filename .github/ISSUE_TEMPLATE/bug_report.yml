@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible problem with ntfy Desk.
+title: '[Bug] '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search [existing issues](https://github.com/valentindimitrov/ntfy-desk/issues) first. For help using ntfy Desk, use [Q&A](https://github.com/valentindimitrov/ntfy-desk/discussions/categories/q-a). Report security problems [privately](https://github.com/valentindimitrov/ntfy-desk/security/advisories/new), not here.
+        Leave access tokens, passwords, private topic names and message content out of examples, logs and screenshots: use a test topic and invented messages.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the settings involved (topics, notification rules, deletion sync, fallback URL) and how the message was sent.
+      placeholder: |
+        1. In Settings, subscribe to a test topic...
+        2. Send a message with curl -d "hello" https://ntfy.sh/<topic>...
+        3. Open ntfy Desk and...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ntfy Desk version
+      description: Shown on the browser's extensions page. For a build from source, include the commit if known.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and operating system
+      placeholder: Vivaldi 7.x on macOS 27, Firefox 147 on Windows 11
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: ntfy server
+      description: ntfy.sh or self-hosted, its ntfy version, and whether it is behind a reverse proxy (which one).
+      placeholder: Self-hosted ntfy 2.x behind nginx
+    validations:
+      required: true
+  - type: dropdown
+    id: view
+    attributes:
+      label: Where it happens
+      multiple: true
+      options:
+        - Toolbar popup
+        - ntfy Desk in a browser tab
+        - Desktop notifications
+        - Context menu or keyboard shortcut
+        - Settings
+        - Receiving in the background (badge, catch-up)
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        Screenshots, the sync status shown in the inbox, or errors from the background log: in Chromium, the extensions page → ntfy Desk → "service worker"; in Firefox, about:debugging → This Firefox → ntfy Desk → Inspect.

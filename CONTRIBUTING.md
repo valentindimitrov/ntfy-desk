@@ -1,9 +1,10 @@
 # Contributing to ntfy Desk
 
-Report reproducible bugs and propose features on the [issues page](https://github.com/valentindimitrov/ntfy-desk/issues).
-For a bug, give the ntfy Desk version, the browser and its version, whether the server is ntfy.sh or self-hosted
-(and its ntfy version), the steps and what you expected. Leave out access tokens, passwords, private topic names and
-message content. Discuss substantial changes in an issue before implementing them. Follow [SECURITY.md](SECURITY.md)
+Report reproducible bugs through the [bug-report form](https://github.com/valentindimitrov/ntfy-desk/issues/new?template=bug_report.yml).
+Use [Q&A](https://github.com/valentindimitrov/ntfy-desk/discussions/categories/q-a) for help and
+[Ideas](https://github.com/valentindimitrov/ntfy-desk/discussions/categories/ideas) for feature proposals.
+Leave access tokens, passwords, private topic names and message content out of reports. Discuss substantial changes
+before implementing them; the maintainer opens a linked issue once a proposal is ready. Follow [SECURITY.md](SECURITY.md)
 for private vulnerability reports.
 
 ## Make a change
