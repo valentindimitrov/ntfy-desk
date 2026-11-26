@@ -89,7 +89,7 @@ export function manifest(browser: 'chrome' | 'firefox', changes: Record<string, 
 
 /** The repository files the packages are compared with */
 export const REPOSITORY: Record<string, string> = {
-  'package.json': JSON.stringify({ name: 'ntfy-desk', version: VERSION }),
+  'package.json': JSON.stringify({ name: 'ntfy-desk', version: VERSION, license: 'Apache-2.0' }),
   LICENSE: 'Fixture license',
   'NOTICE.md': 'Fixture notices',
   'README.md': 'Fixture readme',

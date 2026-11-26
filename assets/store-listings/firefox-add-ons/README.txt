@@ -16,7 +16,7 @@ Description: description.md (AMO's Markdown subset).
 Experimental: no. Requires payment or non-free services: no.
 Categories: Alerts & Updates, Social & Communication.
 Support email: ntfy-desk.scrambled066@passmail.com (the project's support address, set 2026-11-26). Support website: https://github.com/valentindimitrov/ntfy-desk/issues
-License: GNU General Public License v3.0 only for 1.0.0. From 1.1.0: Apache License 2.0. AMO keeps a version's license for the next one, and scripts/publish-stores.ts doesn't set it, so change it to Apache 2.0 in the Developer Hub when 1.1.0 is submitted.
+License: GNU General Public License v3.0 only for 1.0.0. From 1.1.0: Apache License 2.0. scripts/publish-stores.ts creates each version with the license in package.json (Apache-2.0), so the workflow switches it; submitted by hand, choose Apache License 2.0.
 Privacy policy: ticked, with the text of PRIVACY.md.
 Notes to Reviewer: reviewer-notes.txt below its line.
 

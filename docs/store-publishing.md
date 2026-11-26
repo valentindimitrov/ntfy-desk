@@ -1,10 +1,10 @@
 # Publishing to the stores
 
-The manually started **Publish to stores** workflow ([`.github/workflows/publish-stores.yml`](../.github/workflows/publish-stores.yml)) submits a published GitHub release to the Chrome Web Store and Firefox Add-ons (AMO). It never rebuilds: it submits the exact files attached to the release. Run it after **Prepare release** has created the draft and you have tested and published it ([releasing.md](releasing.md)).
+The **Publish to stores** workflow ([`.github/workflows/publish-stores.yml`](../.github/workflows/publish-stores.yml)) submits a published GitHub release to the Chrome Web Store and Firefox Add-ons (AMO). It never rebuilds: it submits the exact files attached to the release. It starts by itself when you publish a release that **Prepare release** created ([releasing.md](releasing.md)): **Submit published release** ([`.github/workflows/release-to-stores.yml`](../.github/workflows/release-to-stores.yml)) dispatches it on `main` for the release's version with `submit` on, both stores and `publish-after-review`. Then approve the two store jobs under **Review deployments**. A prerelease starts nothing. To submit again, to one store only, or with `stage-for-manual-publish`, start it by hand.
 
 The first version of each store item is submitted by hand ([releasing.md](releasing.md#5-chrome-web-store)): that submission creates the item with its listing, privacy answers and (on AMO) reviewer notes, which are filled in on the store's site. The workflow only submits updates to items that exist: on Chrome it uploads to the item named by `CHROME_PUBLISHER_ID` and `CHROME_EXTENSION_ID` and publishes it; on AMO it adds a version to the add-on with the manifest's id (`/addons/addon/<id>/versions/`). AMO's API could create an add-on too, but this workflow doesn't. The workflow is for every version after the first.
 
-## Running it
+## Running it by hand
 
 **Actions → Publish to stores → Run workflow**, branch `main`, or:
 
@@ -24,7 +24,7 @@ gh workflow run publish-stores.yml --ref main -f version=1.0.1 -f submit=true   
 
 1. **Download and verify release packages** (read-only token, no secrets): requires a published, non-draft release whose tag is on `origin/main`, downloads its files, checks them against `SHA256SUMS.txt` and runs `node scripts/publish-stores.ts verify <version>`. That checks both manifests' name (`ntfy Desk`), Manifest V3 and version, the Firefox add-on id, the sources ZIP's `package.json` version and, when CRX signing is on in this checkout, that the CRX is signed with the committed public key and carries exactly the Chromium ZIP.
 2. **Submit to the Chrome Web Store** (environment `store-chrome`, only with `submit`): verifies again, uploads through the Chrome Web Store API v2 (the CRX when signing is on, else the Chromium ZIP), waits for processing and calls `publish` with the chosen publish type.
-3. **Submit to Firefox Add-ons** (environment `store-firefox`, only with `submit`): verifies again, uploads the Firefox ZIP to the listed channel through the AMO API v5, waits for Mozilla's validation, then creates the version with the sources ZIP attached for review.
+3. **Submit to Firefox Add-ons** (environment `store-firefox`, only with `submit`): verifies again, uploads the Firefox ZIP to the listed channel through the AMO API v5, waits for Mozilla's validation, then creates the version with the sources ZIP attached for review and the license from the sources' `package.json` (an [AMO license slug](https://mozilla.github.io/addons-server/topics/api/licenses.html), checked in step 1; `Apache-2.0` from 1.1.0).
 
 The store jobs install nothing: `scripts/publish-stores.ts` imports only Node built-ins and `crx3.ts`, `sign-chrome.ts` and `validate-packages.ts`, which do the same. Credentials are removed from the environment when the script starts. Every request has a time limit and refuses redirects. Errors show the HTTP status and the API's own message with any credential replaced by `[redacted]`, never a request or a raw response.
 
@@ -56,9 +56,11 @@ reader | { IFS= read -r first || { echo "Nothing read; nothing changed" >&2; exi
 ## Before the first run
 
 - **Chrome**: the item exists, with its first version submitted by hand. If you opt into **Verified CRX uploads** ([crx-signing.md](crx-signing.md)), every later release must carry the CRX: the workflow uploads it once the public key is committed. Whether the store accepts a CRX before the opt-in isn't documented, so the workflow uploads the ZIP while signing is off.
-- **Firefox**: the add-on exists on AMO with the id above and has its license, name, summary and categories: a new version can't set them.
+- **Firefox**: the add-on exists on AMO with the id above and has its name, summary and categories: a new version can't set them. Its license is set with each version.
 - Listing text, images and privacy answers stay in each store's dashboard ([`assets/store-listings/`](../assets/store-listings/README.md)).
 - Run the workflow once without `submit` against the release, to see the verification pass.
+- **Chrome refuses a new version while another is in review**: publish the next release once the store's review of the previous one is done, or cancel that review in the dashboard.
+- The Chrome item and its publisher are the same as KeyMove's (`1e59622e-…`, publisher "minddevops.eu"), so the same Google account's OAuth client and refresh token work for both, and the AMO API key covers every add-on of its account. The repository variables are set (2026-11-26); the secrets aren't.
 
 Live state, without credentials: `https://addons.mozilla.org/api/v5/addons/addon/ntfy-desk@valentindimitrov.github.io/` (`current_version.version`) and the Version on the item's Chrome Web Store page.
 

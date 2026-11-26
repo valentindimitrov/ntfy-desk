@@ -90,8 +90,13 @@ it.each([
   ],
   [
     'a sources package of another version',
-    () => writePackage(root, 'sources', { ...REPOSITORY, 'package.json': JSON.stringify({ version: '1.0.0' }) }),
+    () => writePackage(root, 'sources', { ...REPOSITORY, 'package.json': JSON.stringify({ version: '1.0.0', license: 'Apache-2.0' }) }),
     'Sources ZIP: package.json version',
+  ],
+  [
+    "a sources package with a license AMO doesn't offer",
+    () => writePackage(root, 'sources', { ...REPOSITORY, 'package.json': JSON.stringify({ version: VERSION, license: 'Apache 2.0' }) }),
+    "license Apache 2.0 is not one of AMO's licenses",
   ],
   ['a missing Firefox package', () => rmSync(file('firefox')), 'Missing release file'],
 ])('rejects %s before any store upload', (_, prepare, message) => {
@@ -286,6 +291,7 @@ it('uploads to AMO, waits for validation and creates the version with the source
   const versionForm = store.calls[2]?.init.body as FormData;
   expect(versionForm.get('upload')).toBe('abc-123');
   expect((versionForm.get('source') as File).name).toBe(`ntfy-desk-${VERSION}-sources.zip`);
+  expect(versionForm.get('license')).toBe('Apache-2.0');
 });
 
 it('stops before creating a version when AMO validation fails', async () => {

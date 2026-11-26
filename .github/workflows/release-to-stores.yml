@@ -1,0 +1,40 @@
+name: Submit published release
+
+# Publishing a GitHub release (docs/releasing.md) starts Publish to stores on main for its version, with
+# submit on, both stores, and Chrome publishing once its review passes (docs/store-publishing.md). The
+# dispatched run does every check of a manual one, and each store job still waits for the owner's approval in
+# its environment. A prerelease is never submitted. This job only dispatches: it reads nothing else and has
+# no secrets. It runs from the tag's copy of this file; Publish to stores always runs from main.
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    name: Start Publish to stores
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Dispatch Publish to stores on main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v([0-9]+(\.[0-9]+){1,3})$ ]]; then
+            echo "Tag $TAG is not v and a version: nothing to submit." >&2
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          gh workflow run publish-stores.yml --ref main -f version="$version" -f submit=true \
+            -f chrome=true -f firefox=true -f chrome_publish_type=publish-after-review
+          echo "Started Publish to stores for $version: approve its store jobs under Review deployments." >> "$GITHUB_STEP_SUMMARY"

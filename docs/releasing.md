@@ -1,6 +1,6 @@
 # Releasing ntfy Desk
 
-A release is prepared by a workflow started by hand and finished by hand: the workflow builds, checks and attaches the packages to a **draft** GitHub release, and you publish the draft. The first submission to each store is done by hand; later versions go to the stores through the **Publish to stores** workflow ([store-publishing.md](store-publishing.md)), also started by hand. Nothing is released by pushing a tag.
+A release is prepared by a workflow started by hand and finished by hand: the workflow builds, checks and attaches the packages to a **draft** GitHub release, and you publish the draft. The first submission to each store is done by hand; later versions go to the stores through the **Publish to stores** workflow ([store-publishing.md](store-publishing.md)), which publishing the release starts, with each store job waiting for your approval. Nothing is released by pushing a tag.
 
 Files: [`.github/workflows/prepare-release.yml`](../.github/workflows/prepare-release.yml), `scripts/validate-packages.ts`, `scripts/sign-chrome.ts`, [crx-signing.md](crx-signing.md) (the optional Chrome Web Store signing key and the `release` environment), [`assets/store-listings/`](../assets/store-listings/README.md) (the text for the stores).
 
@@ -60,7 +60,7 @@ shasum -a 256 -c SHA256SUMS.txt      # Linux: sha256sum -c SHA256SUMS.txt
 
 ## 4. Publish the draft
 
-Edit the notes if needed, check the target commit, then **Publish release**. GitHub creates the tag `v<version>` at that commit. The tag starts no workflow. From then on the version is taken.
+Edit the notes if needed, check the target commit, then **Publish release**. GitHub creates the tag `v<version>` at that commit; from then on the version is taken. Publishing (not the tag) starts **Submit published release**, which starts **Publish to stores** for the version: approve its Chrome and Firefox jobs under **Review deployments** once its verification passed ([store-publishing.md](store-publishing.md)). A prerelease isn't submitted. Chrome refuses a new version while another is in review, so publish after the previous review is done.
 
 ## 5. Chrome Web Store
 

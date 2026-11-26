@@ -72,9 +72,36 @@ export function chromePackage(version: string, root = repositoryRoot): string {
 }
 
 /**
+ * AMO's predefined open source licenses (its API's slugs, from the SPDX list, case-sensitive): the version is
+ * created with the sources' package.json license, which has to be one of them.
+ * https://mozilla.github.io/addons-server/topics/api/licenses.html
+ */
+const AMO_LICENSES = new Set([
+  'MPL-2.0',
+  'Apache-2.0',
+  'GPL-2.0-only',
+  'GPL-3.0-only',
+  'LGPL-2.1-only',
+  'LGPL-3.0-only',
+  'AGPL-3.0-only',
+  'MIT',
+  'ISC',
+  'BSD-2-Clause',
+  'Unlicense',
+]);
+
+/** The license in the release's sources package.json */
+function sourcesPackage(root: string, version: string): Record<string, unknown> {
+  const file = packagePath(root, version, 'sources');
+  requireCondition(existsSync(file), `Missing release file: ${basename(file)}`);
+  return readJson(readZip(readFileSync(file), 'Sources ZIP').get('package.json'), 'Sources ZIP: package.json');
+}
+
+/**
  * Checks the downloaded release packages before any store sees them: both manifests name ntfy Desk at the
- * requested version, the Firefox add-on id is ours, the sources package has the same version, and, when
- * signing is on, the CRX is signed with the committed public key and carries exactly the Chromium ZIP.
+ * requested version, the Firefox add-on id is ours, the sources package has the same version and a license
+ * AMO offers, and, when signing is on, the CRX is signed with the committed public key and carries exactly
+ * the Chromium ZIP.
  */
 export function verifyStorePackages(version: string, root = repositoryRoot): void {
   requireCondition(VERSION_PATTERN.test(version), `Invalid version: ${version}`);
@@ -103,8 +130,13 @@ export function verifyStorePackages(version: string, root = repositoryRoot): voi
   const gecko = isObject(settings) ? settings['gecko'] : undefined;
   requireCondition(isObject(gecko) && gecko['id'] === EXTENSION.firefoxId, `Firefox ZIP: the add-on id is not ${EXTENSION.firefoxId}`);
 
-  const sources = readJson(readZip(read('sources'), 'Sources ZIP').get('package.json'), 'Sources ZIP: package.json');
+  read('sources');
+  const sources = sourcesPackage(root, version);
   requireCondition(sources['version'] === version, `Sources ZIP: package.json version is not ${version}`);
+  requireCondition(
+    typeof sources['license'] === 'string' && AMO_LICENSES.has(sources['license']),
+    `Sources ZIP: package.json license ${String(sources['license'])} is not one of AMO's licenses`,
+  );
 }
 
 function redact(text: string, secrets: readonly string[]): string {
@@ -322,6 +354,8 @@ export async function publishFirefox(
   const versionForm = new FormData();
   versionForm.append('upload', uuid);
   attach(versionForm, 'source', 'sources');
+  // Each version states its license: without it AMO keeps the previous version's (1.0.0 was GPL-3.0-only)
+  versionForm.append('license', String(sourcesPackage(root, version)['license']));
   const created = await requestJson(
     fetchImpl,
     'AMO version',
