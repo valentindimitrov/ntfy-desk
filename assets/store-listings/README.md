@@ -26,8 +26,9 @@ Other fields: category **Communication** (or **Tools**; the dashboard's list dec
 | `summary.txt` | **Summary** (at most 250 characters). |
 | `description.md` | **Description**. AMO accepts this subset of Markdown (bold, links, lists). |
 | `reviewer-notes.txt` | **Notes to Reviewer**, below its first lines: how to build from the sources ZIP and how to test with a ntfy server. |
+| `README.txt` | Every Developer Hub field as filled in for 1.0.0: distribution, compatibility, categories, license, support site. |
 
-Other fields: license GPL-3.0-only; the privacy policy field takes the text of `PRIVACY.md`; platforms: desktop only (the add-on isn't tested on Firefox for Android); up to two categories. The add-on id and the data collection declaration come from the manifest.
+Other fields: license GPL-3.0-only; the privacy policy field takes the text of `PRIVACY.md`; platforms: desktop only (the add-on isn't tested on Firefox for Android); categories Alerts & Updates and Social & Communication (`README.txt`). The add-on id and the data collection declaration come from the manifest.
 
 ## GitHub (`github/`)
 
