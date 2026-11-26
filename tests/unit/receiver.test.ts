@@ -3,7 +3,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { getHistoryState, getTopicSyncStates } from '@/utils/history';
 import type { NtfyMessage } from '@/utils/ntfy';
 import { MAX_MESSAGE_JSON } from '@/utils/ntfy';
-import { KEEPALIVE_INTERVAL, STREAM_IDLE_TIMEOUT, createReceiver } from '@/utils/receiver';
+import { KEEPALIVE_INTERVAL, STREAM_CONNECT_TIMEOUT, STREAM_IDLE_TIMEOUT, createReceiver } from '@/utils/receiver';
 import { getReceiverStatus } from '@/utils/status';
 import { mockResolved } from './helpers/mock';
 import { FakeStream, installFakeNtfy, type FakeServer } from './helpers/fake-ntfy';
@@ -123,6 +123,15 @@ describe('sync and live messages', () => {
     expect(new URL(server.requests.at(-1)!.url).searchParams.get('since')).toBe('86460s');
     expect(notified.map(({ id }) => id)).toEqual([missed.id]);
     expect((await getTopicSyncStates()).get('quiet')?.emptyPollAt).toBeUndefined();
+  });
+
+  it("doesn't seed the watermark from a server Date more than a day ahead of this clock", async () => {
+    await configure('quiet');
+    server.now = Math.floor(Date.now() / 1000) + 30 * 86400; // a proxy whose clock is a month ahead
+    await newReceiver().sync();
+    const state = (await getTopicSyncStates()).get('quiet');
+    expect(state?.since).toBeNull();
+    expect(state?.emptyPollAt).toBeGreaterThan(0); // elapsed time from this clock instead
   });
 
   it('reports newly caught-up messages from every topic as one batch', async () => {
@@ -440,6 +449,51 @@ describe('subscription stream', () => {
       await vi.waitFor(() => expect(FakeStream.instances.length).toBe(opened + 1));
       await vi.advanceTimersByTimeAsync(100);
       expect(FakeStream.instances.length).toBe(opened + 1);
+      receiver.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up a subscription the server never answers, and reconnects', async () => {
+    await configure('alerts');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const receiver = newReceiver();
+      await receiver.connect();
+      const silent = lastStream(); // neither accepted nor refused: no response headers
+      await vi.advanceTimersByTimeAsync(STREAM_CONNECT_TIMEOUT - 100);
+      expect(silent.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(silent.aborted).toBe(true);
+      await vi.waitFor(async () => expect((await getReceiverStatus())?.state).toBe('reconnecting'));
+      expect((await getReceiverStatus())?.unreachable).toBe(true);
+      // After the backoff, a new subscription
+      const opened = FakeStream.instances.length;
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.waitFor(() => expect(FakeStream.instances.length).toBe(opened + 1));
+      receiver.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tries again later when a reconnect fails before the stream opens', async () => {
+    await configure('alerts');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const receiver = newReceiver();
+      await receiver.connect();
+      lastStream().refuse(503);
+      await vi.waitFor(async () => expect((await getReceiverStatus())?.state).toBe('reconnecting'));
+      const opened = FakeStream.instances.length;
+      vi.spyOn(fakeBrowser.storage.sync, 'get').mockRejectedValueOnce(new Error('storage unavailable'));
+      await vi.advanceTimersByTimeAsync(5000); // the reconnect fails reading the settings
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('Could not reconnect, trying again later'));
+      expect(FakeStream.instances.length).toBe(opened);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.waitFor(() => expect(FakeStream.instances.length).toBe(opened + 1));
       receiver.close();
     } finally {
       vi.useRealTimers();

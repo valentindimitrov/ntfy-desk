@@ -21,6 +21,7 @@ import {
   getConfig,
   getNotifications,
   isNoResponse,
+  REDIRECTED_ERROR,
   openMessageStream,
   parseMessageJson,
   readLines,
@@ -37,6 +38,8 @@ const MAX_RECONNECT_DELAY = 60000;
 export const KEEPALIVE_INTERVAL = 20000;
 /** Reconnect when the stream brings nothing for this long (ntfy sends a keepalive every 45 s by default) */
 export const STREAM_IDLE_TIMEOUT = 150_000;
+// Time limit for the server to answer a subscription with its response headers
+export const STREAM_CONNECT_TIMEOUT = 20_000;
 // How long the read-access check of the topics is reused
 const READABLE_TOPICS_TTL = 60 * 60 * 1000;
 // Window fetched silently the first time a topic is synced
@@ -141,13 +144,13 @@ export function createReceiver(events: ReceiverEvents) {
     }
   }
 
-  /** (Re)start the idle limit of a subscription: aborted when nothing arrives within STREAM_IDLE_TIMEOUT */
-  function resetIdleTimer(current: Subscription): void {
+  /** (Re)start the idle limit of a subscription: aborted when nothing arrives within `limit` (STREAM_IDLE_TIMEOUT) */
+  function resetIdleTimer(current: Subscription, limit = STREAM_IDLE_TIMEOUT): void {
     stopIdleTimer();
     idleTimer = setTimeout(() => {
       console.log('No data from the server for too long, reconnecting...');
       current.controller.abort(new DOMException('No data from the server', 'TimeoutError'));
-    }, STREAM_IDLE_TIMEOUT);
+    }, limit);
   }
 
   function stopIdleTimer(): void {
@@ -180,7 +183,11 @@ export function createReceiver(events: ReceiverEvents) {
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
-      void connect();
+      // A failure before the stream opens (a storage error) tries again later instead of stopping here
+      connect().catch(() => {
+        console.warn('Could not reconnect, trying again later');
+        scheduleReconnect();
+      });
     }, reconnectDelay);
   }
 
@@ -217,6 +224,9 @@ export function createReceiver(events: ReceiverEvents) {
       let opened = false;
       let unreachable = false;
       try {
+        // Until the headers arrive the idle limit doesn't run: without this, a server or proxy that accepts the
+        // connection and never answers would leave the subscription "connecting" for good
+        resetIdleTimer(current, STREAM_CONNECT_TIMEOUT);
         const response = await openMessageStream(config, config.topics, current.controller.signal);
         if (!response.ok || !response.body) {
           throw new Error(`HTTP ${response.status}`);
@@ -229,7 +239,7 @@ export function createReceiver(events: ReceiverEvents) {
         setStatus({ state: 'connected', retryAt: null, unreachable: false });
         startKeepalive();
         resetIdleTimer(current);
-        void sync();
+        sync().catch(() => console.warn('Could not catch up on missed messages'));
         events.onConnected?.();
 
         await readLines(
@@ -340,7 +350,8 @@ export function createReceiver(events: ReceiverEvents) {
       const message = error instanceof Error ? error.message : '';
       const httpStatus = /^HTTP [1-5]\d\d\b/.exec(message)?.[0];
       const noResponse = isNoResponse(error);
-      const detail = noResponse ? 'no response' : (httpStatus ?? (message === 'Response too large' ? message : 'request failed'));
+      const ownText = message === 'Response too large' || message === REDIRECTED_ERROR;
+      const detail = noResponse ? 'no response' : (httpStatus ?? (ownText ? message : 'request failed'));
       const transient = noResponse || httpStatus?.startsWith('HTTP 5') === true;
       // Not console.error: the browser lists errors and warnings on the extension's page, and an unreachable or
       // failing server is expected (offline, server restart) and already shown in the sync status. Only a
@@ -442,7 +453,9 @@ export function createReceiver(events: ReceiverEvents) {
       truncatedTopics: [...truncatedTopics],
       unverifiedDeletionTopics: [...unverifiedDeletionTopics],
       lastSyncAt: Date.now(),
-      ...(unreachable && { unreachable: true }),
+      // Also false: a sync that reached the server ends an earlier "can't reach" state, but only of the server the
+      // subscription uses now (a slow poll of a server changed meanwhile mustn't clear a newer observation)
+      ...((!activeApiUrl || activeApiUrl === apiUrl) && { unreachable }),
     });
     // The topics configured now: they may have changed during the poll
     await pruneTopicSyncStates((await getConfig()).topics);

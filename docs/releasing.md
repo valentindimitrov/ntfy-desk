@@ -9,9 +9,9 @@ Files: [`.github/workflows/prepare-release.yml`](../.github/workflows/prepare-re
 1. The environments `release`, `store-chrome` and `store-firefox` exist and accept deployments from `main` only ([crx-signing.md](crx-signing.md#protecting-the-key-owner-setup), [store-publishing.md](store-publishing.md#settings-it-needs)). A job that names a missing environment creates it without any protection.
 2. Decide about CRX signing. It is off until a public key is committed, and a first Chrome Web Store submission doesn't need it.
 
-## 1. Bump the version
+## 1. Bump the version (not for the first release)
 
-The version lives in `package.json` only; WXT writes it into both manifests and the ZIP names. Change it in a commit of its own, separate from releasing:
+The version lives in `package.json` only; WXT writes it into both manifests and the ZIP names. The first release uses the `1.0.0` already there: skip to step 2. For every later release, change it in a commit of its own, separate from releasing:
 
 ```bash
 pnpm build && pnpm build:firefox   # then check "version" in .output/*/manifest.json
@@ -22,10 +22,10 @@ Push to `main` and wait for CI. A version is two to four numbers (`1.0.1`); the 
 
 ## 2. Run Prepare release
 
-**Actions → Prepare release → Run workflow**, branch `main`, the version without `v`, or:
+**Actions → Prepare release → Run workflow**, branch `main`, the version without `v` (it must equal `package.json`'s: `1.0.0` for the first release), or:
 
 ```bash
-gh workflow run prepare-release.yml --ref main -f version=1.0.1 -f prerelease=false
+gh workflow run prepare-release.yml --ref main -f version=1.0.0 -f prerelease=false
 ```
 
 **Build and validate packages** (read-only token, no secrets):
@@ -40,7 +40,7 @@ gh workflow run prepare-release.yml --ref main -f version=1.0.1 -f prerelease=fa
 
 - waits for your approval if the environment has a required reviewer: open the run and choose **Review deployments → Approve**;
 - checks out the commit afresh, downloads the artifact and validates it again. It installs nothing: the scripts import only Node built-ins;
-- signs the Chromium ZIP as a CRX when a signing key is registered, otherwise says "CRX signing skipped" in the run's summary;
+- signs the Chromium ZIP as a CRX when the public key `assets/store-listings/chrome-web-store/crx-signing-public-key.pem` is committed (it then needs the private key secret, [crx-signing.md](crx-signing.md)), otherwise says "CRX signing skipped" in the run's summary;
 - writes `SHA256SUMS.txt`;
 - creates the draft release `ntfy Desk v<version>` with generated notes ([`.github/release.yml`](../.github/release.yml) sorts pull requests by label). If a draft for that tag exists, it keeps the draft's title and notes, points it at the selected commit, sets the prerelease flag and replaces its files. A published release or an existing tag stops the run.
 

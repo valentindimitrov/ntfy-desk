@@ -2,7 +2,7 @@
 // is published, put its address here and the pages link to it.
 
 export const INSTALL = {
-  /** Chrome Web Store listing (Chrome, Edge, Vivaldi and other Chromium browsers) */
+  /** Chrome Web Store listing (Chrome, Edge, Vivaldi and other Chromium browsers 116 or later) */
   chromeWebStore: '',
   /** Firefox Add-ons listing (Firefox 142 or later) */
   firefoxAddons: '',

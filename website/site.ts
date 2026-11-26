@@ -119,7 +119,7 @@ function install(page: string): string {
       : 'The repository is not public yet: until it is, the GitHub links on this site only open for people with access to it.',
   ].filter(Boolean);
   return `<ul class="install-list">
-  ${installTarget('Chrome, Edge, Vivaldi and other Chromium browsers', 'Chrome Web Store', INSTALL.chromeWebStore)}
+  ${installTarget('Chrome, Edge, Vivaldi and other Chromium browsers 116 or later', 'Chrome Web Store', INSTALL.chromeWebStore)}
   ${installTarget('Firefox 142 or later', 'Firefox Add-ons', INSTALL.firefoxAddons)}
   <li><strong>Extension ZIPs and source archives</strong><a href="${INSTALL.githubReleases}">GitHub Releases</a></li>
 </ul>

@@ -161,10 +161,10 @@ function setByHand(changed: 'priority' | 'tags'): void {
   if (!state.topicSendDefaults.has(sendTopic())) {
     if (changed === 'priority') {
       state.rememberedPriority = state.selectedPriority;
-      void saveSync({ priority: state.selectedPriority });
+      void saveSync({ priority: state.selectedPriority }).catch(() => console.warn('Could not save priority'));
     } else {
       state.rememberedTags = [...state.tags];
-      void saveSync({ lastTags: [...state.tags] });
+      void saveSync({ lastTags: [...state.tags] }).catch(() => console.warn('Could not save lastTags'));
     }
   }
   updateDefaultsReset();
@@ -225,8 +225,8 @@ function handleTagKeydown(event: KeyboardEvent): void {
       elements.newTagInput.value = '';
       updateTagInputHint();
     }
-  } else if (event.key === 'Backspace' && !elements.newTagInput.value && state.tags.length > 0) {
-    // Empty input: Backspace removes the last tag
+  } else if (event.key === 'Backspace' && !event.repeat && !elements.newTagInput.value && state.tags.length > 0) {
+    // Empty input: Backspace removes the last tag, but not on a held key's repeats (clearing the field)
     state.tags.pop();
     renderTags();
     saveTags();
@@ -840,7 +840,7 @@ export function setupSend(): void {
 
   elements.sendAnotherCheckbox.addEventListener('change', () => {
     state.sendAnotherEnabled = elements.sendAnotherCheckbox.checked;
-    void saveSync({ sendAnotherEnabled: state.sendAnotherEnabled });
+    void saveSync({ sendAnotherEnabled: state.sendAnotherEnabled }).catch(() => console.warn('Could not save sendAnotherEnabled'));
   });
 
   elements.zipCheckbox.addEventListener('change', handleZipToggleChange);
@@ -898,7 +898,7 @@ export function setupSend(): void {
   elements.topicSelect.addEventListener('change', () => {
     if (elements.topicSelect.disabled) return;
     state.lastTopic = elements.topicSelect.value;
-    void saveSync({ lastTopic: state.lastTopic });
+    void saveSync({ lastTopic: state.lastTopic }).catch(() => console.warn('Could not save lastTopic'));
     applySendDefaults();
     persistDraft();
   });

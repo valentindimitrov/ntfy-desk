@@ -1,4 +1,4 @@
-**ntfy Desk** is a client for [ntfy](https://ntfy.sh), the open-source notification service. It sends notifications to your topics and receives them in Firefox. It works with ntfy.sh and with self-hosted ntfy servers. You need a ntfy server and a topic: ntfy Desk does not provide one.
+**ntfy Desk** is a client for [ntfy](https://ntfy.sh), the open-source notification service. It sends notifications to your topics and receives them in Firefox. It works with ntfy.sh and with self-hosted ntfy servers. You need a ntfy server and a topic: ntfy Desk does not provide one. It requires Firefox 142 or later; it also runs in Chrome, Edge, Vivaldi and other Chromium browsers 116 or later.
 
 ntfy Desk is an independent, unofficial add-on. It is not affiliated with or endorsed by the ntfy project.
 
@@ -7,7 +7,7 @@ ntfy Desk is an independent, unofficial add-on. It is not affiliated with or end
 - Live messages from your topics as desktop notifications, with the unread count on the toolbar icon.
 - An inbox with a message list per topic, topic filters, unread counts and search.
 - A rule per topic: notify for every message, only from a priority you choose, or not at all. The inbox lists the messages either way.
-- Messages that arrived while Firefox was closed are fetched when it starts, as long as the server still holds them.
+- When Firefox starts, messages that arrived while it was closed are fetched from the server's message cache, within ntfy's replay limits and the inbox's per-topic limit. A topic's first sync fetches the last 24 hours without notifying.
 - Markdown, links, and previews of images hosted on your ntfy server.
 - Click a notification to open the message's link, or the message in ntfy Desk.
 
@@ -33,7 +33,7 @@ ntfy Desk is an independent, unofficial add-on. It is not affiliated with or end
 
 **Permissions and data**
 
-Firefox lists authentication information, personal communications, browsing activity and website content when you install ntfy Desk. They cover the connection to your ntfy server and what you choose to send: your credentials go to your server, your messages are personal communications, and a page's title, URL, selected text or image is sent only when you send it. Access to websites is optional and requested only when a feature needs it: for your ntfy server when you use credentials or deletion sync, and for the site of an image you send from the right-click menu.
+Firefox lists authentication information, personal communications, browsing activity and website content when you install ntfy Desk. They cover the connection to your ntfy server and what you choose to send: your credentials go to your server, your messages are personal communications, and a page's title, URL, selected text or image is sent only when you send it. Access to websites is optional and requested only after a click: for your ntfy server and its fallback address together when you use credentials or deletion sync, and for the site of an image you send from the right-click menu. Reading your open tabs is optional too: "Use tab" in the add-on's own tab asks for it. Once granted, that tab reads the title and URL of the web page you used last when it opens and when you return to it, and fills them in when "Fill in the current tab" is on or you choose "Use tab".
 
 Use an HTTPS server and a topic with access control for anything sensitive: anyone who can read a public topic receives what is sent to it.
 

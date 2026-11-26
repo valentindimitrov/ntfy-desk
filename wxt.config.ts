@@ -11,8 +11,17 @@ export default defineConfig({
   zip: {
     // Test output is git-ignored but not hidden, so it would end up in the sources ZIP of a run that
     // tested first (the Prepare release workflow does)
-    // Test output, and the website with its tooling: reviewers of the sources build the extension only
-    excludeSources: ['playwright-report/**', 'test-results/**', 'website/**', 'scripts/website-*.ts', 'tests/unit/website.test.ts'],
+    // Test output, the website and the store screenshots with their tooling: reviewers of the sources build
+    // the extension only
+    excludeSources: [
+      'playwright-report/**',
+      'test-results/**',
+      'website/**',
+      'scripts/website-*.ts',
+      'tests/unit/website.test.ts',
+      'assets/store-listings/screenshots/**',
+      'scripts/store-screenshots.ts',
+    ],
   },
   hooks: {
     'build:publicAssets': (wxt, files) => {
@@ -29,7 +38,11 @@ export default defineConfig({
     // state, beyond Chrome's 10 MB storage.local quota. It also lifts the quota for the IndexedDB attachment
     // queue (up to 50 MiB, utils/stored-files.ts).
     permissions: ['activeTab', 'storage', 'unlimitedStorage', 'contextMenus', 'scripting', 'notifications', 'alarms'],
-    // tabs: only for "Use tab URL" in the extension's own tab
+    // Never in private windows: drafts, queued attachments and received messages live in storage shared with the
+    // regular profile, and Mozilla's policy forbids keeping data from private browsing
+    incognito: 'not_allowed',
+    // tabs: in the extension's own tab, the title and URL of the web page used last ("Use tab", and "Fill in the
+    // current tab" once granted); requested by the Use tab button there
     optional_permissions: ['tabs'],
     // The ntfy server (authenticated requests) and sites of images sent from the context menu
     optional_host_permissions: ['<all_urls>'],
@@ -41,6 +54,9 @@ export default defineConfig({
       'open-popup': { description: 'Open ntfy Desk', suggested_key: { default: 'Alt+Shift+N' } },
       'send-page': { description: 'Send this page to ntfy' },
     },
+    // Chromium 116: runtime.getContexts (finding the open extension tab), and service workers kept alive by
+    // extension API calls (110), which the receiver's keepalive relies on
+    ...(browser !== 'firefox' && { minimum_chrome_version: '116' }),
     ...(browser === 'firefox' && {
       browser_specific_settings: {
         gecko: {

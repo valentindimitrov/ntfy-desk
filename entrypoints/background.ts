@@ -18,67 +18,76 @@ import { clearComposerOnStartup, handlePopupRequest } from '@/utils/messages';
 import { AUTH_ORIGINS_KEY, CREDENTIALS_KEY, getConfig, serverPermissionPattern } from '@/utils/ntfy';
 import { createReceiver } from '@/utils/receiver';
 import { NOTIFY_RULES_KEY } from '@/utils/rules';
+import { RECEIVER_ALARM, createReceiverAlarm, ensureReceiverAlarm } from '@/utils/schedule';
 import { addPickedFiles } from '@/utils/stored-files';
 import { SYNC_DELETION_TOPICS_KEY, getSyncDeletionTopics, parseSyncDeletionTopics } from '@/utils/sync-modes';
 
-const ALARM_NAME = 'receiver';
+/**
+ * Runs a task nobody waits for. A failure (a storage or notification API error) is logged as a warning
+ * instead of an "Uncaught (in promise)" error on the browser's extension page.
+ */
+function background(task: Promise<unknown>, what: string): void {
+  task.catch(() => console.warn(`Could not ${what}`));
+}
 
 export default defineBackground(() => {
   const receiver = createReceiver({
-    onNewMessage: (message) => void notifyNewMessage(message),
-    onCatchUp: (messages) => void notifyCatchUp(messages).catch(() => console.warn('Could not show catch-up notifications')),
-    onConnected: () => void updateUnreadBadge(),
-    onRemoved: (ids) => void clearNotifications(ids),
+    onNewMessage: (message) => background(notifyNewMessage(message), 'show a notification'),
+    onCatchUp: (messages) => background(notifyCatchUp(messages), 'show catch-up notifications'),
+    onConnected: () => background(updateUnreadBadge(), 'update the unread badge'),
+    onRemoved: (ids) => background(clearNotifications(ids), 'dismiss notifications'),
   });
+  const connect = () => background(receiver.connect(), 'connect to the server');
 
   // Whenever the service worker starts (browser start, install, or woken by any event)
-  void receiver.connect();
+  connect();
 
   function setUp(): void {
-    void updateContextMenu();
+    background(updateContextMenu(), 'update the context menu');
     // Reconnects and polls once a minute, also after the service worker was stopped
-    void browser.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
+    background(createReceiverAlarm(), 'schedule the receiver');
   }
+
+  // Also at every start: a browser can drop the alarm without an install or startup event
+  background(ensureReceiverAlarm(setUp), 'check the receiver schedule');
 
   browser.runtime.onInstalled.addListener(setUp);
   browser.runtime.onStartup.addListener(() => {
-    void clearComposerOnStartup().catch(() => console.error('Could not reset the composer on browser startup'));
+    background(clearComposerOnStartup(), 'reset the composer on browser startup');
     setUp();
   });
 
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === 'sync' && (changes.topics || changes.apiUrl || changes.fallbackUrl)) {
-      void updateContextMenu();
-      void receiver.connect();
+      background(updateContextMenu(), 'update the context menu');
+      connect();
     }
     const deletionModes = changes[SYNC_DELETION_TOPICS_KEY];
     if (area === 'sync' && deletionModes) {
       const before = parseSyncDeletionTopics(deletionModes.oldValue);
       const enabled = [...parseSyncDeletionTopics(deletionModes.newValue)].filter((topic) => !before.has(topic));
-      if (enabled.length > 0) void receiver.replayDeletions(enabled);
+      if (enabled.length > 0) background(receiver.replayDeletions(enabled), 'replay deletions');
     }
     // The badge can leave out topics whose desktop notifications are off
-    if (area === 'sync' && (changes.badgeScope || changes[NOTIFY_RULES_KEY])) void updateUnreadBadge();
+    if (area === 'sync' && (changes.badgeScope || changes[NOTIFY_RULES_KEY])) background(updateUnreadBadge(), 'update the unread badge');
     // A lower "Messages kept per topic" trims the stored history at once, through the history's queue
     if (area === 'sync' && changes.historyPerTopic) {
-      void applyHistoryLimit()
-        .then(clearNotifications)
-        .catch(() => console.warn('Could not apply the history limit'));
+      background(applyHistoryLimit().then(clearNotifications), 'apply the history limit');
     }
     if (area === 'local') {
       if (changes.accessToken || changes[CREDENTIALS_KEY] || changes[AUTH_ORIGINS_KEY]) {
-        void receiver.connect();
+        connect();
       }
       if (changes.receivedNotifications || changes.readMessageIds || changes.deletedMessageIds) {
-        void updateUnreadBadge();
+        background(updateUnreadBadge(), 'update the unread badge');
       }
     }
   });
 
   browser.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === ALARM_NAME) {
-      void receiver.connect();
-      void receiver.sync();
+    if (alarm.name === RECEIVER_ALARM) {
+      connect();
+      background(receiver.sync(), 'catch up on missed messages');
     }
   });
 
@@ -92,10 +101,12 @@ export default defineBackground(() => {
     })().catch(() => console.warn('Could not recheck deletion sync after granting server access'));
   });
 
-  browser.contextMenus.onClicked.addListener((info, tab) => void handleContextMenuClick(info, tab));
-  browser.commands.onCommand.addListener((command, tab) => void handleCommand(command, tab));
-  browser.notifications.onButtonClicked.addListener((id, index) => void handleNotificationButton(id, index));
-  browser.notifications.onClicked.addListener((id) => void handleNotificationClick(id));
+  browser.contextMenus.onClicked.addListener((info, tab) => background(handleContextMenuClick(info, tab), 'send from the context menu'));
+  browser.commands.onCommand.addListener((command, tab) => background(handleCommand(command, tab), 'run the keyboard shortcut'));
+  browser.notifications.onButtonClicked.addListener((id, index) =>
+    background(handleNotificationButton(id, index), 'open the notification button'),
+  );
+  browser.notifications.onClicked.addListener((id) => background(handleNotificationClick(id), 'open the notification'));
   if (import.meta.env.MODE === 'e2e') {
     Object.assign(globalThis, {
       __ntfyClickNotification: handleNotificationClick,

@@ -12,7 +12,7 @@ pnpm website:screenshots  # retake the screenshots in media/
 pnpm website:card         # render media/social-card.png again
 ```
 
-The site is **not public yet**. It goes live only when the owner does the steps under [Going live](#going-live).
+The site is live since 2026-11-23: every push to `main` that passes CI deploys it ([Deployment](#deployment)).
 
 ## Layout
 
@@ -33,7 +33,7 @@ The build also writes `LICENSE.txt` (the GPL, `NOTICE.md` and the Roboto fonts' 
 
 ## Publishing the extension in a store
 
-Put the listing's address in `install.ts` (`chromeWebStore` or `firefoxAddons`). The home page and the guide then link to it instead of saying "coming soon", and the test stops refusing store addresses. Set `repositoryPublic` to `true` when the GitHub repository is public; until then the pages say that its links only open for people with access.
+Put the listing's address in `install.ts` (`chromeWebStore` or `firefoxAddons`). The header's store buttons, the install lists and the guide then link to it instead of saying "coming soon". `tests/unit/website.test.ts` allows exactly the addresses configured there and still refuses any other store address, so write a store link nowhere else. `repositoryPublic` is `true` since the repository became public on 2026-11-23; set to `false`, the pages would say that its GitHub links only open for people with access.
 
 ## Privacy policy
 
@@ -103,7 +103,7 @@ When the CI run of a pull request from a branch of this repository succeeds, **W
 
 ### Going live
 
-Nothing is deployed until the owner does this, once:
+Done on 2026-11-23; kept as the record, and for setting it up again:
 
 1. In Cloudflare, create an API token from the **Edit Cloudflare Workers** template, limited to the account and to the `minddevops.eu` zone.
 2. The environments `production` and `preview` exist on GitHub (created on 2026-11-22 and 2026-11-23), each accepting deployments from `main` only (**Deployment branches and tags**: *Selected branches and tags*, `main`). A job that names a missing environment creates it without that rule.

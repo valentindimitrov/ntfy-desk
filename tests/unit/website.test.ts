@@ -20,6 +20,14 @@ const PAGES = [
   { file: 'privacy-policy.html', route: '/privacy-policy' },
   { file: '404.html', route: undefined },
 ];
+/** The store listings configured in install.ts: the only store addresses a page may contain */
+const STORE_URLS = [INSTALL.chromeWebStore, INSTALL.firefoxAddons].filter(Boolean);
+/** Any address of an extension store */
+const STORE_ADDRESS =
+  /https?:\/\/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore|addons\.mozilla\.org|microsoftedge\.microsoft\.com)[^\s"'<>]*/g;
+/** Store addresses in some HTML that aren't one of the configured listings */
+const otherStoreAddresses = (html: string, configured: string[] = STORE_URLS) =>
+  [...html.matchAll(STORE_ADDRESS)].map(([address]) => address).filter((address) => !configured.includes(address));
 /** Attributes that make a browser fetch something (links a visitor follows are not among them) */
 const LOADING = ['src', 'srcset', 'poster', 'data', 'action', 'background', 'ping', 'manifest'];
 
@@ -121,10 +129,8 @@ describe.each(PAGES)('website page $file', ({ file, route }) => {
       const href = link.getAttribute('href')!;
       const url = new URL(href, `${SITE_URL}${route ?? '/404'}`);
       if (url.origin !== SITE_URL) {
-        expect(
-          allowed.some((prefix) => href.startsWith(prefix)),
-          `${file} links to ${href}`,
-        ).toBe(true);
+        // A store listing only as configured in install.ts, exactly
+        expect(STORE_URLS.includes(href) || allowed.some((prefix) => href.startsWith(prefix)), `${file} links to ${href}`).toBe(true);
         continue;
       }
       const target = builtFile(url.pathname).find((candidate) => existsSync(candidate) && !candidate.endsWith('/'));
@@ -208,10 +214,19 @@ describe('website', () => {
       else expect(text(list.textContent)).toContain(`${name}: coming soon`);
     }
     expect(list.querySelector(`a[href="${INSTALL.githubReleases}"]`)).not.toBeNull();
-    // No store address anywhere while none is configured
-    const stored = [...sources.values()].join('\n');
-    if (!INSTALL.chromeWebStore) expect(stored).not.toContain('chromewebstore.google.com');
-    if (!INSTALL.firefoxAddons) expect(stored).not.toContain('addons.mozilla.org');
+    // No store address anywhere but the configured ones (none while install.ts has none)
+    for (const [file, html] of sources) expect(otherStoreAddresses(html), file).toEqual([]);
+  });
+
+  it('allows exactly the store addresses configured in install.ts', () => {
+    const listing = 'https://addons.mozilla.org/firefox/addon/ntfy-desk/';
+    const link = (href: string) => `<a href="${href}">Firefox Add-ons</a>`;
+    expect(otherStoreAddresses(link(listing), [listing])).toEqual([]);
+    expect(otherStoreAddresses(link(listing), [])).toEqual([listing]);
+    expect(otherStoreAddresses(link(`${listing}reviews/`), [listing])).toEqual([`${listing}reviews/`]);
+    expect(otherStoreAddresses(link('https://chromewebstore.google.com/detail/x'), [listing])).toEqual([
+      'https://chromewebstore.google.com/detail/x',
+    ]);
   });
 
   it("tells search engines the site's name on the home page", () => {

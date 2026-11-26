@@ -307,8 +307,9 @@ async function saveServerSettings(): Promise<void> {
         return;
       }
       const urlsEdited = apiUrl !== saved.apiUrl || fallbackUrl !== saved.fallbackUrl;
-      // Hold existing authentication while changing the destination.
-      if (urlsEdited) await setAuthOrigins([]);
+      // Hold existing authentication while changing the destination. Without a server, record that none is
+      // approved: otherwise getConfig would approve the first address that arrives through browser sync
+      if (urlsEdited || !apiUrl) await setAuthOrigins([]);
       if (accessToken !== auth.accessToken) await setAccessToken(accessToken);
       if (!sameCredentials(credentials, auth.credentials)) await setCredentials(credentials);
       if (urlsEdited) {
@@ -601,8 +602,9 @@ function handleTopicKeydown(event: KeyboardEvent): void {
       elements.newTopicInput.value = '';
       updateTopicInputHint();
     }
-  } else if (event.key === 'Backspace' && !elements.newTopicInput.value && state.topics.length > 0) {
-    // Empty input: Backspace removes the last topic
+  } else if (event.key === 'Backspace' && !event.repeat && !elements.newTopicInput.value && state.topics.length > 0) {
+    // Empty input: Backspace removes the last topic. Not a held key's repeats: holding Backspace to clear
+    // the field would go on removing topics, with their rules and send defaults
     const last = state.topics.at(-1);
     if (last) void removeTopic(last);
   }

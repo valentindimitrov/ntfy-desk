@@ -53,6 +53,27 @@ describe('receiver status', () => {
     server.pollStatus = 200;
     await receiver.sync();
     expect((await status()).syncErrors).toEqual([]);
+    // Reached again: a later end of the stream reads as a reconnect, not as "can't reach"
+    expect((await status()).unreachable).toBe(false);
+  });
+
+  it("doesn't let a slow poll of the previous server clear the new server's unreachable state", async () => {
+    await fakeBrowser.storage.local.remove('accessToken');
+    const receiver = createReceiver({ onNewMessage: () => {} });
+    await receiver.connect();
+    let release!: () => void;
+    server.pollGate = new Promise((resolve) => (release = resolve));
+    const slow = receiver.sync(); // polls ntfy.example, held back
+
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://other.example' });
+    await receiver.connect();
+    FakeStream.instances.at(-1)!.refuse(503);
+    await vi.waitFor(async () => expect(await status()).toMatchObject({ state: 'reconnecting', unreachable: true }));
+
+    release();
+    await slow;
+    expect((await status()).unreachable).toBe(true);
+    receiver.close();
   });
 
   it('reports when no topic is readable', async () => {

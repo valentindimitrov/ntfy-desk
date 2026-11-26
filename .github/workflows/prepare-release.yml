@@ -2,8 +2,9 @@ name: Prepare release
 
 # Started by hand (docs/releasing.md). The first job builds and checks the packages without any
 # secret. The second job runs in the `release` environment: it checks the downloaded packages again,
-# signs the Chromium ZIP when a signing key is registered (docs/crx-signing.md) and creates or
-# refreshes a draft GitHub release. Publishing the draft and every store upload stay manual.
+# signs the Chromium ZIP when the public key is committed (docs/crx-signing.md) and creates or
+# refreshes a draft GitHub release. Publishing the draft stays manual. The first upload to each store
+# is done by hand; later versions go through the manually started Publish to stores workflow.
 #
 # This file can be edited on any branch, so its "part of origin/main" check only catches a wrong
 # selection. The boundary for the signing key is the environment (main only, required reviewer).

@@ -46,7 +46,7 @@
 
       <section id="install" aria-labelledby="install-title">
         <h2 id="install-title">1. Install the extension</h2>
-        <p>ntfy Desk runs in Chrome, Edge, Vivaldi and other Chromium browsers, and in Firefox 142 or later.</p>
+        <p>ntfy Desk runs in Chrome, Edge, Vivaldi and other Chromium browsers 116 or later, and in Firefox 142 or later.</p>
         <!-- site:install -->
         <p>To load a release build by hand:</p>
         <ul>
@@ -56,9 +56,9 @@
             <code>manifest.json</code>.
           </li>
           <li>
-            <strong>Firefox.</strong> A permanent installation needs a signed add-on, which is not available yet. The Firefox ZIP is for
-            temporary testing: open <code>about:debugging#/runtime/this-firefox</code>, select <strong>Load Temporary Add-on</strong> and
-            choose the ZIP. It lasts until Firefox restarts.
+            <strong>Firefox.</strong> The Firefox ZIP is an unsigned build for temporary testing: open
+            <code>about:debugging#/runtime/this-firefox</code>, select <strong>Load Temporary Add-on</strong> and choose the ZIP. It lasts
+            until Firefox restarts. A permanent installation needs the signed add-on from Firefox Add-ons, listed above.
           </li>
         </ul>
       </section>
@@ -85,7 +85,8 @@
           <li>Choose <strong>Save server settings</strong>. The addresses and the credentials are saved together.</li>
           <li>
             If <strong>Allow access to this server</strong> appears, select it. The browser then asks you to confirm. ntfy Desk needs that
-            access to send requests with your credentials.
+            access for two things: to send requests with your credentials, and, for topics with <strong>Sync server deletions</strong>, to
+            verify cached deletions. With a fallback URL, it covers both addresses.
           </li>
         </ol>
         <figure class="shot">
@@ -151,8 +152,8 @@
           </li>
           <li>Add a priority, tags or files, or open <strong>More options</strong> for a click URL, Markdown and delayed delivery.</li>
           <li>
-            On any web page, right-click to send the page, selected text, an image or a link. The toolbar icon shows ✓, ✗, or ? when the
-            delivery is uncertain.
+            On any web page, right-click to send the page, selected text, an image or a link. The toolbar icon then shows ✓ when it was
+            sent, ✗ when it failed, or ? when delivery is uncertain: check the inbox before sending it again.
           </li>
         </ol>
         <p>

@@ -322,7 +322,7 @@ describe('server error text', () => {
 });
 
 describe('redirects of authenticated requests', () => {
-  it('refuses them when the request carries credentials, and follows them otherwise', async () => {
+  it('refuses them when the request carries credentials, and never follows them otherwise', async () => {
     const calls: RequestInit[] = [];
     vi.stubGlobal(
       'fetch',
@@ -334,7 +334,7 @@ describe('redirects of authenticated requests', () => {
     await sendNotification({ apiUrl: 'https://ntfy.example', accessToken: 'tk_x' }, 'a', { message: 'x' });
     await getNotifications({ apiUrl: 'https://ntfy.example', accessToken: 'tk_x' }, 'a', 0);
     await sendNotification({ apiUrl: 'https://ntfy.example', accessToken: '' }, 'a', { message: 'x' });
-    expect(calls.map((init) => init.redirect)).toEqual(['error', 'error', 'follow']);
+    expect(calls.map((init) => init.redirect)).toEqual(['error', 'error', 'manual']);
   });
 });
 

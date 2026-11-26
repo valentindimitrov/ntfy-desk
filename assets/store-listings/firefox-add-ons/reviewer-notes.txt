@@ -4,7 +4,7 @@ Paste the text below the line into "Notes to Reviewer". Upload ntfy-desk-<versio
 
 BUILD FROM THE SOURCE ARCHIVE
 
-The add-on is written in TypeScript and bundled by WXT (Vite), so the submitted code is generated. The source archive is the repository at the released commit. No file is minified by hand and nothing is downloaded at run time.
+The add-on is written in TypeScript and bundled by WXT (Vite), so the submitted code is generated. The source archive holds the repository's files at the released commit that the build needs, with the tests, scripts and documentation; it leaves out the project website (website/, its scripts and its test), hidden files and folders such as .github/, and test output. No file is minified by hand. All code ships in the package: no script, style or font is loaded from elsewhere. At run time the add-on downloads data only: messages and inbox image previews from the user's ntfy server (previews from its attachment route only), and an image the user sends from the context menu, from that image's site.
 
 Requirements: Node.js 24 and pnpm 12.14.0 (the version in package.json's packageManager field). The release is built on Ubuntu (GitHub Actions); the build also runs on macOS.
 
@@ -32,11 +32,11 @@ PERMISSIONS
 - alarms: a one-minute alarm to reconnect and fetch missed messages.
 - contextMenus, activeTab: the right-click sends and "Fill in the current tab" read the active tab's title and URL after a user action.
 - scripting: one call (utils/context-menu.ts, getLinkText) that reads the text of the link the user right-clicked. The function is part of the package.
-- tabs (optional): requested by "Use tab" in the add-on's own tab, to read the title and URL of the page the user was on.
-- <all_urls> (optional host permission): never requested as a whole. The add-on requests one origin at a time, after a click: the user's ntfy server when credentials or deletion sync are configured (the Authorization header needs host access), and the site of an image sent from the context menu.
+- tabs (optional): requested by "Use tab" in the add-on's own tab, to read the title and URL of the page the user was on. Once granted, that tab reads the title and URL of the most recently used web page tab when it opens and when the user returns to it, and fills them into the Send form when "Fill in the current tab" is on or the user chooses "Use tab".
+- <all_urls> (optional host permission): never requested as a whole. The add-on requests specific origins after a click: the user's ntfy server and its fallback address together, from "Allow access to this server" in Settings when credentials or deletion sync are configured (the Authorization header needs host access, and deletion sync reads response headers that CORS otherwise hides), and the site of an image sent from the context menu.
 
 DATA
 
-data_collection_permissions declares authenticationInfo, personalCommunications, browsingActivity and websiteContent because this data is sent to the ntfy server the user configured: credentials in the Authorization header, the notifications themselves, and a page's title, URL, selected text or image when the user sends it. Nothing is sent to the developer; there is no analytics or other remote service. PRIVACY.md in the source archive is the privacy policy.
+data_collection_permissions declares authenticationInfo, personalCommunications, browsingActivity and websiteContent because this data is sent to the ntfy server the user configured: credentials in the Authorization header, the notifications themselves, and a page's title, URL, selected text or image when the user sends it. A sent notification can also carry the options set under "More options" (click URL, Markdown, delivery delay, and the browser's time zone name for a delivery time such as "tomorrow 9am"). Other data flows the user starts: an image sent from the context menu is downloaded from its site, and Firefox Sync, if enabled, syncs the settings (server addresses without credentials, topic names, preferences). Nothing is sent to the developer; there is no analytics or other developer-operated service. PRIVACY.md in the source archive is the privacy policy.
 
 Remote content is treated as data: messages are validated (utils/ntfy.ts, parseMessage) and rendered with textContent; Markdown is built as DOM nodes (utils/markdown.ts). ARCHITECTURE.md, "Security model", describes this.

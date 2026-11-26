@@ -168,6 +168,11 @@ const MAX_POLL_BUFFER = 4 * 1024 * 1024;
 export const MAX_POLL_EVENTS = 1000;
 /** ntfy's limits: topic names and message ids of up to 64 characters, at most 3 actions */
 const MAX_ID_LENGTH = 64;
+/**
+ * How far ahead of this device's clock a message time may be (clock difference). A message time becomes the
+ * catch-up watermark and orders the inbox, so a far-future one would hide later messages and pin itself at the top.
+ */
+const MAX_CLOCK_AHEAD = 24 * 60 * 60;
 const MAX_ACTIONS = 3;
 const MAX_TAGS = 20;
 
@@ -219,12 +224,13 @@ function withoutUndefined<T extends object>(value: T): T {
  * type; null if it isn't a usable message. Unknown fields are dropped, so a hostile or broken server
  * can't store values the popup would fail to render.
  */
-export function parseMessage(value: unknown): NtfyMessage | null {
+export function parseMessage(value: unknown, latest = Date.now() / 1000 + MAX_CLOCK_AHEAD): NtfyMessage | null {
   if (!isObject(value) || !isId(value.id) || !isId(value.topic) || typeof value.event !== 'string') {
     return null;
   }
-  const time = optionalNumber(value.time);
-  if (time === undefined) {
+  // Unix seconds, as ntfy sends them: a fraction would make the next poll's since= invalid
+  const time = value.time;
+  if (typeof time !== 'number' || !Number.isSafeInteger(time) || time <= 0 || time > latest) {
     return null;
   }
   const priority = optionalNumber(value.priority);
@@ -256,13 +262,16 @@ export function parseMessage(value: unknown): NtfyMessage | null {
   });
 }
 
-/** A message from one line of JSON (stream or poll); null if it's too long or not a message */
-export function parseMessageJson(json: string): NtfyMessage | null {
+/**
+ * A message from one line of JSON (stream or poll); null if it's too long or not a message. `latest` is the
+ * latest time accepted (parseMessage).
+ */
+export function parseMessageJson(json: string, latest?: number): NtfyMessage | null {
   if (json.length > MAX_MESSAGE_JSON) {
     return null;
   }
   try {
-    return parseMessage(JSON.parse(json));
+    return parseMessage(JSON.parse(json), latest);
   } catch {
     return null;
   }
@@ -618,7 +627,19 @@ export class PublishUncertainError extends Error {
  * origin, but keeps it on the same origin, where a redirect could reach any path (ntfy publishes on GET)
  */
 function redirectPolicy(headers: Headers): RequestRedirect {
-  return headers.has('Authorization') ? 'error' : 'follow';
+  return headers.has('Authorization') ? 'error' : 'manual';
+}
+
+/**
+ * A request without credentials doesn't follow a redirect either ('manual'): a 307 or 308 would pass a publish's
+ * body on to the other address, and messages read from there would carry its origin. It gets an opaque redirect
+ * answer instead, reported with this text rather than read as no response.
+ */
+export const REDIRECTED_ERROR = 'The server redirects to another address: enter its final address in the settings';
+
+function refuseRedirect(response: Response): Response {
+  if (response.type === 'opaqueredirect' || response.redirected) throw new Error(REDIRECTED_ERROR);
+  return response;
 }
 
 async function post(url: string, headers: Headers, body: BodyInit, timeout: number): Promise<Response> {
@@ -632,6 +653,7 @@ async function post(url: string, headers: Headers, body: BodyInit, timeout: numb
     if (isNoResponse(error)) throw new PublishUncertainError();
     throw error;
   });
+  refuseRedirect(response);
   if (!response.ok) {
     throw await httpError(response);
   }
@@ -649,7 +671,8 @@ export async function publishedTime(response: Response): Promise<number | undefi
     await readLines(
       response.body,
       (line) => {
-        time ??= parseMessageJson(line)?.time;
+        // A delayed message's time is its delivery time, as far ahead as the server allows
+        time ??= parseMessageJson(line, Number.MAX_SAFE_INTEGER)?.time;
       },
       { maxBytes: MAX_MESSAGE_JSON },
     );
@@ -768,16 +791,17 @@ export async function canReadTopic(server: NtfyServer, topic: string): Promise<b
  * a keepalive event every 45 s by default. Unlike a WebSocket, it carries the credentials in the
  * Authorization header, never in the URL.
  */
-export function openMessageStream(server: NtfyServer, topics: string[], signal: AbortSignal): Promise<Response> {
+export async function openMessageStream(server: NtfyServer, topics: string[], signal: AbortSignal): Promise<Response> {
   if (topics.length === 0 || !topics.every(isNtfyPathPart)) throw new Error('Invalid ntfy topics');
   const headers = buildAuthHeaders(server);
-  return fetch(`${new URL(server.apiUrl).origin}/${topics.join(',')}/json`, {
+  const response = await fetch(`${new URL(server.apiUrl).origin}/${topics.join(',')}/json`, {
     method: 'GET',
     headers,
     redirect: redirectPolicy(headers),
     cache: 'no-store',
     signal,
   });
+  return refuseRedirect(response);
 }
 
 /** Cached messages of a topic: since is a message id, a unix time, a duration such as '24h', or 'all' */
@@ -803,6 +827,7 @@ export async function getNotifications(
     redirect: redirectPolicy(headers),
     signal,
   });
+  refuseRedirect(response);
   if (!response.ok) {
     throw await httpError(response);
   }
@@ -876,6 +901,7 @@ export async function getNotifications(
     scanLimited: !complete,
     serverTruncated,
     truncationKnown,
-    serverTime: Number.isFinite(serverTime) ? serverTime : undefined,
+    // Seeds the first watermark of an empty topic: a clock more than MAX_CLOCK_AHEAD ahead would skip messages
+    serverTime: Number.isFinite(serverTime) && serverTime <= Date.now() + MAX_CLOCK_AHEAD * 1000 ? serverTime : undefined,
   };
 }

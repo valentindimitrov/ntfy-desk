@@ -44,6 +44,7 @@ describe('validatePackages', () => {
     ['a popup that is not packaged', { action: { default_popup: 'missing.html' } }, 'missing.html is missing'],
     ['a remote icon', { icons: { '128': 'https://example.com/icon.png' } }, 'not a file of the package'],
     ['Manifest V2', { manifest_version: 2 }, 'Manifest V3'],
+    ['private windows allowed', { incognito: 'spanning' }, 'incognito must be not_allowed'],
   ])('refuses %s', (_name, changes, message) => {
     writePackage(root, 'chrome', browserFiles('chrome', changes));
     expect(() => validatePackages(root)).toThrow(message);
@@ -69,6 +70,25 @@ describe('validatePackages', () => {
       }),
     );
     expect(() => validatePackages(root)).toThrow('data_collection_permissions differ');
+  });
+
+  it('requires the oldest browser versions the documentation states', () => {
+    writePackage(root, 'chrome', browserFiles('chrome', { minimum_chrome_version: '110' }));
+    expect(() => validatePackages(root)).toThrow('minimum_chrome_version must be 116');
+    root = releaseFixture();
+    const gecko = {
+      id: 'ntfy-desk@valentindimitrov.github.io',
+      data_collection_permissions: { required: ['authenticationInfo', 'personalCommunications', 'browsingActivity', 'websiteContent'] },
+    };
+    writePackage(
+      root,
+      'firefox',
+      browserFiles('firefox', { browser_specific_settings: { gecko: { ...gecko, strict_min_version: '140.0' } } }),
+    );
+    expect(() => validatePackages(root)).toThrow('strict_min_version must be 142.0');
+    root = releaseFixture();
+    writePackage(root, 'firefox', browserFiles('firefox', { minimum_chrome_version: '116' }));
+    expect(() => validatePackages(root)).toThrow('minimum_chrome_version is for Chromium only');
   });
 
   it.each([

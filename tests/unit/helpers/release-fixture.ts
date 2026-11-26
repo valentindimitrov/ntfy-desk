@@ -66,6 +66,7 @@ export function manifest(browser: 'chrome' | 'firefox', changes: Record<string, 
     permissions: ['activeTab', 'storage', 'unlimitedStorage', 'contextMenus', 'scripting', 'notifications', 'alarms'],
     optional_permissions: ['tabs'],
     optional_host_permissions: ['<all_urls>'],
+    incognito: 'not_allowed',
     commands: { 'open-popup': { description: 'Open ntfy Desk' }, 'send-page': { description: 'Send this page to ntfy' } },
     action: { default_title: 'ntfy Desk', default_popup: 'popup.html' },
     ...(browser === 'firefox'
@@ -81,7 +82,7 @@ export function manifest(browser: 'chrome' | 'firefox', changes: Record<string, 
             },
           },
         }
-      : { background: { service_worker: 'background.js' } }),
+      : { background: { service_worker: 'background.js' }, minimum_chrome_version: '116' }),
     ...changes,
   });
 }

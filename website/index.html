@@ -45,7 +45,7 @@
               ntfy Desk is a browser extension for <a href="https://ntfy.sh">ntfy</a>: send notifications to your topics, and receive them
               as desktop notifications with a message list per topic.
             </p>
-            <p class="muted">Works with ntfy.sh and self-hosted servers, in Chromium browsers and Firefox 142 or later.</p>
+            <p class="muted">Works with ntfy.sh and self-hosted servers, in Chromium browsers 116 or later and Firefox 142 or later.</p>
             <div class="hero-actions">
               <a class="primary-button" href="./setup-instructions">Get started <span aria-hidden="true">→</span></a>
               <a class="secondary-button" href="https://github.com/valentindimitrov/ntfy-desk">GitHub</a>
@@ -67,7 +67,7 @@
             <h2 id="inbox-title">Every message, sorted by topic</h2>
             <p class="muted">
               Live messages arrive over ntfy's JSON stream. When the browser starts, ntfy Desk catches up on the messages still in the
-              server's cache.
+              server's cache, within ntfy's replay limits and the inbox's per-topic limit.
             </p>
             <ul class="points">
               <li>Topic filters with unread counts, and the unread count on the toolbar icon.</li>
@@ -98,7 +98,7 @@
               still lists the messages.
             </p>
             <ul class="points">
-              <li>High and urgent notifications ask to stay on screen until dismissed; Chromium browsers let you turn that off.</li>
+              <li>In Chromium browsers, high and urgent notifications ask to stay on screen until dismissed, unless you turn that off.</li>
               <li>A catch-up with more than five notifications shows one summary instead of a burst.</li>
               <li>A click opens the message's link, or highlights the message in the extension tab.</li>
               <li>In Chromium browsers, a notification can show up to two buttons for view actions and attachments.</li>

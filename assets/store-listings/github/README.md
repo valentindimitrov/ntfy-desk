@@ -1,6 +1,6 @@
 # GitHub repository details
 
-Set these on the repository page (**About**, the gear next to it) when the repository becomes public.
+Set on the repository page (**About**, the gear next to it). The repository is public since 2026-11-23; on 2026-11-26 it had the website set, a shorter description and no topics.
 
 **Description**
 
@@ -8,7 +8,7 @@ Set these on the repository page (**About**, the gear next to it) when the repos
 Browser extension for ntfy: send notifications to your topics and receive them with desktop notifications and an inbox per topic. Chromium browsers and Firefox. Unofficial.
 ```
 
-**Website**: `https://ntfy-desk.minddevops.eu`, once the website is online.
+**Website**: `https://ntfy-desk.minddevops.eu` (set; the site is live since 2026-11-23).
 
 **Topics**
 

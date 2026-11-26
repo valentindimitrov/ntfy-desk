@@ -1,6 +1,6 @@
 # Store listings
 
-Text for the extension stores and the GitHub repository page, kept here so a submission is copy and paste, and so the text is reviewed with the code it describes. Nothing in this folder is part of the extension packages (`pnpm verify:packages` refuses unexpected files in them); the sources ZIP includes it like the rest of the repository.
+Text for the extension stores and the GitHub repository page, kept here so a submission is copy and paste, and so the text is reviewed with the code it describes. Nothing in this folder is part of the extension packages (`pnpm verify:packages` refuses unexpected files in them); the sources ZIP includes it (it leaves out only the website, hidden files and test output).
 
 Every statement has to stay true to the code, [PRIVACY.md](../../PRIVACY.md), [README.md](../../README.md) and [ARCHITECTURE.md](../../ARCHITECTURE.md). ntfy is a separate project: the listings say that ntfy Desk is independent and unofficial. When a permission in `wxt.config.ts` changes, change `EXTENSION` in `scripts/validate-packages.ts` and the justifications here in the same commit; a unit test (`tests/unit/store-listings.test.ts`) checks that every permission has one.
 
@@ -14,7 +14,7 @@ The steps of a submission are in [docs/releasing.md](../../docs/releasing.md).
 | `privacy-fields.txt` | **Privacy**: single purpose, one justification per permission, remote code, data usage, certifications, privacy policy URL. Each block is one field. |
 | `crx-signing-public-key.pem` | Not there yet. Once committed, releases carry a signed CRX: [docs/crx-signing.md](../../docs/crx-signing.md). |
 
-Other fields: category **Communication** (or **Tools**; the dashboard's list decides), language English. Homepage and support URL: the website and the GitHub issues page, once they are public.
+Other fields: category **Communication** (or **Tools**; the dashboard's list decides), language English. Homepage and support URL: the website (`https://ntfy-desk.minddevops.eu`) and the GitHub issues page (`https://github.com/valentindimitrov/ntfy-desk/issues`), both public.
 
 ## Firefox Add-ons (`firefox-add-ons/`)
 
@@ -30,9 +30,9 @@ Other fields: license GPL-3.0-only; the privacy policy field takes the text of `
 
 `README.md` has the repository description, website and topics.
 
-## Images: to do
+## Images
 
-No image is made yet. They will come from the website's screenshot script, taken from the real extension. Each store needs:
+Screenshots come from the real extension: `pnpm website:screenshots` captures the website's screenshots and then writes the store's from them (`scripts/store-screenshots.ts`, also `pnpm store:screenshots`) into `screenshots/`: `overview-light.png` and `overview-dark.png`, 1280 × 800 px PNG without alpha, for the Chrome Web Store and Firefox Add-ons. They aren't part of the sources ZIP. The promo tiles and the GitHub social preview are still to make. Each store needs:
 
 | Store | Image | Size | Count |
 |---|---|---|---|

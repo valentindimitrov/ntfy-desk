@@ -652,6 +652,17 @@ describe('Send form: per-topic send defaults', () => {
     });
   });
 
+  it('removes the last tag on Backspace in the empty field, but not on a held key repeating', async () => {
+    await openPopup();
+    const input = $('#new-tag-input');
+    for (let i = 0; i < 3; i++) input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', repeat: true }));
+    await flush();
+    expect(tags()).toEqual(['last']);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));
+    await flush();
+    expect(tags()).toEqual([]);
+  });
+
   it('shows the priority and tags used last for a topic without defaults, as before', async () => {
     await openPopup();
     expect([priority(), tags()]).toEqual(['2', ['last']]);
@@ -1259,6 +1270,19 @@ describe('settings', () => {
     expect(await fakeBrowser.storage.sync.get('topics')).toEqual({ topics: 'alerts,coolify,inbox' });
   });
 
+  it('removes the last topic on Backspace in the empty field, but not on a held key repeating', async () => {
+    await openPopup();
+    await openSettings();
+    const input = $<HTMLInputElement>('#new-topic-input');
+    // Holding Backspace to clear the field: the repeats after it is empty remove nothing
+    for (let i = 0; i < 3; i++) input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', repeat: true }));
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('topics')).toEqual({ topics: 'alerts,coolify,inbox' });
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));
+    await flush();
+    expect(await fakeBrowser.storage.sync.get('topics')).toEqual({ topics: 'alerts,coolify' });
+  });
+
   it('holds back the token from a server changed through sync, until confirmed (security review #1)', async () => {
     await import('@/utils/ntfy').then((ntfy) => ntfy.getConfig()); // approves https://ntfy.example
     await fakeBrowser.storage.sync.set({ apiUrl: 'https://evil.example' });
@@ -1317,6 +1341,27 @@ describe('settings', () => {
       timeout: 3000,
     });
     expect(await fakeBrowser.storage.sync.get('accessToken')).toEqual({});
+  });
+
+  it('saves a token without a server so that a server arriving through sync gets it only once confirmed', async () => {
+    await fakeBrowser.storage.sync.remove('apiUrl');
+    await fakeBrowser.storage.local.remove('accessToken');
+    await openPopup();
+    await openSettings();
+    await flush();
+    const token = $<HTMLInputElement>('#token-input');
+    token.value = 'tk_new';
+    token.dispatchEvent(new Event('input'));
+    $('#save-server-settings').click();
+    await waitFor(async () => expect(await fakeBrowser.storage.local.get('accessToken')).toEqual({ accessToken: 'tk_new' }), {
+      timeout: 3000,
+    });
+    expect(await fakeBrowser.storage.local.get('authOrigins')).toEqual({ authOrigins: [] });
+
+    await fakeBrowser.storage.sync.set({ apiUrl: 'https://synced.example' });
+    const config = await import('@/utils/ntfy').then((ntfy) => ntfy.getConfig());
+    expect(config.accessToken).toBe('');
+    expect(config.heldBackFrom).toEqual(['https://synced.example']);
   });
 
   it('sets a desktop notification rule per topic, and drops the rule of a removed topic', async () => {

@@ -25,6 +25,9 @@ export const EXTENSION = {
   optionalHostPermissions: ['<all_urls>'],
   commands: ['open-popup', 'send-page'],
   firefoxDataCollection: ['authenticationInfo', 'browsingActivity', 'personalCommunications', 'websiteContent'],
+  /** Oldest browser versions, as the README, the website and the store listings state them */
+  firefoxMinVersion: '142.0',
+  chromiumMinVersion: '116',
 } as const;
 
 /** Chrome and Firefox both accept one to four dot-separated numbers; a release uses at least two */
@@ -265,6 +268,7 @@ function validateManifest(manifest: unknown, target: Target, version: string, fi
     sameSet(manifest['optional_host_permissions'], EXTENSION.optionalHostPermissions),
     `${label}: optional_host_permissions differ from the expected list`,
   );
+  requireCondition(manifest['incognito'] === 'not_allowed', `${label}: incognito must be not_allowed (no private windows)`);
   for (const key of ['host_permissions', 'content_scripts', 'web_accessible_resources', 'externally_connectable', 'key', 'update_url']) {
     requireCondition(manifest[key] === undefined, `${label}: ${key} must not be in the manifest`);
   }
@@ -287,7 +291,11 @@ function validateManifest(manifest: unknown, target: Target, version: string, fi
       isObject(gecko) && gecko['id'] === EXTENSION.firefoxId,
       `${label}: the Firefox add-on id must be ${EXTENSION.firefoxId}`,
     );
-    requireCondition(typeof gecko['strict_min_version'] === 'string', `${label}: strict_min_version is missing`);
+    requireCondition(
+      gecko['strict_min_version'] === EXTENSION.firefoxMinVersion,
+      `${label}: strict_min_version must be ${EXTENSION.firefoxMinVersion}`,
+    );
+    requireCondition(manifest['minimum_chrome_version'] === undefined, `${label}: minimum_chrome_version is for Chromium only`);
     const collection = gecko['data_collection_permissions'];
     requireCondition(
       isObject(collection) && sameSet(collection['required'], EXTENSION.firefoxDataCollection),
@@ -296,6 +304,10 @@ function validateManifest(manifest: unknown, target: Target, version: string, fi
   } else {
     backgroundFile = background['service_worker'];
     requireCondition(manifest['browser_specific_settings'] === undefined, `${label}: Firefox-only settings must not be packaged`);
+    requireCondition(
+      manifest['minimum_chrome_version'] === EXTENSION.chromiumMinVersion,
+      `${label}: minimum_chrome_version must be ${EXTENSION.chromiumMinVersion}`,
+    );
   }
 
   const action = manifest['action'];

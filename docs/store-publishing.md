@@ -2,7 +2,7 @@
 
 The manually started **Publish to stores** workflow ([`.github/workflows/publish-stores.yml`](../.github/workflows/publish-stores.yml)) submits a published GitHub release to the Chrome Web Store and Firefox Add-ons (AMO). It never rebuilds: it submits the exact files attached to the release. Run it after **Prepare release** has created the draft and you have tested and published it ([releasing.md](releasing.md)).
 
-The first version of each store item is submitted by hand ([releasing.md](releasing.md#5-chrome-web-store)): neither API can create an item. The workflow is for every version after that.
+The first version of each store item is submitted by hand ([releasing.md](releasing.md#5-chrome-web-store)): that submission creates the item with its listing, privacy answers and (on AMO) reviewer notes, which are filled in on the store's site. The workflow only submits updates to items that exist: on Chrome it uploads to the item named by `CHROME_PUBLISHER_ID` and `CHROME_EXTENSION_ID` and publishes it; on AMO it adds a version to the add-on with the manifest's id (`/addons/addon/<id>/versions/`). AMO's API could create an add-on too, but this workflow doesn't. The workflow is for every version after the first.
 
 ## Running it
 

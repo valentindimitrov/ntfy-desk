@@ -45,10 +45,10 @@ The repository is public since 2026-11-23, so all of steps 2 to 4 are available 
 So the full protection (steps 2 to 4) exists only for a public repository. If it ever becomes private again:
 
 - **Recommended: keep signing off.** Don't commit the public key and don't create the secret. The workflow still builds, validates and creates the draft with the ZIPs, which is all a first store submission needs. Its write token can do no more than you can: only you can start the workflow.
-- On GitHub Pro, the secret and the `main` rule work in the private repository, without the reviewer. That is acceptable while you are the only person who can push to `main`; add the reviewer when the repository becomes public.
+- On GitHub Pro, the secret and the `main` rule work in the private repository, without the reviewer. That is acceptable while you are the only person who can push to `main`; add the reviewer when the repository becomes public again.
 - Don't work around a missing feature with a repository secret.
 
-When the repository becomes public, open the environment's settings and check that the branch rule and the reviewer are active before committing the public key.
+Before committing the public key, open the environment's settings and check that the branch rule and the reviewer are still active.
 
 ### Creating the key
 

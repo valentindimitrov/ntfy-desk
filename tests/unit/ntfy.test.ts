@@ -13,7 +13,10 @@ import {
   getNotifications,
   isHttpUrl,
   openMessageStream,
+  parseMessage,
+  parseMessageJson,
   parseTopics,
+  REDIRECTED_ERROR,
   publishedTime,
   sendAttachment,
   sendNotification,
@@ -288,8 +291,48 @@ describe('requests', () => {
     expect(await canReadTopic(server, topic)).toBeNull();
     await expect(getNotifications(server, topic)).rejects.toThrow('Invalid ntfy topic');
     expect(() => sendNotification(server, topic, {})).toThrow('Invalid ntfy topic');
-    expect(() => openMessageStream(server, ['alerts', topic], new AbortController().signal)).toThrow('Invalid ntfy topics');
+    await expect(openMessageStream(server, ['alerts', topic], new AbortController().signal)).rejects.toThrow('Invalid ntfy topics');
     expect(calls).toEqual([]);
+  });
+
+  it("doesn't follow a redirect without credentials, and reports it for a publish, poll, subscription or access check", async () => {
+    // A 307 or 308 would pass the publish's body on: the browser is told not to follow ('manual'), and answers
+    // with an opaque redirect (status 0), which can't be built here, so its fields are set
+    const redirects: (RequestRedirect | undefined)[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        redirects.push(init.redirect);
+        return Object.defineProperties(new Response(null), {
+          type: { value: 'opaqueredirect' },
+          status: { value: 0 },
+          ok: { value: false },
+        });
+      }),
+    );
+    const open = { apiUrl: 'http://ntfy.example', accessToken: '' };
+    await expect(sendNotification(open, 'inbox', { message: 'hi' })).rejects.toThrow(REDIRECTED_ERROR);
+    await expect(getNotifications(open, 'inbox')).rejects.toThrow(REDIRECTED_ERROR);
+    await expect(openMessageStream(open, ['inbox'], new AbortController().signal)).rejects.toThrow(REDIRECTED_ERROR);
+    // Neither readable nor send-only: unknown, and asked again
+    expect(await canReadTopic(open, 'inbox')).toBeNull();
+    expect(redirects).toEqual(['manual', 'manual', 'manual', 'manual']);
+    // With credentials a redirect is a network error, as before
+    redirects.length = 0;
+    await canReadTopic(server, 'inbox');
+    expect(redirects).toEqual(['error']);
+  });
+
+  it('accepts only whole positive message times, at most a day ahead of this clock', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const at = (time: unknown) => parseMessage({ id: 'm', topic: 'alerts', event: 'message', time })?.time;
+    expect(at(now)).toBe(now);
+    expect(at(now + 23 * 3600)).toBe(now + 23 * 3600);
+    for (const time of [1.5, 0, -5, now + 25 * 3600, now * 1000, '1700000000', Number.NaN]) expect(at(time)).toBeUndefined();
+    // A delayed publish answers with its delivery time, which may be further ahead
+    expect(parseMessageJson(JSON.stringify({ id: 'm', topic: 'alerts', event: 'message', time: now + 3 * 86400 }), Infinity)?.time).toBe(
+      now + 3 * 86400,
+    );
   });
 
   it('parses the poll response and keeps message events only', async () => {
