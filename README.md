@@ -1,29 +1,29 @@
 # <img src="public/icon/48.png" alt="" width="40" height="40" style="vertical-align: middle;"> ntfy Desk
 
-A browser extension for [ntfy](https://ntfy.sh): send notifications to your topics, and receive them as desktop notifications with a message list per topic. Works with ntfy.sh and self-hosted servers. Chrome, Edge, Vivaldi and other Chromium browsers (116+), and Firefox (142+).
+Send and receive [ntfy](https://ntfy.sh) notifications in your browser. Messages arrive live as desktop notifications and wait in an inbox per topic; send a note, a file or the page you're on in a few keystrokes. Works with ntfy.sh and self-hosted servers.
+
+[Website](https://ntfy-desk.minddevops.eu) ·
+[Setup instructions](https://ntfy-desk.minddevops.eu/setup-instructions) ·
+[Privacy policy](PRIVACY.md)
+
+[![ntfy Desk with its topic list, inbox and Send form](assets/store-listings/screenshots/overview-light.png)](https://ntfy-desk.minddevops.eu)
+
+> [!IMPORTANT]
+> The Chrome Web Store and Firefox Add-ons listings are in review. Until they are published, install ntfy Desk from [GitHub Releases](https://github.com/valentindimitrov/ntfy-desk/releases) as described [below](#install). It runs in Chrome, Edge, Vivaldi and other Chromium browsers (116+), and in Firefox (142+).
 
 > [!NOTE]
 > This is an unofficial extension and is not affiliated with the ntfy project.
 
-## Features
+## What it does
 
-- **Receive**. Live messages arrive over ntfy's JSON stream. The toolbar icon shows the unread count, for all topics or only for those with desktop notifications on. When the browser starts, the extension catches up on messages still in the server's cache, within ntfy's replay limits and the inbox's per-topic limit; a topic's first sync fetches the last 24 hours without notifying. In Chromium browsers, high and urgent desktop notifications request to stay visible until dismissed, which a setting can turn off; Firefox has no such option.
-- **Notification rules per topic**. Show all, set a minimum priority, or turn desktop notifications off. The inbox still lists the messages. A catch-up with more than five eligible notifications across the inbox shows one summary. Later catch-up adds to an open summary.
-- **Clickable notifications**. A click opens the message's link or highlights the message in the extension tab without reloading the composer. A summary opens the topic it covers or All topics when it covers several. Chromium can show up to two buttons for view actions and attachments.
-- **Connection state**. The header shows the active connection. The inbox shows reconnects, unreachable servers, send-only topics and failed fetches.
-- **Received messages**. The inbox shows full messages, topic filters, unread counts, search and per-topic deletion sync. Links open in a new tab, Markdown is rendered, and images hosted on your server can be previewed. An updated message (published again with the same sequence ID) replaces the earlier version. Marking a message read or deleting it also dismisses its desktop notification.
-- **Send and receive on one page**. The toolbar popup and wide extension tab put the inbox on the left and the Send form on the right. Select **Send notification** to collapse it into a slim rail on the right. Enable **Remember collapsed/expanded state of section Send notification** in Settings to reopen it as you left it. The Send form follows the selected inbox topic. Choose **All topics** to pick a different destination.
-- **Send**. Add a title, message, priority, tags and attachments. **More options** adds a click URL (http or https, opened when the notification is clicked), Markdown formatting, and delayed delivery: choose a duration, or **Other…** to type anything ntfy accepts (`45m`, `2 days`, `tomorrow 9am` in your time zone). The server decides what it accepts, 10 seconds to 3 days by default, and refuses a delay longer than it keeps attachments (3 hours by default); its reason is shown. A delayed message is reported as scheduled and appears in the inbox only when it is delivered. The options apply to every message of a send, attachments and ZIP included, and are cleared after it.
-- **Send defaults per topic**. Give a topic its own starting priority and tags in Settings. The Send form shows them whenever that topic is the destination; other topics start with the priority and tags used last. A priority or tags you set by hand stay with the message you are writing, also when you change the topic, until it is sent or you choose **Use topic defaults** (or **Use last used**). A change by hand becomes the "last used" value, except on a topic with defaults, where it applies to that one message. The context menu and the **Send this page to ntfy** shortcut send without priority or tags.
-- **Attachments**. In the attachment window, tab to **Browse for files** and press Enter or Space. The queue accepts up to 100 files, with a 20 MiB limit per file and 50 MiB total. Right-click image sends also have a 20 MiB limit. You can keep editing while a send finishes, and one composer window can send at a time. Files removed before upload are skipped. New files and uploads without confirmation stay available in the queue. ZIPs rename duplicate entries so each file can be extracted. If the server or selected topic changes in another view or through browser sync, reopen ntfy Desk and check the destination before sending.
-- **Context menu**: right-click to send the page, selected text, an image or a link.
-- **Tab title and URL**: with "Fill in the current tab", the page's title is put in the Title field and its URL in the Message field.
-- **Resizable panes**. Drag the dividers on either side of the inbox, or focus a divider and use the arrow keys. The toolbar popup and browser tab remember their pane widths separately. Select **Freeze dividers between sections All topics, Inbox, and Send notification** in Settings to lock them in both views.
-- **Open in a tab**. Open ntfy Desk in its own browser tab to use the full viewport.
-- **Inbox display**. Keep 50, 100, 250 or 500 messages per topic, show message times as "5m ago" or as the date and time, and choose comfortable or compact rows.
-- **Keyboard**. Ctrl + Enter (Cmd + Enter on a Mac) sends when focus is in the expanded Send form. Two shortcuts are set in the browser's own shortcut settings: one opens ntfy Desk (Alt + Shift + N is suggested, where it is free), and **Send this page to ntfy** (no key until you choose one) publishes the current page's URL and title to the topic last chosen in the Send form, or the first topic. The toolbar icon shows ✓, ✗ or ? as for a right-click send.
-- **Backup**. Export the settings to a JSON file and import them in another browser or profile, without browser sync. The file has no token, password or messages.
-- **Dark mode**. See the [privacy policy](PRIVACY.md) for data and permissions.
+- Receive messages live, as desktop notifications and an unread count on the toolbar icon.
+- Catch up on messages sent while the browser was closed, as far as the server still keeps them.
+- Read, search and filter messages per topic, with Markdown, links and image previews.
+- Choose per topic which messages notify you: all, from a minimum priority, or none.
+- Send a title, message, priority, tags and attachments, with a click URL or a delivery time.
+- Send the current page, selected text, a link or an image from the right-click menu or a shortcut.
+- Use it in the toolbar popup or a full browser tab, in light or dark mode.
+- Keep credentials on your device, with no account or analytics, and back up your settings to a file.
 
 ## Install
 
@@ -49,7 +49,7 @@ Use an HTTPS server and a topic with access controls for sensitive messages. Any
 7. **Notifications**. **Unread badge counts** chooses what the number on the toolbar icon covers: all topics (the default), or only topics whose desktop notifications aren't off. The inbox counts every topic either way. **Keep high and urgent notifications on screen until dismissed** is on by default; it is a Chromium option and isn't shown in Firefox.
 8. **Inbox**. **Messages kept per topic** is 100 by default. A lower value removes each topic's oldest messages right away, and a higher one doesn't bring them back; all topics together stay within 8 MiB. **Message times** shows relative times (the default) or always the local date and time. **Density** tightens the message rows without hiding anything.
 9. **Fill in the current tab** (under Sending, on the Messages tab): puts the page's title in the Title field and its URL in the Message field. It also adds the page's URL to right-click sends: as the title of a **Text** or **Image** send, and below the link in the message of a **Link** send (whose title is the link's text, when it can be read). The **Page** item and the **Send this page to ntfy** shortcut always send the page's title and URL. In the extension's own tab, **Use tab** fills in the page you were on last (it asks once for permission to read tabs).
-10. **Keyboard shortcuts** lists the current keys. **Change shortcuts** opens the browser's page for them (`chrome://extensions/shortcuts` in Chromium browsers, **Manage Extension Shortcuts** in Firefox).
+10. **Keyboard shortcuts** lists the current keys. **Change shortcuts** opens the browser's page for them (`chrome://extensions/shortcuts` in Chromium browsers, **Manage Extension Shortcuts** in Firefox). Alt + Shift + N is suggested for opening ntfy Desk, where it is free; **Send this page to ntfy** has no key until you choose one. Ctrl + Enter (Cmd + Enter on a Mac) sends from the expanded Send form.
 11. **Backup**. **Export settings** downloads `ntfy-desk-settings-<date>.json` with the server and fallback URL, the topics with their topic settings, and every preference. It never contains the access token, the username and password or received messages, but it does list your server addresses and topic names, which is all it takes to read a topic on a server without access control, so treat it as private. **Import settings** reads such a file, shows the server URLs and the number of topics it brings, and after **Replace settings** replaces all of these settings (it doesn't merge; a setting the file lacks returns to its default). Values the file holds that aren't valid are named and left out. Your token and password stay on the device, and aren't sent to an imported server this device hasn't approved until you choose **Use them with this server** under Server (the import opens that tab when there is a server to confirm). Importing needs a file dialog, so from the toolbar popup it continues in the extension's tab; in Firefox so does exporting.
 
 ### Receiving and the browser
