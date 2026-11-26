@@ -1954,8 +1954,13 @@ describe('settings: tabs and links', () => {
       { text: 'GitHub', name: 'ntfy Desk on GitHub', href: 'https://github.com/valentindimitrov/ntfy-desk' },
       { text: 'Website', name: 'ntfy Desk website', href: 'https://ntfy-desk.minddevops.eu' },
       { text: 'Contact', name: 'Contact: ntfy Desk issues on GitHub', href: 'https://github.com/valentindimitrov/ntfy-desk/issues' },
-      { text: 'Tip', name: 'Leave a tip for ntfy Desk', href: 'https://buy.stripe.com/28E00kdpS4Tm9uW7QF5c401' },
+      // Vitest runs as a development build: the sandbox tip page (test cards only). The page holds the live one,
+      // which release builds keep (pnpm verify:packages refuses the sandbox link)
+      { text: 'Tip', name: 'Leave a tip for ntfy Desk', href: 'https://buy.stripe.com/test_8x24gBb6fcr18h57F40Fi01' },
     ]);
+    expect(import.meta.env.DEV).toBe(true);
+    expect(html).toContain('href="https://buy.stripe.com/28E00kdpS4Tm9uW7QF5c401"');
+    expect(html).not.toContain('buy.stripe.com/test_');
     for (const link of links) {
       expect(link.target).toBe('_blank');
       expect(link.rel.split(' ').toSorted()).toEqual(['noopener', 'noreferrer']);

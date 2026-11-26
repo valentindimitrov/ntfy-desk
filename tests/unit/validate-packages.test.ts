@@ -112,10 +112,13 @@ describe('validatePackages', () => {
     },
   );
 
-  it('refuses an E2E build, a source map reference and code from outside the package', () => {
+  it('refuses an E2E build, the Stripe sandbox link, a source map reference and code from outside the package', () => {
     const hook = 'Object.assign(globalThis,{__ntfyRunCommand:run})';
     writePackage(root, 'chrome', { ...browserFiles('chrome'), 'background.js': hook });
     expect(() => validatePackages(root)).toThrow('E2E hook __ntfyRunCommand');
+    const sandbox = "a.setAttribute('href','https://buy.stripe.com/test_8x24gBb6fcr18h57F40Fi01')";
+    writePackage(root, 'chrome', { ...browserFiles('chrome'), 'chunks/popup-abc.js': sandbox });
+    expect(() => validatePackages(root)).toThrow('Stripe sandbox link buy.stripe.com/test_8x24gBb6fcr18h57F40Fi01');
     writePackage(root, 'chrome', { ...browserFiles('chrome'), 'chunks/popup-abc.js': 'export {};\n//# sourceMappingURL=popup.js.map' });
     expect(() => validatePackages(root)).toThrow('refers to a source map');
     writePackage(root, 'chrome', { ...browserFiles('chrome'), 'popup.html': '<script src="https://example.com/a.js"></script>' });

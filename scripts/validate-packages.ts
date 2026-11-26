@@ -71,6 +71,8 @@ const GENERATED_FOLDERS = ['node_modules', '.output', '.wxt', '.git', 'playwrigh
 
 /** Present only in the E2E build (entrypoints/background.ts, MODE === 'e2e'): must never ship */
 const E2E_HOOK = /__ntfy[A-Z]\w*/;
+/** A Stripe test-mode link: development builds use the sandbox tip page (entrypoints/popup/main.ts), releases never */
+const STRIPE_TEST_LINK = /buy\.stripe\.com\/test_\w*/;
 const PRIVATE_KEY = /-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----/;
 const TEXT_FILE = /\.(?:js|mjs|ts|html|css|json|md|txt|ya?ml|toml|pem|patch)$|^[^.]+$/;
 
@@ -334,6 +336,8 @@ function validateBrowserPackage(target: Target, version: string, root: string): 
     const text = data.toString('utf8');
     const hook = E2E_HOOK.exec(text)?.[0];
     requireCondition(!hook, `${label}: ${name} contains the E2E hook ${hook}: this is an E2E build, not a release build`);
+    const testLink = STRIPE_TEST_LINK.exec(text)?.[0];
+    requireCondition(!testLink, `${label}: ${name} contains the Stripe sandbox link ${testLink}: this is a development build`);
     requireCondition(!text.includes('sourceMappingURL'), `${label}: ${name} refers to a source map`);
     if (!name.endsWith('.html')) continue;
     // No remote code: every script and stylesheet of a page is a file of the package

@@ -34,6 +34,13 @@ import { setupTooltips, showStatus } from './ui';
 
 const appName = browser.runtime.getManifest().name;
 
+// Development builds send the Tip link to the Stripe sandbox (test cards only, no real money) instead of
+// the live page in index.html. Vite replaces import.meta.env.DEV at build time, so release builds drop
+// this branch and the sandbox address with it (pnpm verify:packages checks they don't contain it).
+if (import.meta.env.DEV) {
+  document.querySelector<HTMLAnchorElement>('#tip-link')?.setAttribute('href', 'https://buy.stripe.com/test_8x24gBb6fcr18h57F40Fi01');
+}
+
 function requestSync(): void {
   browser.runtime.sendMessage({ action: 'sync' }).catch(() => {
     // The background may be starting; its own alarm syncs anyway
