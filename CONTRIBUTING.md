@@ -1,8 +1,9 @@
 # Contributing to ntfy Desk
 
-Report reproducible bugs through the [bug-report form](https://github.com/valentindimitrov/ntfy-desk/issues/new?template=bug_report.yml).
+Report reproducible bugs through the [bug-report form](https://github.com/valentindimitrov/ntfy-desk/issues/new?template=bug_report.yml)
+and propose features through the [feature-request form](https://github.com/valentindimitrov/ntfy-desk/issues/new?template=feature_request.yml).
 Use [Q&A](https://github.com/valentindimitrov/ntfy-desk/discussions/categories/q-a) for help and
-[Ideas](https://github.com/valentindimitrov/ntfy-desk/discussions/categories/ideas) for feature proposals.
+[Ideas](https://github.com/valentindimitrov/ntfy-desk/discussions/categories/ideas) to talk an idea through before it is concrete.
 Leave access tokens, passwords, private topic names and message content out of reports. Discuss substantial changes
 before implementing them; the maintainer opens a linked issue once a proposal is ready. Follow [SECURITY.md](SECURITY.md)
 for private vulnerability reports.

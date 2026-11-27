@@ -5,7 +5,7 @@ contact_links:
     about: Ask how to use ntfy Desk or get help with your setup.
   - name: Ideas and feedback
     url: https://github.com/valentindimitrov/ntfy-desk/discussions/categories/ideas
-    about: Suggest features and discuss improvements to ntfy Desk.
+    about: Talk an idea through before it is a concrete feature request.
   - name: Security problem
     url: https://github.com/valentindimitrov/ntfy-desk/security/advisories/new
     about: Report a vulnerability privately (SECURITY.md).

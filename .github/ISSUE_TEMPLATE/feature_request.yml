@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a new feature or an improvement to ntfy Desk.
+title: '[Feature] '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search [existing issues](https://github.com/valentindimitrov/ntfy-desk/issues?q=label%3Aenhancement) and [Ideas](https://github.com/valentindimitrov/ntfy-desk/discussions/categories/ideas) first. To talk an idea through before it is concrete, start an Ideas discussion instead.
+        ntfy Desk is a client: features of the ntfy server itself belong in [ntfy's own project](https://github.com/binwiederhier/ntfy).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: The situation and what is missing or awkward today. A problem to solve helps more than a finished design.
+      placeholder: When I receive many messages on one topic, I want to...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: 'How it could work in ntfy Desk: where it would appear (popup, tab, notifications, context menu, settings) and how you would use it.'
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+      description: What you do today instead, or other ways you considered, including other ntfy apps that do this.
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: Browsers
+      description: Where you would use it. Some features are possible in only one browser.
+      multiple: true
+      options:
+        - Chromium (Chrome, Edge, Vivaldi, ...)
+        - Firefox
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, mock-ups, the ntfy features involved (for example actions, attachments, scheduled delivery) or links.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to implement this myself (see CONTRIBUTING.md; the maintainer agrees the approach first).
